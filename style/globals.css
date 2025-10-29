@@ -1,0 +1,859 @@
+/* 
+ * ⚠️ CRITICAL THEME CONFIGURATION FILE ⚠️
+ * DO NOT MODIFY OR COMMENT OUT THE @config LINE BELOW!
+ * This file is essential for theme switching functionality.
+ * Any changes to this file may break the dark/light theme system.
+ */
+
+@import "tailwindcss";
+
+@config "../tailwind.config.js";
+
+/* Line clamp utility */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+body {
+  font-size: smaller;
+  font-weight: 600;
+  color: #7D7D7D;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Dark mode support */
+.dark body {
+  color: #e5e7eb;
+}
+
+/* Light mode background colors */
+.bg-light-background {
+  background-color: #FCFCFC;
+  transition: background-color 0.3s ease;
+}
+
+/* Dark mode background colors */
+.dark .bg-dark-background {
+  background-color: #171717;
+  transition: background-color 0.3s ease;
+}
+
+/* Dark mode text colors */
+.dark .text-gray-800 {
+  color: #f8fafc; /* slate-50 */
+}
+
+.dark .text-gray-700 {
+  color: #e2e8f0; /* slate-200 */
+}
+
+.dark .text-gray-600 {
+  color: #cbd5e1; /* slate-300 */
+}
+
+.dark .text-gray-500 {
+  color: #94a3b8; /* slate-400 */
+}
+
+/* Responsive improvements */
+@media (max-width: 640px) {
+  body {
+    font-size: 0.875rem;
+  }
+}
+
+/* Better touch targets for mobile */
+@media (max-width: 768px) {
+  button, [role="button"], a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+svg.lucide {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2;
+  transition: stroke-width 0.2s ease;
+}
+
+::-webkit-scrollbar {
+  width: 0px;
+  height: 0px;
+}
+
+/* Slide-in from left animation for sidebar/drawers */
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); opacity: 0.6; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 300ms ease forwards;
+  will-change: transform, opacity;
+}
+
+/* Subtle press effect utility (use with Tailwind classes) */
+.pressable {
+  transition: transform 150ms ease, box-shadow 200ms ease, filter 200ms ease;
+}
+.pressable:hover {
+  transform: translateY(-2px);
+  filter: saturate(1.05);
+}
+.pressable:active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* Home content reveal when navigating back to home */
+@keyframes homeReveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Dashboard animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInUpSmall {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes countUp {
+  from {
+    opacity: 0.5;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-fadeInUpSmall {
+  animation: fadeInUpSmall 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+.animate-countUp {
+  animation: countUp 0.8s ease-out forwards;
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeInDown {
+  animation: fadeInDown 0.3s ease-out forwards;
+}
+.home-reveal {
+  animation: homeReveal 320ms ease-out both;
+}
+
+/* Page transition when leaving to home */
+@keyframes slideOutLeft {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(-24px); opacity: 0.6; }
+}
+.animate-slide-out-left {
+  animation: slideOutLeft 260ms ease both;
+}
+
+/* Home slide-in from right */
+@keyframes slideInRight {
+  from { transform: translateX(24px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+.home-slide-in-right {
+  animation: slideInRight 280ms ease-out both;
+}
+
+/* Prevent tiny sub-pixel overflow on containers */
+.container-safe {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 640px) {
+  .container-safe {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Better mobile scrolling */
+@media (max-width: 768px) {
+  .roadmap-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .roadmap-scroll::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Tablet landscape optimizations */
+@media (min-width: 768px) and (max-width: 1024px) {
+  /* Increase content density for tablet landscape */
+  .stat-card {
+    padding: 1rem 1.25rem;
+  }
+  
+  /* Better spacing for tablet */
+  .container-safe {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
+  }
+  
+  /* Optimize roadmap for tablet */
+  .road-connector {
+    width: 2rem;
+  }
+  
+  /* Better button sizing for tablet */
+  button, [role="button"] {
+    min-height: 40px;
+    padding: 0.5rem 0.75rem;
+  }
+}
+
+/* Mobile and tablet sidebar animations */
+@media (max-width: 1279px) {
+  /* Ensure smooth slide animations */
+  .animate-slide-in-left {
+    animation: slideInLeft 300ms ease forwards;
+  }
+  
+  .animate-slide-out-left {
+    animation: slideOutLeft 260ms ease both;
+  }
+  
+  /* Better touch targets for mobile/tablet */
+  button, [role="button"], a {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  /* Optimize content spacing when sidebar is hidden */
+  main {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+}
+
+/* Tablet landscape specific optimizations */
+@media (min-width: 768px) and (max-width: 1279px) {
+  /* Better spacing for tablet landscape when sidebar is hidden */
+  .container-safe {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+  
+  /* Increase content density for tablet landscape */
+  .stat-card {
+    padding: 1.25rem 1.5rem;
+  }
+  
+  /* Better grid layouts for tablet landscape */
+  .grid-tablet-optimized {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+  }
+  
+  /* Optimize roadmap for tablet landscape */
+  .road-connector {
+    width: 1.5rem !important;
+  }
+  
+  /* Better ticket card spacing for tablet */
+  .ticket-card {
+    max-width: 100%;
+    overflow: hidden;
+  }
+  
+  /* Optimize roadmap scroll for tablet */
+  .roadmap-scroll {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  
+  .roadmap-scroll::-webkit-scrollbar {
+    height: 4px;
+  }
+  
+  .roadmap-scroll::-webkit-scrollbar-track {
+    background: #f1f5f9;
+    border-radius: 2px;
+  }
+  
+  .roadmap-scroll::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 2px;
+  }
+  
+  .roadmap-scroll::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+/* Desktop optimizations for Tickets page */
+@media (min-width: 1280px) {
+  .tickets-zoom {
+    transform: none;
+    transform-origin: top center;
+  }
+  
+  /* Restore full roadmap connector width for desktop */
+  .road-connector {
+    width: 2rem !important;
+  }
+  
+  /* Better spacing for desktop */
+  .roadmap-scroll {
+    gap: 0.75rem;
+  }
+}
+
+/* Gantt Chart specific animations and styles */
+@keyframes ganttBarSlideIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  to {
+    opacity: 1;
+    transform: scaleX(1);
+  }
+}
+
+@keyframes ganttRowFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes progressBarFill {
+  from {
+    width: 0%;
+  }
+  to {
+    width: var(--progress-width);
+  }
+}
+
+@keyframes timelineHeaderSlide {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Gantt Chart animations */
+.gantt-row {
+  animation: ganttRowFadeIn 0.4s ease-out forwards;
+  opacity: 0;
+}
+
+.gantt-row:nth-child(1) { animation-delay: 0.1s; }
+.gantt-row:nth-child(2) { animation-delay: 0.2s; }
+.gantt-row:nth-child(3) { animation-delay: 0.3s; }
+.gantt-row:nth-child(4) { animation-delay: 0.4s; }
+.gantt-row:nth-child(5) { animation-delay: 0.5s; }
+
+.gantt-bar {
+  animation: ganttBarSlideIn 0.6s ease-out forwards;
+  opacity: 0;
+  transform-origin: left center;
+}
+
+.gantt-bar:nth-child(1) { animation-delay: 0.2s; }
+.gantt-bar:nth-child(2) { animation-delay: 0.3s; }
+.gantt-bar:nth-child(3) { animation-delay: 0.4s; }
+.gantt-bar:nth-child(4) { animation-delay: 0.5s; }
+.gantt-bar:nth-child(5) { animation-delay: 0.6s; }
+
+.gantt-timeline-header {
+  animation: timelineHeaderSlide 0.3s ease-out forwards;
+  opacity: 0;
+}
+
+.gantt-progress-bar {
+  --progress-width: 0%;
+  animation: progressBarFill 1s ease-out forwards;
+  animation-delay: 0.8s;
+}
+
+/* Gantt Chart hover effects */
+.gantt-bar:hover {
+  transform: scaleY(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 10;
+}
+
+.gantt-row:hover {
+  background-color: rgba(59, 130, 246, 0.05);
+  transform: translateX(2px);
+}
+
+/* Responsive Gantt Chart */
+@media (max-width: 768px) {
+  .gantt-chart {
+    font-size: 0.75rem;
+    margin: 0 -0.5rem;
+  }
+  
+  .gantt-task-info {
+    width: 180px !important;
+  }
+  
+  .gantt-date-cell {
+    min-width: 35px !important;
+    padding: 0.25rem !important;
+  }
+  
+  .gantt-bar {
+    height: 18px !important;
+  }
+  
+  .gantt-chart .p-3 {
+    padding: 0.5rem !important;
+  }
+  
+  .gantt-chart .p-4 {
+    padding: 0.75rem !important;
+  }
+  
+  .gantt-chart .p-6 {
+    padding: 1rem !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .gantt-chart {
+    font-size: 0.7rem;
+    margin: 0 -0.75rem;
+    border-radius: 0.5rem;
+  }
+  
+  .gantt-task-info {
+    width: 150px !important;
+  }
+  
+  .gantt-date-cell {
+    min-width: 30px !important;
+    padding: 0.125rem !important;
+  }
+  
+  .gantt-bar {
+    height: 16px !important;
+  }
+  
+  .gantt-chart h2 {
+    font-size: 1rem !important;
+  }
+  
+  .gantt-chart p {
+    font-size: 0.75rem !important;
+  }
+  
+  .gantt-chart button {
+    padding: 0.25rem 0.5rem !important;
+    font-size: 0.75rem !important;
+  }
+  
+  .gantt-chart .flex-wrap {
+    gap: 0.25rem !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .gantt-chart {
+    margin: 0 -1rem;
+    border-radius: 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  
+  .gantt-task-info {
+    width: 120px !important;
+  }
+  
+  .gantt-date-cell {
+    min-width: 25px !important;
+    padding: 0.125rem !important;
+  }
+  
+  .gantt-bar {
+    height: 14px !important;
+  }
+  
+  .gantt-chart .min-w-\[600px\] {
+    min-width: 400px !important;
+  }
+  
+  .gantt-chart .min-w-\[800px\] {
+    min-width: 500px !important;
+  }
+}
+
+/* Gantt Chart scrollbar styling */
+.gantt-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.gantt-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.gantt-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+.gantt-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Gantt Chart today indicator animation */
+@keyframes todayIndicatorPulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scaleY(1.05);
+  }
+}
+
+.gantt-today-indicator {
+  animation: todayIndicatorPulse 2s ease-in-out infinite;
+}
+
+/* Gantt Chart status colors with better contrast */
+.gantt-status-completed {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+}
+
+.gantt-status-in-progress {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  box-shadow: 0 2px 4px rgba(245, 158, 11, 0.3);
+}
+
+.gantt-status-pending {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+}
+
+/* Gantt Chart legend animation */
+@keyframes legendFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.gantt-legend {
+  animation: legendFadeIn 0.5s ease-out forwards;
+  animation-delay: 1s;
+  opacity: 0;
+}
+
+/* Gantt Chart view tabs animation */
+@keyframes tabSwitch {
+  from {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.gantt-tab-active {
+  animation: tabSwitch 0.2s ease-out forwards;
+}
+
+/* Gantt Chart loading state */
+@keyframes ganttSkeleton {
+  0% {
+    background-position: -200px 0;
+  }
+  100% {
+    background-position: calc(200px + 100%) 0;
+  }
+}
+
+.gantt-skeleton {
+  background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
+  background-size: 200px 100%;
+  animation: ganttSkeleton 1.5s infinite;
+}
+
+/* Gantt Chart dark mode optimizations */
+.dark .gantt-status-completed {
+  background: linear-gradient(135deg, #34d399, #10b981);
+  box-shadow: 0 2px 4px rgba(52, 211, 153, 0.4);
+}
+
+.dark .gantt-status-in-progress {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 2px 4px rgba(251, 191, 36, 0.4);
+}
+
+.dark .gantt-status-pending {
+  background: linear-gradient(135deg, #60a5fa, #3b82f6);
+  box-shadow: 0 2px 4px rgba(96, 165, 250, 0.4);
+}
+
+.dark .gantt-scroll::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark .gantt-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+}
+
+.dark .gantt-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+/* Gantt Chart print styles */
+@media print {
+  .gantt-chart {
+    font-size: 10px;
+  }
+  
+  .gantt-bar {
+    height: 16px;
+  }
+  
+  .gantt-today-indicator {
+    animation: none;
+    opacity: 1;
+  }
+  
+  .gantt-scroll {
+    overflow: visible;
+  }
+}
+
+/* Roadmap flow animation */
+@keyframes progressFlow {
+  0% { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.road-connector {
+  position: relative;
+  height: 6px;
+  border-radius: 9999px;
+  background: #e5e7eb; /* gray-200 */
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.03);
+}
+
+.road-connector--completed {
+  background: linear-gradient(90deg, #34d399, #10b981); /* emerald-400 -> emerald-600 */
+}
+
+.road-connector--active {
+  /* force active connector base to blue (override completed green) */
+  background: linear-gradient(90deg, #93c5fd, #3b82f6) !important; /* blue-300 -> blue-600 */
+  box-shadow: inset 0 0 0 1px rgba(59,130,246,0.18); /* blue-500/18 */
+}
+
+.road-connector--active .road-connector__fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(56,189,248,0.20) 35%,   /* cyan-400/20 */
+    rgba(59,130,246,0.38) 50%,   /* blue-500/38 */
+    rgba(56,189,248,0.20) 65%,
+    transparent 100%
+  );
+  background-size: 250% 100%;
+  animation: progressFlow 2.2s ease-in-out infinite;
+  opacity: 0.55;
+}
+
+.road-connector--active .road-connector__beam {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+  mix-blend-mode: screen;
+  background-size: 25% 100%;
+  animation: progressFlow 2.2s ease-in-out infinite;
+  opacity: 0.25;
+}
+
+/* Visible horizontal scrollbar for roadmap when overflowing */
+.roadmap-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #64748b #f8fafc; /* thumb track */
+  scrollbar-gutter: stable both-edges;
+}
+.roadmap-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+.roadmap-scroll:hover::-webkit-scrollbar {
+  height: 12px;
+}
+.roadmap-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(180deg, #f8fafc, #f1f5f9); /* slate-50 -> slate-100 */
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.06);
+}
+.roadmap-scroll::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #cbd5e1, #94a3b8); /* slate-300 -> slate-400 */
+  border-radius: 9999px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), inset 0 -1px 0 rgba(0,0,0,0.06), 0 1px 2px rgba(15,23,42,0.12);
+  border: 1px solid rgba(15,23,42,0.08); /* slate-900/8 */
+}
+.roadmap-scroll::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #94a3b8, #64748b); /* slate-400 -> slate-500 */
+}
+.roadmap-scroll::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg, #64748b, #475569); /* slate-500 -> slate-600 */
+}
+.roadmap-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Native select dropdown colors in dark mode */
+.dark select,
+.dark option,
+.dark optgroup {
+  background-color: #1f2937; /* slate-800 */
+  color: #e5e7eb; /* gray-200 */
+}
+
+/* Enhanced roadmap scrollbar for ticket cards */
+.roadmap-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+  /* จำกัดความกว้างที่แสดงในครั้งเดียว */
+  max-width: 100%;
+  /* ให้แสดงประมาณ 4-5 สถานีในครั้งเดียว */
+  min-width: 0;
+}
+
+.roadmap-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.roadmap-scroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+  margin: 0 4px;
+}
+
+.roadmap-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  border: 1px solid #f8fafc;
+}
+
+.roadmap-scroll::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+  border-color: #f1f5f9;
+}
+
+.roadmap-scroll::-webkit-scrollbar-thumb:active {
+  background: #64748b;
+}
+
+/* Dark mode roadmap scrollbar */
+.dark .roadmap-scroll {
+  scrollbar-color: #475569 #1e293b;
+}
+
+.dark .roadmap-scroll::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark .roadmap-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-color: #334155;
+}
+
+.dark .roadmap-scroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.dark .roadmap-scroll::-webkit-scrollbar-thumb:active {
+  background: #94a3b8;
+}
+
+/* Responsive roadmap display - ปรับให้เพิ่มขึ้นอีกนิด */
+@media (max-width: 640px) {
+  .roadmap-scroll {
+    /* แสดงประมาณ 2.5 สถานีในมือถือ */
+    max-width: 520px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  .roadmap-scroll {
+    /* แสดงประมาณ 3.5 สถานีในแท็บเล็ต */
+    max-width: 620px;
+  }
+}
+
+@media (min-width: 1025px) {
+  .roadmap-scroll {
+    /* แสดงประมาณ 4.5 สถานีในเดสก์ท็อป */
+    max-width: 820px;
+  }
+}

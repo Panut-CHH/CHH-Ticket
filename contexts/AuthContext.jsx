@@ -1,0 +1,317 @@
+"use client";
+
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { supabase } from "@/utils/supabaseClient";
+
+const AuthContext = createContext();
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};
+
+export const AuthProvider = ({ children }) => {
+  const [user, setUser] = useState(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [originalUser, setOriginalUser] = useState(null);
+  const [isImpersonating, setIsImpersonating] = useState(false);
+
+
+  // Initialize Supabase session listener and load current session
+  useEffect(() => {
+    let isMounted = true;
+
+    const initSession = async () => {
+      try {
+        // Load impersonation state from localStorage first
+        const savedImpersonation = localStorage.getItem('impersonationState');
+        let shouldRestoreImpersonation = false;
+        let savedOriginalUser = null;
+        
+        if (savedImpersonation) {
+          const parsed = JSON.parse(savedImpersonation);
+          if (parsed.originalUser && parsed.isImpersonating) {
+            savedOriginalUser = parsed.originalUser;
+            shouldRestoreImpersonation = true;
+            setOriginalUser(savedOriginalUser);
+            setIsImpersonating(true);
+          }
+        }
+
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error("Failed to get session:", error.message);
+          // Handle specific refresh token errors
+          if (error.message.includes('refresh_token_not_found') || 
+              error.message.includes('Invalid Refresh Token')) {
+            console.warn('Refresh token invalid, clearing session data');
+            clearAuthData();
+            return;
+          }
+        }
+        const session = data?.session ?? null;
+        const supaUser = session?.user ?? null;
+        if (!isMounted) return;
+        if (supaUser) {
+          const profile = {
+            id: supaUser.id,
+            email: supaUser.email,
+            name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
+            role: supaUser.user_metadata?.role || "user",
+            avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
+          };
+          
+          console.log('DEBUG AuthContext: User profile created:', profile);
+          console.log('DEBUG AuthContext: User metadata:', supaUser.user_metadata);
+          
+          // If we're in impersonation mode, don't override the impersonated user
+          if (shouldRestoreImpersonation) {
+            // Keep the impersonated user data from localStorage
+            const savedUserData = localStorage.getItem('userData');
+            if (savedUserData) {
+              const impersonatedUser = JSON.parse(savedUserData);
+              setUser(impersonatedUser);
+            } else {
+              setUser(profile);
+            }
+          } else {
+            console.log('DEBUG AuthContext: Setting user profile:', profile);
+            setUser(profile);
+            localStorage.setItem("userData", JSON.stringify(profile));
+          }
+          
+          setIsAuthenticated(true);
+        } else {
+          setUser(null);
+          setIsAuthenticated(false);
+          localStorage.removeItem("userData");
+        }
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state change:', event, session ? 'Session exists' : 'No session');
+      
+      // Handle specific auth events
+      if (event === 'TOKEN_REFRESHED') {
+        if (!session) {
+          console.warn('Token refresh failed, user will need to re-authenticate');
+          clearAuthData();
+          return;
+        }
+      }
+      
+      if (event === 'SIGNED_OUT') {
+        console.log('User signed out, clearing local data');
+        clearAuthData();
+        return;
+      }
+       
+      const supaUser = session?.user ?? null;
+      if (supaUser) {
+        const profile = {
+          id: supaUser.id,
+          email: supaUser.email,
+          name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
+          role: supaUser.user_metadata?.role || "user",
+          avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
+        };
+        
+        // Check if we're currently impersonating
+        const savedImpersonation = localStorage.getItem('impersonationState');
+        const isCurrentlyImpersonating = savedImpersonation && JSON.parse(savedImpersonation).isImpersonating;
+        
+        if (isCurrentlyImpersonating) {
+          // Don't override impersonated user data
+          console.log('Auth state change detected but maintaining impersonation state');
+          return;
+        }
+        
+        setUser(profile);
+        setIsAuthenticated(true);
+        localStorage.setItem("userData", JSON.stringify(profile));
+      } else {
+        setUser(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem("userData");
+      }
+    });
+
+    initSession();
+    
+    // Handle visibility change (tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        // Tab became visible, check if we need to restore impersonation state
+        const savedImpersonation = localStorage.getItem('impersonationState');
+        if (savedImpersonation) {
+          const parsed = JSON.parse(savedImpersonation);
+          if (parsed.originalUser && parsed.isImpersonating) {
+            setOriginalUser(parsed.originalUser);
+            setIsImpersonating(true);
+            
+            // Restore impersonated user data
+            const savedUserData = localStorage.getItem('userData');
+            if (savedUserData) {
+              const impersonatedUser = JSON.parse(savedUserData);
+              setUser(impersonatedUser);
+            }
+          }
+        }
+      }
+    };
+    
+    // Handle page focus (when returning to tab)
+    const handlePageFocus = () => {
+      const savedImpersonation = localStorage.getItem('impersonationState');
+      if (savedImpersonation) {
+        const parsed = JSON.parse(savedImpersonation);
+        if (parsed.originalUser && parsed.isImpersonating) {
+          setOriginalUser(parsed.originalUser);
+          setIsImpersonating(true);
+          
+          // Restore impersonated user data
+          const savedUserData = localStorage.getItem('userData');
+          if (savedUserData) {
+            const impersonatedUser = JSON.parse(savedUserData);
+            setUser(impersonatedUser);
+          }
+        }
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handlePageFocus);
+    
+    return () => {
+      isMounted = false;
+      authListener.subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handlePageFocus);
+    };
+  }, []);
+
+  const login = async ({ email, password }) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { success: false, error: error.message };
+    }
+    const supaUser = data?.user;
+    if (!supaUser) return { success: false, error: "No user" };
+    const profile = {
+      id: supaUser.id,
+      email: supaUser.email,
+      name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
+      role: supaUser.user_metadata?.role || "user",
+      avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
+    };
+    setUser(profile);
+    setIsAuthenticated(true);
+    localStorage.setItem("userData", JSON.stringify(profile));
+    return { success: true };
+  };
+
+  const logout = async () => {
+    try {
+      await supabase.auth.signOut();
+    } catch (error) {
+      console.warn('Error during logout:', error.message);
+    } finally {
+      // Ensure cleanup even if signOut fails
+      clearAuthData();
+    }
+  };
+
+  const updateUser = (userData) => {
+    setUser(prev => ({ ...prev, ...userData }));
+    localStorage.setItem("userData", JSON.stringify({ ...user, ...userData }));
+  };
+
+  const impersonate = async (targetUser) => {
+    try {
+      // Store current user as original user
+      setOriginalUser(user);
+      setIsImpersonating(true);
+      
+      // Update current user to target user
+      setUser(targetUser);
+      localStorage.setItem("userData", JSON.stringify(targetUser));
+      
+      // Save impersonation state
+      const impersonationState = {
+        originalUser: user,
+        isImpersonating: true
+      };
+      localStorage.setItem("impersonationState", JSON.stringify(impersonationState));
+      
+      return true;
+    } catch (error) {
+      console.error('Error during impersonation:', error);
+      return false;
+    }
+  };
+
+  const exitImpersonate = () => {
+    try {
+      if (originalUser) {
+        // Restore original user
+        setUser(originalUser);
+        localStorage.setItem("userData", JSON.stringify(originalUser));
+        
+        // Clear impersonation state
+        setOriginalUser(null);
+        setIsImpersonating(false);
+        localStorage.removeItem("impersonationState");
+      }
+    } catch (error) {
+      console.error('Error exiting impersonation:', error);
+    }
+  };
+
+  // Function to manually clear auth data (useful for handling refresh token errors)
+  const clearAuthData = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('userData');
+      localStorage.removeItem('loginLockEndTime');
+      localStorage.removeItem('impersonationState');
+      localStorage.removeItem('sb-rvaywihlohlhyrowwixz-auth-token');
+      // Clear any other Supabase auth tokens that might exist
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-') && key.includes('auth-token')) {
+          localStorage.removeItem(key);
+        }
+      });
+    }
+    setUser(null);
+    setIsAuthenticated(false);
+    setOriginalUser(null);
+    setIsImpersonating(false);
+  };
+
+  const value = {
+    user,
+    isAuthenticated,
+    isLoading,
+    login,
+    logout,
+    updateUser,
+    clearAuthData,
+    originalUser,
+    isImpersonating,
+    impersonate,
+    exitImpersonate,
+  };
+
+  return (
+    <AuthContext.Provider value={value}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+

@@ -1,0 +1,17 @@
+# Database
+DATABASE_URL="postgresql://postgres.tdbunxotpavsnpmbynoj:P@nuwat19598838@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres" 
+NEXTAUTH_SECRET="Develop" 
+NEXTAUTH_URL="http://localhost:3000" 
+SECRET_TOKEN="Develop" 
+NEXT_PUBLIC_SECRET_TOKEN="Develop" 
+NEXT_PUBLIC_API_URL="http://localhost:3000"
+
+# Business Central
+BC_BASE_URL="https://api.businesscentral.dynamics.com/v2.0" 
+BC_TENANT_ID=02b9e7ae-caa9-4b54-90cf-7ffdba07084c 
+BC_ENVIRONMENT=Production 
+BC_COMPANY=a407ba9f-2151-ec11-9f09-000d3ac85269 
+BC_CLIENT_ID=4423e0d6-d367-444c-b25e-01898b8886d2 
+BC_CLIENT_SECRET=nQj8Q~BJOv-vZz~7biZDqBTgjq3i5KD-kMo.BcpF 
+BC_SCOPE="https://api.businesscentral.dynamics.com/.default" 
+BC_AUTH_URL="https://login.microsoftonline.com/02b9e7ae-caa9-4b54-90cf-7ffdba07084c/oauth2/v2.0/token"

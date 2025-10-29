@@ -1,0 +1,10 @@
+# Protect critical theme configuration files
+style/globals.css -diff
+tailwind.config.js -diff
+app/providers.jsx -diff
+app/layout.jsx -diff
+
+# Mark these files as binary to prevent accidental edits
+*.css linguist-language=CSS
+*.js linguist-language=JavaScript
+*.jsx linguist-language=JavaScript

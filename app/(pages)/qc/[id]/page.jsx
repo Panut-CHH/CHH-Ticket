@@ -1,0 +1,1056 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import RoleGuard from "@/components/RoleGuard";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/utils/supabaseClient";
+import { ArrowLeft } from "lucide-react";
+import BatchSplitModal from "@/components/BatchSplitModal";
+import ReworkRoadmapBuilder from "@/components/ReworkRoadmapBuilder";
+import QCHistoryLog from "@/components/QCHistoryLog.jsx";
+
+export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicketId = null }) {
+  const { language } = useLanguage();
+  const { user } = useAuth();
+  const resolvedParams = (params && typeof params.then === 'function') ? React.use(params) : params;
+  const id = String(forceTicketId || resolvedParams?.id || "");
+  const searchParams = useSearchParams();
+  const overrideQcTaskUuid = forceQcTaskUuid || searchParams?.get('qcTaskUuid') || null;
+  const router = useRouter();
+
+  // Form state
+  const [checklistItems, setChecklistItems] = useState({
+    frame: [
+      { id: 1, name: "วัสดุตรงตามแบบ", pass: null, qty: "", reason: "" },
+      { id: 2, name: "ขนาด", pass: null, qty: "", reason: "" },
+      { id: 3, name: "ระยะบังใบ", pass: null, qty: "", reason: "" },
+      { id: 4, name: "ตรงตามแบบ", pass: null, qty: "", reason: "" }
+    ],
+    door: [
+      { id: 5, name: "วัสดุตรงตามแบบ", pass: null, qty: "", reason: "" },
+      { id: 6, name: "ขนาด", pass: null, qty: "", reason: "" },
+      { id: 7, name: "รูปแบบตรงตามแบบ", pass: null, qty: "", reason: "" },
+      { id: 8, name: "ประตูไม่บิด โก่ง หรือ ห่อ", pass: null, qty: "", reason: "" },
+      { id: 9, name: "แผ่นหน้าไม่หลุดจากโครงประตู", pass: null, qty: "", reason: "" },
+      { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" }
+    ],
+    paint: [
+      { id: 11, name: "สีถูกต้องตามแบบ", pass: null, qty: "", reason: "" },
+      { id: 12, name: "คุณภาพหลักการทำสี", pass: null, qty: "", reason: "" }
+    ],
+    drilling: [
+      { id: 13, name: "ระยะเจาะตรงตามแบบ", pass: null, qty: "", reason: "" },
+      { id: 14, name: "คุณภาพหลังการเจาะ", pass: null, qty: "", reason: "" },
+      { id: 15, name: "รูปแบบการเปิดถูกต้องตามแบบ", pass: null, qty: "", reason: "" }
+    ]
+  });
+
+  // History state
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  
+  // QC Start state
+  const [qcStarted, setQcStarted] = useState(false);
+  const [startingQc, setStartingQc] = useState(false);
+  
+  // Ticket data
+  const [ticketData, setTicketData] = useState(null);
+  
+  // Rework flow state
+  const [showBatchSplitModal, setShowBatchSplitModal] = useState(false);
+  const [showRoadmapBuilder, setShowRoadmapBuilder] = useState(false);
+  const [reworkData, setReworkData] = useState(null);
+  const [customRoadmap, setCustomRoadmap] = useState([]);
+  const [defaultRoadmap, setDefaultRoadmap] = useState([]);
+  const [activeQcTaskUuid, setActiveQcTaskUuid] = useState(null);
+  const [qcCompleted, setQcCompleted] = useState(false);
+
+  const storageKey = `qc_main_form_${id}`;
+
+  // Load draft from localStorage
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+      if (saved) {
+        if (saved.checklistItems) setChecklistItems(saved.checklistItems);
+      }
+    } catch {}
+  }, [storageKey]);
+
+  // Save draft to localStorage
+  useEffect(() => {
+    const draft = { checklistItems };
+    try { localStorage.setItem(storageKey, JSON.stringify(draft)); } catch {}
+  }, [checklistItems, storageKey]);
+
+  // Load ticket data and history
+  useEffect(() => {
+    loadTicketData();
+    loadHistory();
+  }, [id]);
+
+  const loadTicketData = async () => {
+    try {
+      // Load ticket data from ERP
+      const resp = await fetch(`/api/erp/production-order/${encodeURIComponent(id)}`);
+      if (resp.ok) {
+        const json = await resp.json();
+        if (json?.success && json?.data) {
+          setTicketData(json.data);
+        }
+      }
+      
+      // Load ticket_station_flow to create default roadmap
+      await loadTicketStationFlow();
+    } catch (e) {
+      console.error('Load ticket data failed:', e);
+    }
+  };
+  
+  const loadTicketStationFlow = async () => {
+    try {
+      const { data: flows, error } = await supabase
+        .from('ticket_station_flow')
+        .select('*, stations(name_th, code)')
+        .eq('ticket_no', id)
+        .order('step_order', { ascending: true });
+      
+      if (error) {
+        console.error('Error loading ticket station flow:', error);
+        return;
+      }
+      
+      // หา QC ขั้นที่ active (pending/current) เพื่อเก็บ qc_task_uuid
+      const activeQc = overrideQcTaskUuid
+        ? (flows || []).find(f => f.qc_task_uuid === overrideQcTaskUuid)
+        : (flows || []).filter(f => {
+          const code = String(f?.stations?.code || '').toUpperCase();
+          const name = String(f?.stations?.name_th || '').toUpperCase();
+          const isQC = code === 'QC' || name.includes('QC') || name.includes('ตรวจ') || name.includes('คุณภาพ');
+          return isQC && ['pending','current'].includes(f.status || 'pending');
+        })[0] || null;
+      setActiveQcTaskUuid(activeQc?.qc_task_uuid || null);
+
+      // แปลงเป็น default roadmap
+      const roadmap = flows.map((flow, index) => ({
+        id: `default_${flow.id || index}`, // เพิ่ม id เพื่อใช้เป็น draggableId
+        stationId: flow.station_id,
+        stationName: flow.stations?.name_th || flow.stations?.code || 'Unknown',
+        stepOrder: flow.step_order,
+        assignedTechnicianId: flow.technician_id || null,
+        estimatedHours: 2 // default 2 hours
+      }));
+      
+      setDefaultRoadmap(roadmap);
+    } catch (e) {
+      console.error('Load ticket station flow failed:', e);
+    }
+  };
+
+  // Load station flow to detect if all QC steps are completed (lock page)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: flows } = await supabase
+          .from('ticket_station_flow')
+          .select(`status, stations(code,name_th), step_order`)
+          .eq('ticket_no', id)
+          .order('step_order', { ascending: true });
+        const list = Array.isArray(flows) ? flows : [];
+        const qcSteps = list.filter(f => {
+          const code = String(f?.stations?.code || '').toUpperCase();
+          const name = String(f?.stations?.name_th || '').toUpperCase();
+          return code === 'QC' || name.includes('QC') || name.includes('ตรวจ') || name.includes('คุณภาพ');
+        });
+        const isAllQcCompleted = qcSteps.length > 0 && qcSteps.every(s => (s.status || 'pending') === 'completed');
+        if (!cancelled) setQcCompleted(isAllQcCompleted);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [id]);
+
+  const loadHistory = async () => {
+    try {
+      setLoading(true);
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`);
+      if (resp.ok) {
+        const json = await resp.json();
+        setHistory(json.data?.sessions || []);
+      }
+    } catch (e) {
+      console.error('Load history failed:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startQC = async () => {
+    try {
+      setStartingQc(true);
+      console.log('Starting QC for ticket:', id);
+      
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (resp.ok) {
+        const json = await resp.json();
+        console.log('QC Start response:', json);
+        setQcStarted(true);
+        alert(language === 'th' ? 'เริ่ม QC แล้ว' : 'QC Started');
+      } else {
+        const errorData = await resp.json().catch(() => ({}));
+        console.error('QC Start failed:', errorData);
+        alert(`Failed to start QC: ${errorData?.error || resp.status}`);
+      }
+    } catch (e) {
+      console.error('QC Start error:', e);
+      alert(`Error: ${e.message}`);
+    } finally {
+      setStartingQc(false);
+    }
+  };
+
+  const updateItem = (category, itemId, field, value) => {
+    setChecklistItems(prev => ({
+      ...prev,
+      [category]: prev[category].map(item => 
+        item.id === itemId ? { ...item, [field]: value } : item
+      )
+    }));
+  };
+
+  const addCustomItem = (category) => {
+    const newId = Math.max(...Object.values(checklistItems).flat().map(i => i.id)) + 1;
+    const newItem = { id: newId, name: "", pass: null, qty: "", reason: "" };
+    setChecklistItems(prev => ({
+      ...prev,
+      [category]: [...prev[category], newItem]
+    }));
+  };
+
+  const removeCustomItem = (category, itemId) => {
+    setChecklistItems(prev => ({
+      ...prev,
+      [category]: prev[category].filter(item => item.id !== itemId)
+    }));
+  };
+
+  // คำนวณผลลัพธ์ QC อิงจาก Quantity ที่ตั้งต้นในตั๋ว
+  const calculateQCResults = () => {
+    const allItems = Object.values(checklistItems).flat();
+    const checkedItems = allItems.filter(item => item.pass !== null);
+    
+    if (checkedItems.length === 0) {
+      return { passQuantity: 0, failQuantity: 0, totalQuantity: 0, passRate: 0 };
+    }
+
+    // จำนวนชิ้นงานทั้งหมดจากตั๋ว
+    const totalTicketQuantity = ticketData?.data?.Quantity || ticketData?.Quantity || 0;
+    
+    if (totalTicketQuantity === 0) {
+      // ถ้าไม่มีข้อมูลตั๋ว ให้ใช้วิธีเดิม
+      const passItems = checkedItems.filter(item => item.pass === true);
+      const failItems = checkedItems.filter(item => item.pass === false);
+      
+      const passQuantity = passItems.reduce((sum, item) => sum + (parseInt(item.qty) || 1), 0);
+      const failQuantity = failItems.reduce((sum, item) => sum + (parseInt(item.qty) || 1), 0);
+      const totalQuantity = passQuantity + failQuantity;
+      const passRate = totalQuantity > 0 ? Math.round((passQuantity / totalQuantity) * 100) : 0;
+
+      return { passQuantity, failQuantity, totalQuantity, passRate };
+    }
+
+    // คำนวณใหม่: ผ่านไม่ต้องใส่จำนวน, ไม่ผ่านต้องใส่จำนวน แล้วนำมาลบกับจำนวนเต็ม
+    const failItems = checkedItems.filter(item => item.pass === false);
+    
+    // สรุปจำนวนชิ้นงานที่ไม่ผ่านจาก qty ที่กรอก
+    const failQuantity = failItems.reduce((sum, item) => sum + (parseInt(item.qty) || 0), 0);
+    
+    // จำนวนชิ้นงานที่ผ่าน = จำนวนเต็ม - จำนวนไม่ผ่าน
+    const passQuantity = totalTicketQuantity - failQuantity;
+    
+    // อัตราการผ่าน
+    const passRate = totalTicketQuantity > 0 ? Math.round((passQuantity / totalTicketQuantity) * 100) : 0;
+    
+    return { 
+      passQuantity, 
+      failQuantity, 
+      totalQuantity: totalTicketQuantity, 
+      passRate 
+    };
+  };
+
+  const saveForm = async () => {
+    // Validation: ตรวจสอบว่ามีการติ๊กอย่างน้อย 1 รายการ
+    const allItems = Object.values(checklistItems).flat();
+    const checkedItems = allItems.filter(item => item.pass !== null);
+    
+    if (checkedItems.length === 0) {
+      alert(language === 'th' ? 'กรุณาตรวจสอบอย่างน้อย 1 รายการ' : 'Please check at least 1 item');
+      return;
+    }
+    
+    // Validation: ตรวจสอบว่ามีการกรอกข้อมูลแต่ยังไม่ได้ติ๊ก
+    const itemsWithDataButNoCheck = allItems.filter(item => 
+      item.pass === null && 
+      ((item.qty && item.qty.trim() !== '' && item.qty !== '0') || (item.reason && item.reason.trim() !== ''))
+    );
+    
+    if (itemsWithDataButNoCheck.length > 0) {
+      alert(language === 'th' ? 'กรุณาเลือกผ่าน/ไม่ผ่านสำหรับรายการที่กรอกข้อมูลไว้' : 'Please select pass/fail for items you have entered data');
+      return;
+    }
+    
+    // Validation: ถ้าไม่ผ่านต้องมี reason และ qty
+    const failedItemsWithoutReason = allItems.filter(item => item.pass === false && !item.reason.trim());
+    if (failedItemsWithoutReason.length > 0) {
+      alert(language === 'th' ? 'กรุณากรอกสาเหตุสำหรับรายการที่ไม่ผ่าน' : 'Please provide reasons for failed items');
+      return;
+    }
+    
+    const failedItemsWithoutQty = allItems.filter(item => item.pass === false && (!item.qty || item.qty === '0'));
+    if (failedItemsWithoutQty.length > 0) {
+      alert(language === 'th' ? 'กรุณากรอกจำนวนสำหรับรายการที่ไม่ผ่าน' : 'Please provide quantity for failed items');
+      return;
+    }
+
+    // คำนวณผลลัพธ์ QC
+    const qcResults = calculateQCResults();
+    
+    // ถ้ามีชิ้นงานไม่ผ่าน ให้แสดง BatchSplitModal
+    if (qcResults.failQuantity > 0) {
+      setReworkData({
+        passQuantity: qcResults.passQuantity,
+        failQuantity: qcResults.failQuantity,
+        totalQuantity: qcResults.totalQuantity,
+        passRate: qcResults.passRate
+      });
+      setShowBatchSplitModal(true);
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      const inspectorName = (user?.name || user?.email || "").trim();
+      const inspectedDate = new Date().toISOString().split('T')[0];
+
+      const payload = {
+        formType: 'main_qc',
+        header: {
+          inspector: inspectorName,
+          inspectedDate,
+          remark: `QC Form for ticket ${id}`
+        },
+        categories: {
+          'วงกบ': checklistItems.frame.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'ประตู': checklistItems.door.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'สี': checklistItems.paint.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'เจาะอุปกรณ์': checklistItems.drilling.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {})
+        },
+        // เพิ่ม passQuantity และ failQuantity เพื่ออัปเดต quantity
+        passQuantity: Number(qcResults.passQuantity || 0),
+        failQuantity: Number(qcResults.failQuantity || 0)
+      };
+
+      console.log('=== QC Form Debug ===');
+      console.log('Payload:', payload);
+      console.log('Checklist Items:', checklistItems);
+
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      console.log('=== QC API Response ===');
+      console.log('Response Status:', resp.status);
+      console.log('Response OK:', resp.ok);
+
+      if (resp.ok) {
+        const responseData = await resp.json();
+        console.log('Response Data:', responseData);
+        try { localStorage.removeItem(storageKey); } catch {}
+        // กลับไปหน้า QC หลักอัตโนมัติหลังบันทึกสำเร็จ
+        router.replace('/qc');
+        return;
+      } else {
+        const json = await resp.json().catch(() => ({}));
+        console.log('Error Response:', json);
+        alert(`Save failed: ${json?.error || resp.status}`);
+      }
+    } catch (e) {
+      console.error('=== QC Form Error ===');
+      console.error('Error:', e);
+      console.error('Error Message:', e.message);
+      console.error('Error Stack:', e.stack);
+      alert(`Save failed: ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // จัดการการสร้าง Rework Order
+  const handleReworkOrder = async (reworkOrderData) => {
+    try {
+      setSaving(true);
+      
+      const inspectorName = (user?.name || user?.email || "").trim();
+      const inspectedDate = new Date().toISOString().split('T')[0];
+
+      // สร้าง QC Session ก่อน
+      const qcPayload = {
+        formType: 'main_qc',
+        header: {
+          inspector: inspectorName,
+          inspectedDate,
+          remark: `QC Form for ticket ${id}`
+        },
+        qc_task_uuid: activeQcTaskUuid || null,
+        // ส่งจำนวนที่ผ่าน/ไม่ผ่านเพื่อให้ API อัปเดต ticket.quantity
+        passQuantity: Number(reworkOrderData?.passQuantity ?? 0),
+        failQuantity: Number(reworkOrderData?.failQuantity ?? 0),
+        categories: {
+          'วงกบ': checklistItems.frame.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'ประตู': checklistItems.door.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'สี': checklistItems.paint.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'เจาะอุปกรณ์': checklistItems.drilling.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {})
+        }
+      };
+
+      // บันทึก QC Session
+      const qcResp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(qcPayload)
+      });
+
+      if (!qcResp.ok) {
+        throw new Error('Failed to save QC session');
+      }
+
+      const qcResponseData = await qcResp.json();
+      console.log('QC Response:', qcResponseData);
+      
+      const qcSessionId = qcResponseData.data?.session?.id || qcResponseData.data?.id;
+      console.log('QC Session ID:', qcSessionId);
+      
+      if (!qcSessionId) {
+        console.error('QC Response Structure:', qcResponseData);
+        throw new Error('QC Session ID not found in response');
+      }
+
+      // สร้าง Rework Order
+      const reworkPayload = {
+        ticketNo: id,
+        qcSessionId: qcSessionId,
+        passQuantity: reworkOrderData.passQuantity || 0,
+        failQuantity: reworkOrderData.failQuantity || 0,
+        severity: reworkOrderData.severity || 'major',
+        failedAtStationId: null, // เลิกพึ่งพา station_id
+        failed_qc_task_uuid: activeQcTaskUuid || null,
+        reason: reworkOrderData.reason || '',
+        notes: reworkOrderData.notes || '',
+        roadmap: reworkOrderData.roadmap || null,
+        createdBy: user?.id || 'current-user-id'
+      };
+      
+      console.log('=== Rework Payload ===');
+      console.log('QC Session ID:', qcSessionId, 'Type:', typeof qcSessionId);
+      console.log('Created By:', user?.id, 'Type:', typeof user?.id);
+      console.log('Payload:', reworkPayload);
+
+      const reworkResp = await fetch('/api/rework/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reworkPayload)
+      });
+
+      console.log('Rework API Response Status:', reworkResp.status);
+
+      if (reworkResp.ok) {
+        const reworkResponseData = await reworkResp.json();
+        console.log('Rework Order created:', reworkResponseData);
+        
+        try { localStorage.removeItem(storageKey); } catch {}
+        
+        // กลับไปหน้า QC หลักอัตโนมัติหลังสร้าง Rework Order สำเร็จ
+        setShowBatchSplitModal(false);
+        setReworkData(null);
+        router.replace('/qc');
+        return;
+      } else {
+        const error = await reworkResp.json();
+        console.error('Rework API Error:', error);
+        console.error('Response Status:', reworkResp.status);
+        console.error('Missing fields:', error.details);
+        throw new Error(`Failed to create rework order: ${error.error}`);
+      }
+    } catch (error) {
+      console.error('Error creating rework order:', error);
+      alert(`เกิดข้อผิดพลาด: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // จัดการการบันทึกแบบผ่านทั้งหมด
+  const handlePassAll = async () => {
+    try {
+      setSaving(true);
+      
+      const inspectorName = (user?.name || user?.email || "").trim();
+      const inspectedDate = new Date().toISOString().split('T')[0];
+
+      const payload = {
+        formType: 'main_qc',
+        header: {
+          inspector: inspectorName,
+          inspectedDate,
+          remark: `QC Form for ticket ${id}`
+        },
+        categories: {
+          'วงกบ': checklistItems.frame.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'ประตู': checklistItems.door.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'สี': checklistItems.paint.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {}),
+          'เจาะอุปกรณ์': checklistItems.drilling.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
+          }, {})
+        }
+      };
+
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (resp.ok) {
+        const responseData = await resp.json();
+        console.log('Response Data:', responseData);
+        try { localStorage.removeItem(storageKey); } catch {}
+        // กลับไปหน้า QC หลักอัตโนมัติหลังบันทึกสำเร็จ
+        router.replace('/qc');
+        return;
+      } else {
+        const json = await resp.json().catch(() => ({}));
+        console.log('Error Response:', json);
+        alert(`Save failed: ${json?.error || resp.status}`);
+      }
+    } catch (e) {
+      console.error('=== QC Form Error ===');
+      console.error('Error:', e);
+      console.error('Error Message:', e.message);
+      console.error('Error Stack:', e.stack);
+      alert(`Save failed: ${e.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearForm = () => {
+    if (confirm(language === 'th' ? 'ล้างฟอร์มทั้งหมด?' : 'Clear all form data?')) {
+      setChecklistItems({
+        frame: [
+          { id: 1, name: "วัสดุตรงตามแบบ", pass: null, qty: "", reason: "" },
+          { id: 2, name: "ขนาด", pass: null, qty: "", reason: "" },
+          { id: 3, name: "ระยะบังใบ", pass: null, qty: "", reason: "" },
+          { id: 4, name: "ตรงตามแบบ", pass: null, qty: "", reason: "" }
+        ],
+        door: [
+          { id: 5, name: "วัสดุตรงตามแบบ", pass: null, qty: "", reason: "" },
+          { id: 6, name: "ขนาด", pass: null, qty: "", reason: "" },
+          { id: 7, name: "รูปแบบตรงตามแบบ", pass: null, qty: "", reason: "" },
+          { id: 8, name: "ประตูไม่บิด โก่ง หรือ ห่อ", pass: null, qty: "", reason: "" },
+          { id: 9, name: "แผ่นหน้าไม่หลุดจากโครงประตู", pass: null, qty: "", reason: "" },
+          { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" }
+        ],
+        paint: [
+          { id: 11, name: "สีถูกต้องตามแบบ", pass: null, qty: "", reason: "" },
+          { id: 12, name: "คุณภาพหลักการทำสี", pass: null, qty: "", reason: "" }
+        ],
+        drilling: [
+          { id: 13, name: "ระยะเจาะตรงตามแบบ", pass: null, qty: "", reason: "" },
+          { id: 14, name: "คุณภาพหลังการเจาะ", pass: null, qty: "", reason: "" },
+          { id: 15, name: "รูปแบบการเปิดถูกต้องตามแบบ", pass: null, qty: "", reason: "" }
+        ]
+      });
+      try { localStorage.removeItem(storageKey); } catch {}
+    }
+  };
+
+  const renderCategory = (categoryKey, categoryName, items) => (
+    <div className="mb-6">
+      <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+        {categoryName}
+        {categoryKey === 'door' && (
+          <Link 
+            href={`/qc/${id}/structure`} 
+            className="ml-4 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+          >
+            {language === 'th' ? 'ตรวจสอบโครง' : 'Inspect Structure'}
+          </Link>
+        )}
+      </h3>
+      
+      <div className="overflow-x-auto">
+        <table className="min-w-full border border-gray-300 dark:border-slate-600">
+          <thead className="bg-gray-50 dark:bg-slate-700">
+            <tr>
+              <th className="px-3 py-2 border text-left text-sm font-medium">รายการ</th>
+              <th className="px-3 py-2 border text-center text-sm font-medium">ผ่าน</th>
+              <th className="px-3 py-2 border text-center text-sm font-medium">ไม่ผ่าน</th>
+              <th className="px-3 py-2 border text-center text-sm font-medium">จำนวน</th>
+              <th className="px-3 py-2 border text-center text-sm font-medium">สาเหตุ</th>
+              <th className="px-3 py-2 border text-center text-sm font-medium">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(item => (
+              <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
+                <td className="px-3 py-2 border">
+                  {item.name ? (
+                    <span className="text-sm">{item.name}</span>
+                  ) : (
+                    <input
+                      type="text"
+                      className="w-full px-2 py-1 text-sm border rounded"
+                      placeholder={language === 'th' ? 'กรอกรายการอื่นๆ' : 'Enter custom item'}
+                      value={item.name}
+                      onChange={e => updateItem(categoryKey, item.id, 'name', e.target.value)}
+                      disabled={!qcStarted}
+                    />
+                  )}
+                </td>
+                <td className="px-3 py-2 border text-center">
+                  <input
+                    type="radio"
+                    name={`pass_${item.id}`}
+                    checked={item.pass === true}
+                    onChange={() => updateItem(categoryKey, item.id, 'pass', true)}
+                    className="w-4 h-4"
+                    disabled={!qcStarted}
+                  />
+                </td>
+                <td className="px-3 py-2 border text-center">
+                  <input
+                    type="radio"
+                    name={`pass_${item.id}`}
+                    checked={item.pass === false}
+                    onChange={() => updateItem(categoryKey, item.id, 'pass', false)}
+                    className="w-4 h-4"
+                    disabled={!qcStarted}
+                  />
+                </td>
+                <td className="px-3 py-2 border">
+                  <input
+                    type="number"
+                    className="w-full px-2 py-1 text-sm border rounded"
+                    value={item.qty}
+                    onChange={e => updateItem(categoryKey, item.id, 'qty', e.target.value)}
+                    placeholder="0"
+                    disabled={!qcStarted}
+                  />
+                </td>
+                <td className="px-3 py-2 border">
+                  <input
+                    type="text"
+                    className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-amber-400/60 ${item.pass === false && !item.reason ? 'border-amber-500 bg-amber-50 placeholder-amber-400' : ''}`}
+                    value={item.reason}
+                    onChange={e => updateItem(categoryKey, item.id, 'reason', e.target.value)}
+                    placeholder={language === 'th' ? 'สาเหตุ' : 'Reason'}
+                    disabled={!qcStarted}
+                  />
+                </td>
+                <td className="px-3 py-2 border text-center">
+                  {!item.name && (
+                    <button
+                      onClick={() => removeCustomItem(categoryKey, item.id)}
+                      className="px-2 py-1 text-red-600 hover:bg-red-100 rounded text-sm"
+                      disabled={!qcStarted}
+                    >
+                      ลบ
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      
+      <button
+        onClick={() => addCustomItem(categoryKey)}
+        className="mt-2 px-3 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded text-sm"
+        disabled={!qcStarted}
+      >
+        + {language === 'th' ? 'เพิ่มรายการอื่นๆ' : 'Add custom item'}
+      </button>
+    </div>
+  );
+
+  return (
+    <ProtectedRoute>
+      <RoleGuard pagePath="/qc">
+        <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-gray-50 dark:bg-slate-900">
+          <div className="max-w-6xl mx-auto">
+            {/* Header */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
+              <div className="flex items-center gap-4 mb-4">
+                <Link 
+                  href="/qc" 
+                  className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                  {language === 'th' ? 'ย้อนกลับ' : 'Back'}
+                </Link>
+              </div>
+              <h1 className="text-xl font-bold text-center mb-4 text-gray-800 dark:text-gray-200">
+                เอกสารตรวจสอบคุณภาพระหว่างการผลิต/คุณภาพผลิตภัณฑ์
+              </h1>
+              <div className="text-center text-gray-600 dark:text-gray-400">
+                <p className="text-lg font-medium">ตั๋ว #{id}</p>
+                {ticketData && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-sm">
+                      <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
+                      <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
+                        {(ticketData?.data?.Quantity || ticketData?.Quantity || 0).toLocaleString()} ชิ้น
+                      </span>
+                    </p>
+                    <p className="text-sm">
+                      <span className="font-medium">รายการ:</span> 
+                      <span className="ml-2">{ticketData?.data?.Description || ticketData?.Description || '-'}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* QC Start Button (hide when QC already completed) */}
+            {!qcStarted && !qcCompleted && (
+              <div className="relative overflow-hidden rounded-2xl p-6 mb-6 border dark:border-slate-700/60 shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/10 dark:to-yellow-900/10">
+                {/* subtle grid pattern */}
+                <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:radial-gradient(theme(colors.yellow.500)_0.5px,transparent_0.5px)] [background-size:16px_16px]" />
+                <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] items-center">
+                  <div className="flex items-start gap-4">
+                    <div className="shrink-0 w-12 h-12 rounded-xl bg-yellow-200/70 dark:bg-yellow-300/20 flex items-center justify-center text-yellow-700 dark:text-yellow-300">
+                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
+                        {language === 'th' ? 'ฟอร์มถูกล็อค' : 'Form is locked'}
+                      </h3>
+                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                        {language === 'th' ? 'กดปุ่มเพื่อเริ่มการตรวจสอบ QC ระบบจะอัปเดตสถานะเป็นกำลังดำเนินการ' : 'Press start to begin QC. Status will switch to in progress.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex md:justify-end">
+                    <button
+                      onClick={startQC}
+                      disabled={startingQc}
+                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-white font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 transition-colors shadow-sm"
+                    >
+                      {startingQc ? (
+                        <>
+                          <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                          </svg>
+                          {language === 'th' ? 'กำลังเริ่ม...' : 'Starting...'}
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1m4 0h1m-6 4h1m4 0h1m-6-8h8a2 2 0 012 2v8a2 2 0 01-2 2H8a2 2 0 01-2-2V8a2 2 0 012-2z" />
+                          </svg>
+                          {language === 'th' ? 'เริ่ม QC' : 'Start QC'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Readonly banner when QC completed */}
+            {qcCompleted && (
+              <div className="mb-4 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-800 dark:text-emerald-300 px-4 py-3 text-sm">
+                {language === 'th' ? 'ตั๋วนี้ตรวจ QC เสร็จแล้ว ข้อมูลถูกล็อค' : 'QC for this ticket is completed. Form is read-only.'}
+              </div>
+            )}
+
+            {/* QC Results Summary */}
+            {qcStarted && !qcCompleted && (
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
+                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
+                  สรุปผลการตรวจสอบ QC
+                </h3>
+                {(() => {
+                  const results = calculateQCResults();
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                          {results.totalQuantity.toLocaleString()}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">จำนวนทั้งหมด</div>
+                      </div>
+                      <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                          {results.passQuantity.toLocaleString()}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">ผ่าน QC</div>
+                      </div>
+                      <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                          {results.failQuantity.toLocaleString()}
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">ไม่ผ่าน QC</div>
+                      </div>
+                      <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                        <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                          {results.passRate}%
+                        </div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">อัตราการผ่าน</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Form */}
+            <div className={`bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6 ${(!qcStarted || qcCompleted) ? 'opacity-50 pointer-events-none' : ''}`}>
+              {renderCategory('frame', 'หมวดวงกบ', checklistItems.frame)}
+              {renderCategory('door', 'หมวดประตู', checklistItems.door)}
+              {renderCategory('paint', 'หมวดสี', checklistItems.paint)}
+              {renderCategory('drilling', 'หมวดเจาะอุปกรณ์', checklistItems.drilling)}
+
+              {/* Footer */}
+              <div className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-700">
+                {/* Inspector/date removed: auto-filled from user and current date */}
+                <div className="flex gap-3">
+                  {!qcCompleted && (
+                  <button
+                    onClick={saveForm}
+                    disabled={saving || !qcStarted || qcCompleted}
+                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-md font-medium"
+                  >
+                    {saving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึก' : 'Save')}
+                  </button>
+                  )}
+                  {!qcCompleted && (
+                  <button
+                    onClick={clearForm}
+                    className="px-6 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md font-medium"
+                    disabled={!qcStarted || qcCompleted}
+                  >
+                    {language === 'th' ? 'ล้างฟอร์ม' : 'Clear Form'}
+                  </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* History */}
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
+                {language === 'th' ? 'ประวัติการตรวจสอบ' : 'Inspection History'}
+              </h3>
+              
+              {loading ? (
+                <div className="text-center py-4">{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
+              ) : history.length === 0 ? (
+                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
+                  {language === 'th' ? 'ยังไม่มีประวัติการตรวจสอบ' : 'No inspection history yet'}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full border border-gray-300 dark:border-slate-600">
+                    <thead className="bg-gray-50 dark:bg-slate-700">
+                      <tr>
+                        <th className="px-3 py-2 border text-left text-sm font-medium">วันที่</th>
+                        <th className="px-3 py-2 border text-left text-sm font-medium">ผู้ตรวจ</th>
+                        <th className="px-3 py-2 border text-left text-sm font-medium">ประเภทฟอร์ม</th>
+                        <th className="px-3 py-2 border text-left text-sm font-medium">สถานี</th>
+                        <th className="px-3 py-2 border text-left text-sm font-medium">หมายเหตุ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map(session => (
+                        <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
+                          <td className="px-3 py-2 border text-sm">
+                            {session.inspected_date || new Date(session.created_at).toLocaleDateString('th-TH')}
+                          </td>
+                          <td className="px-3 py-2 border text-sm">{session.inspector || '-'}</td>
+                          <td className="px-3 py-2 border text-sm">
+                            {session.form_type === 'main_qc' ? 'ฟอร์มหลัก' : 
+                             session.form_type === 'cut_edge' ? 'ตัดขอบบาน' :
+                             session.form_type === 'shoot_frame' ? 'ยิงโครง' :
+                             session.form_type === 'press_glue' ? 'อัดกาว' : session.form_type}
+                          </td>
+                          <td className="px-3 py-2 border text-sm">{session.station || '-'}</td>
+                          <td className="px-3 py-2 border text-sm">{session.remark || '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Batch Split Modal */}
+        <BatchSplitModal
+          isOpen={showBatchSplitModal}
+          onClose={() => {
+            setShowBatchSplitModal(false);
+            setReworkData(null);
+          }}
+          onConfirm={handleReworkOrder}
+          passQuantity={reworkData?.passQuantity || 0}
+          failQuantity={reworkData?.failQuantity || 0}
+          defaultRoadmap={defaultRoadmap}
+          totalQuantity={reworkData?.totalQuantity || 0}
+          loading={saving}
+        />
+
+        {/* Rework Roadmap Builder Modal */}
+        <ReworkRoadmapBuilder
+          isOpen={showRoadmapBuilder}
+          onCancel={() => setShowRoadmapBuilder(false)}
+          onSave={(roadmap) => {
+            setCustomRoadmap(roadmap);
+            setShowRoadmapBuilder(false);
+          }}
+          initialRoadmap={customRoadmap}
+        />
+
+        {/* QC History Section */}
+        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-700">
+          <QCHistoryLog ticketNo={id} />
+        </div>
+      </RoleGuard>
+    </ProtectedRoute>
+  );
+}
