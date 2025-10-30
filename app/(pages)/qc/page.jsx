@@ -9,86 +9,16 @@ import { Search, CheckCircle2, Clock, Tag, Ticket as TicketIcon, AlertTriangle, 
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { supabase } from "@/utils/supabaseClient";
+import { loadActiveQcQueue } from "@/utils/ticketsDb";
 
-// แปลงข้อมูล ERP เป็น ticket object (ยกมาจากหน้า Tickets)
-function mapErpRecordToTicket(record, projectMap = new Map()) {
-  const rec = record && record.data ? record.data : record;
-  const id = rec?.No || rec?.no || rec?.RPD_No || rec?.rpdNo || rec?.orderNumber || rec?.Order_No || rec?.No_ || rec?.id;
-  const quantity = Number(rec?.Quantity ?? rec?.quantity ?? 0);
-  const dueDate = rec?.Delivery_Date || rec?.deliveryDate || rec?.Ending_Date_Time || rec?.Ending_Date || rec?.Due_Date || "";
-  const itemCode = rec?.Source_No || rec?.Item_No || rec?.itemCode || rec?.Item_Code || rec?.Source_Item || "";
-  const description = rec?.Description || rec?.description || "";
-  const description2 = rec?.Description_2 || rec?.description2 || "";
-  const erpProjectCode = rec?.Shortcut_Dimension_2_Code || rec?.Project_Code || rec?.projectCode || rec?.Project || "";
-  const shortcutDimension1 = rec?.Shortcut_Dimension_1_Code || "";
-  const startingDateTime = rec?.Starting_Date_Time || rec?.Start_Date || "";
-  const endingDateTime = rec?.Ending_Date_Time || rec?.End_Date || "";
-  const route = rec?.Routing_No || rec?.Routing || rec?.Route || "";
-
-  const rpdNo = String(id || "").trim();
-  const projectInfo = projectMap.get(rpdNo);
-  const projectCode = projectInfo?.projectCode || erpProjectCode;
-  const projectName = projectInfo?.projectName || erpProjectCode;
-
-  const priority = projectInfo?.priority || rec?.Priority || rec?.priority || "ยังไม่ได้กำหนด Priority";
-  const priorityLower = String(priority || '').toLowerCase();
-  const priorityClass =
-    priorityLower.includes('high') || priorityLower.includes('สูง')
-      ? "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-      : priorityLower.includes('medium') || priorityLower.includes('กลาง')
-      ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300"
-      : priorityLower.includes('low') || priorityLower.includes('ต่ำ')
-      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300"
-      : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-
-  const roadmap = Array.isArray(rec?.Operations)
-    ? rec.Operations.map(op => ({ step: op?.Description || op?.description || op?.Operation_No || "", status: "pending" }))
-    : [];
-
-  const status = "Pending";
-  const statusClass = "text-blue-600";
-
-  return {
-    id: rpdNo,
-    title: description,
-    priority,
-    priorityClass,
-    status,
-    statusClass,
-    assignee: "-",
-    time: "",
-    route,
-    routeClass: "bg-blue-100 text-blue-800",
-    dueDate: dueDate || "",
-    quantity: quantity || 0,
-    rpd: rpdNo,
-    itemCode,
-    projectCode,
-    projectName,
-    description,
-    description2,
-    shortcutDimension1,
-    shortcutDimension2: projectCode,
-    locationCode: rec?.Location_Code || rec?.Location || "",
-    startingDateTime,
-    endingDateTime,
-    bwkRemainingConsumption: Number(rec?.BWK_Remaining_Consumption || 0),
-    searchDescription: rec?.Search_Description || rec?.Search || description,
-    erpCode: projectCode ? `ERP-${projectCode}` : "",
-    projectId: projectCode,
-    customerName: rec?.Customer_Name || rec?.customerName || "",
-    bom: Array.isArray(rec?.BOM) ? rec.BOM : [],
-    stations: Array.isArray(rec?.Stations) ? rec.Stations : [],
-    roadmap,
-  };
-}
+// DB-first: no ERP mapping here
 
 export default function QCPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { language } = useLanguage();
   const [searchTerm, setSearchTerm] = useState("");
-  const [showPendingOnly, setShowPendingOnly] = useState(false);
+  // Removed: showPendingOnly filter; queue already excludes completed items
   // Fixed design style: chip
   const [designMode, setDesignMode] = useState("chip");
 
@@ -101,7 +31,24 @@ export default function QCPage() {
   const [assignmentMapState, setAssignmentMapState] = useState({}); // key: `${ticket_no}-${station_id}` -> technician name
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'archive'
+  const [activeTab, setActiveTab] = useState('queue'); // 'queue' | 'archive' | 'history'
+  // allow deep-link via ?tab=queue|archive|history
+  useEffect(() => {
+    try {
+      const tab = (searchParams?.get?.('tab') || '').toLowerCase();
+      if (['queue','archive','history'].includes(tab)) setActiveTab(tab);
+    } catch {}
+  }, [searchParams]);
+  // History tab states
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyPage, setHistoryPage] = useState(1);
+  const pageSize = 25;
+  const [stations, setStations] = useState([]);
+  const [historySessions, setHistorySessions] = useState([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [inspectorMap, setInspectorMap] = useState({}); // id -> display name
+  const [historyFilters, setHistoryFilters] = useState({ ticketNo: '', stationId: '', from: '', to: '', inspector: '' });
 
   useEffect(() => {
     try {
@@ -112,132 +59,25 @@ export default function QCPage() {
     }
   }, []);
 
-  // โหลดข้อมูลจริงจาก ERP + Supabase (อิง logic จากหน้า Tickets)
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setError("");
+      const { tickets: merged, qcTickets, assignmentMap } = await loadActiveQcQueue();
+      setTickets(merged);
+      setAssignmentMapState(assignmentMap);
 
-        // 1) โหลดตั๋วเพื่อ map RPD → project info
-        const { data: tickets } = await supabase
-          .from('ticket')
-          .select('no,source_no,project_id,priority')
-          .order('created_at', { ascending: false });
+      // Archive: tickets ที่ QC เป็น completed แล้ว
+      const qcArchived = merged.filter(t => {
+        const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
+        if (steps.length === 0) return false;
+        const qcSteps = steps.filter(s => String(s.step || '').toUpperCase().includes('QC'));
+        if (qcSteps.length === 0) return false;
+        return qcSteps.every(s => (s.status || 'pending') === 'completed');
+      });
 
-        const projectMap = new Map();
-        (tickets || []).forEach(t => {
-          if (t?.no) projectMap.set(String(t.no), { projectName: t.source_no || t.no, priority: t.priority });
-        });
-
-        // 2) เรียก ERP batch จาก ticket numbers
-        const rpdNumbers = (tickets || []).map(t => t?.no).filter(Boolean);
-        let erpTickets = [];
-        if (rpdNumbers.length) {
-          const resp = await fetch('/api/erp/production-orders/batch', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ rpdNumbers })
-          });
-          const json = await resp.json();
-          const results = Array.isArray(json?.data) ? json.data : [];
-          erpTickets = results.filter(r => r && r.success && r.data).map(r => mapErpRecordToTicket(r.data, projectMap));
-        }
-
-        // 2.1) เพิ่มตั๋ว Rework ที่ไม่มีใน ERP จาก DB โดยตรง
-        const reworkTickets = (tickets || [])
-          .filter(t => t?.no && String(t.no).includes('-RW'))
-          .map(t => ({
-            id: t.no,
-            title: `Rework: ${t.source_no || ''}`,
-            priority: 'ยังไม่ได้กำหนด Priority',
-            priorityClass: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
-            status: 'Released',
-            statusClass: 'text-purple-600',
-            assignee: '-',
-            time: '',
-            route: t.source_no || t.no,
-            routeClass: 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400',
-            dueDate: '',
-            quantity: 0,
-            rpd: t.no,
-            itemCode: t.source_no || '',
-            projectCode: t.source_no || '',
-            projectName: `Rework Ticket ${t.no}`,
-            stations: [],
-            isRework: true,
-            parentTicketNo: t.source_no
-          }));
-
-        // 3) โหลด station flows เพื่อหา current/next เป็น QC
-        const { data: flows } = await supabase
-          .from('ticket_station_flow')
-          .select(`*, stations(name_th, code)`) 
-          .order('step_order', { ascending: true });
-
-        const flowByTicket = new Map();
-        (flows || []).forEach(f => {
-          const key = String(f.ticket_no || '').replace('#','');
-          if (!flowByTicket.has(key)) flowByTicket.set(key, []);
-          flowByTicket.get(key).push(f);
-        });
-
-        // โหลดการมอบหมายช่างของแต่ละสถานี
-        let assignmentMap = {};
-        try {
-          const { data: assignments } = await supabase
-            .from('ticket_assignments')
-            .select(`ticket_no, station_id, users!ticket_assignments_technician_id_fkey(name)`);
-          (assignments || []).forEach(a => {
-            const k = `${String(a.ticket_no || '').replace('#','')}-${a.station_id}`;
-            const tech = a?.users?.name || '';
-            if (tech) assignmentMap[k] = tech;
-          });
-        } catch {}
-
-        const allTicketsBase = [...erpTickets, ...reworkTickets];
-        const merged = allTicketsBase.map(t => {
-          const ticketId = String(t.id || t.rpd).replace('#','');
-          const ticketFlows = flowByTicket.get(ticketId) || [];
-          if (ticketFlows.length > 0) {
-            const roadmap = ticketFlows.map(flow => ({
-              step: flow.stations?.name_th || '',
-              status: flow.status || 'pending',
-              stationId: flow.station_id,
-              stepOrder: flow.step_order,
-              updatedAt: flow.updated_at || flow.created_at,
-              qcTaskUuid: flow.qc_task_uuid || null
-            }));
-            return { ...t, roadmap };
-          }
-          return t;
-        });
-
-        setTickets(merged);
-        setAssignmentMapState(assignmentMap);
-
-        const qcCandidates = merged.filter(t => {
-          const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
-          if (steps.length === 0) return false;
-          // เลือก "ขั้นแรกที่ยังไม่เสร็จ" โดย treat rework เป็นเสร็จแล้ว (ให้ไหลต่อได้)
-          const firstActiveIdx = steps.findIndex(s => !['completed','rework'].includes((s.status || 'pending')));
-          if (firstActiveIdx < 0) return false;
-          const stepName = String(steps[firstActiveIdx]?.step || '').toUpperCase();
-          const stepStatus = steps[firstActiveIdx]?.status || 'pending';
-          // แสดงเฉพาะเมื่อขั้นแรกที่ยังไม่เสร็จเป็น QC และสถานะ pending/current เท่านั้น
-          return stepName.includes('QC') && (stepStatus === 'pending' || stepStatus === 'current');
-        });
-
-        // Archive: tickets ที่ QC เป็น completed แล้ว
-        const qcArchived = merged.filter(t => {
-          const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
-          if (steps.length === 0) return false;
-          const qcSteps = steps.filter(s => String(s.step || '').toUpperCase().includes('QC'));
-          if (qcSteps.length === 0) return false;
-          // Archive เมื่อตำแหน่ง QC ทุกจุดถูกทำเสร็จแล้วทั้งหมด
-          return qcSteps.every(s => (s.status || 'pending') === 'completed');
-        });
-
-        setAllQcTickets(qcCandidates);
-        setArchivedTickets(qcArchived);
+      setAllQcTickets(qcTickets);
+      setArchivedTickets(qcArchived);
     } catch (e) {
       setError(e?.message || 'Failed to load QC data');
     } finally {
@@ -257,6 +97,16 @@ export default function QCPage() {
     };
   }, [load]);
 
+  // Load stations for filters (once)
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await supabase.from('stations').select('id,name_th,name_en').order('name_th');
+        if (!error && Array.isArray(data)) setStations(data);
+      } catch {}
+    })();
+  }, []);
+
   // Realtime: อัปเดตคิว QC ทันทีเมื่อมีการเปลี่ยนแปลงสถานะหรือบันทึก QC
   useEffect(() => {
     const channel = supabase
@@ -266,6 +116,15 @@ export default function QCPage() {
         setTimeout(() => { load(); }, 250);
       })
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'qc_sessions' }, async () => {
+        setTimeout(() => {
+          load();
+          if (activeTab === 'history') loadHistory();
+        }, 250);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_assignments' }, async () => {
+        setTimeout(() => { load(); }, 250);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'rework_orders' }, async () => {
         setTimeout(() => { load(); }, 250);
       })
       .subscribe();
@@ -293,10 +152,7 @@ export default function QCPage() {
     });
   }, [searchTerm, allQcTickets]);
 
-  const ticketsToShow = useMemo(() => {
-    if (!showPendingOnly) return qcTickets;
-    return qcTickets.filter((t) => t.status !== "เสร็จสิ้น");
-  }, [qcTickets, showPendingOnly]);
+  const ticketsToShow = useMemo(() => qcTickets, [qcTickets]);
 
   // Metrics
   const waitingCount = allQcTickets.length;
@@ -320,6 +176,108 @@ export default function QCPage() {
   const totalQcDone = goodCount + badCount;
   const passRate = totalQcDone > 0 ? Math.round((goodCount / totalQcDone) * 100) : 0;
 
+  const loadHistory = useCallback(async () => {
+    try {
+      setHistoryLoading(true);
+      setHistoryError("");
+      const fromIdx = (historyPage - 1) * pageSize;
+      let query = supabase
+        .from('qc_sessions')
+        .select('id,ticket_no,station_id,station,qc_task_uuid,created_at,inspector_id,inspector', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(fromIdx, fromIdx + pageSize - 1);
+
+      if (historyFilters.ticketNo) {
+        query = query.ilike('ticket_no', `%${historyFilters.ticketNo}%`);
+      }
+      if (historyFilters.stationId) {
+        query = query.eq('station_id', historyFilters.stationId);
+      }
+      if (historyFilters.from) {
+        const fromIso = new Date(historyFilters.from).toISOString();
+        query = query.gte('created_at', fromIso);
+      }
+      if (historyFilters.to) {
+        const toDate = new Date(historyFilters.to);
+        toDate.setHours(23,59,59,999);
+        query = query.lte('created_at', toDate.toISOString());
+      }
+
+      const { data, error, count } = await query;
+      if (error) throw error;
+
+      const inspectorIds = Array.from(new Set((data || []).map((d) => d.inspector_id).filter(Boolean)));
+      let inspectorMapLocal = {};
+      if (inspectorIds.length > 0) {
+        const { data: users, error: userErr } = await supabase
+          .from('users')
+          .select('id, name, email')
+          .in('id', inspectorIds);
+        if (!userErr && Array.isArray(users)) {
+          inspectorMapLocal = users.reduce((acc, u) => {
+            acc[u.id] = u.name || u.email || u.id;
+            return acc;
+          }, {});
+          setInspectorMap((prev) => ({ ...prev, ...inspectorMapLocal }));
+        }
+      }
+
+      // Compute target station (previous step before QC) using flows
+      const ticketNos = Array.from(new Set((data || []).map((d) => d.ticket_no))).filter(Boolean);
+      let prevStationByQcTask = {};
+      if (ticketNos.length > 0) {
+        const { data: flows } = await supabase
+          .from('ticket_station_flow')
+          .select('ticket_no, step_order, station_id, qc_task_uuid, stations(name_th, code)')
+          .in('ticket_no', ticketNos)
+          .order('step_order', { ascending: true });
+        const byTicket = flows?.reduce((acc, f) => {
+          const key = String(f.ticket_no);
+          acc[key] = acc[key] || [];
+          acc[key].push(f);
+          return acc;
+        }, {}) || {};
+        Object.values(byTicket).forEach(list => {
+          // ใช้ลำดับภายในรายการ เผื่อกรณี step_order เป็น null
+          for (let i = 0; i < list.length; i++) {
+            const f = list[i];
+            if (!f.qc_task_uuid) continue;
+            const prev = i > 0 ? list[i - 1] : null;
+            const name = prev?.stations?.name_th || prev?.stations?.code || null;
+            if (name) prevStationByQcTask[f.qc_task_uuid] = name;
+          }
+        });
+      }
+
+      const stationMap = stations.reduce((acc, s) => { acc[s.id] = s.name_th || s.name_en || s.id; return acc; }, {});
+      let rows = (data || []).map((d) => ({
+        ...d,
+        station_name: prevStationByQcTask[d.qc_task_uuid] || stationMap[d.station_id] || d.station || d.station_id || '-',
+        inspector_name: inspectorMapLocal[d.inspector_id] || inspectorMap[d.inspector_id] || d.inspector || d.inspector_id || '-',
+      }));
+
+      // client-side filter by inspector text
+      if (historyFilters.inspector) {
+        const q = historyFilters.inspector.toLowerCase();
+        rows = rows.filter((r) => String(r.inspector_name || '').toLowerCase().includes(q));
+      }
+
+      setHistorySessions(rows);
+      setHistoryTotal(count || 0);
+    } catch (e) {
+      setHistoryError(e?.message || 'Failed to load history');
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyPage, pageSize, historyFilters, stations]);
+
+  // Load when switching to History tab or filters/page change
+  useEffect(() => {
+    if (activeTab === 'history') {
+      loadHistory();
+    }
+  }, [activeTab, loadHistory]);
+
   return (
     <ProtectedRoute>
       <RoleGuard pagePath="/qc">
@@ -339,6 +297,10 @@ export default function QCPage() {
           onClick={() => setActiveTab('archive')}
           className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'archive' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
         >{language === 'th' ? 'เก็บเอกสาร (ตรวจเสร็จ)' : 'Archive (Completed)'}</button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'history' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
+          >{language === 'th' ? 'ประวัติการตรวจ' : 'QC History'}</button>
       </div>
 
       {loading && (
@@ -476,10 +438,6 @@ export default function QCPage() {
             className="w-full pl-9 sm:pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm sm:text-base"
           />
         </div>
-        <label className="inline-flex items-center gap-2 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg px-3 py-2 cursor-pointer select-none">
-          <input type="checkbox" checked={showPendingOnly} onChange={(e) => setShowPendingOnly(e.target.checked)} />
-          {language === 'th' ? 'แสดงเฉพาะที่ยังไม่เสร็จสิ้น' : 'Show only incomplete'}
-        </label>
       </div>
       )}
 
@@ -534,7 +492,13 @@ export default function QCPage() {
                       const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
                       const qcIdx = qcIndex;
                       const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
-                      const techName = prev ? assignmentMapState[`${String(ticket.id).replace('#','')}-${prev.stationId}`] : '';
+                      let techName = '';
+                      if (prev) {
+                        const idNorm = String(ticket.id).replace('#','');
+                        const keyExact = `${idNorm}-${prev.stationId}-${prev.stepOrder || 0}`;
+                        const keyNoOrder = `${idNorm}-${prev.stationId}-0`;
+                        techName = assignmentMapState[keyExact] || assignmentMapState[keyNoOrder] || '';
+                      }
                       return <span>{techName || '-'}</span>;
                     })()}
                   </div>
@@ -599,7 +563,7 @@ export default function QCPage() {
           <div className="text-center text-gray-500 dark:text-gray-400 py-8 sm:py-10 text-sm sm:text-base">{language === 'th' ? 'ยังไม่มีตั๋วที่ถึงขั้นตอน QC' : 'No tickets reached QC step yet'}</div>
         )}
       </div>
-      ) : (
+      ) : activeTab === 'archive' ? (
       // Archive list
       <div className="space-y-3">
         {archivedTickets.length === 0 ? (
@@ -628,6 +592,109 @@ export default function QCPage() {
             </div>
           ))
         )}
+      </div>
+      ) : (
+      // History tab
+      <div className="space-y-3">
+        {/* Filters */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <input
+              value={historyFilters.ticketNo}
+              onChange={(e) => { setHistoryPage(1); setHistoryFilters((f) => ({ ...f, ticketNo: e.target.value })); }}
+              placeholder={language === 'th' ? 'เลขตั๋ว' : 'Ticket No'}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm"
+            />
+            <select
+              value={historyFilters.stationId}
+              onChange={(e) => { setHistoryPage(1); setHistoryFilters((f) => ({ ...f, stationId: e.target.value })); }}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm"
+            >
+              <option value="">{language === 'th' ? 'ทุกสถานี' : 'All stations'}</option>
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>{s.name_th || s.name_en || s.id}</option>
+              ))}
+            </select>
+            <input
+              type="date"
+              value={historyFilters.from}
+              onChange={(e) => { setHistoryPage(1); setHistoryFilters((f) => ({ ...f, from: e.target.value })); }}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm"
+            />
+            <input
+              type="date"
+              value={historyFilters.to}
+              onChange={(e) => { setHistoryPage(1); setHistoryFilters((f) => ({ ...f, to: e.target.value })); }}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm"
+            />
+            <input
+              value={historyFilters.inspector}
+              onChange={(e) => { setHistoryPage(1); setHistoryFilters((f) => ({ ...f, inspector: e.target.value })); }}
+              placeholder={language === 'th' ? 'ผู้ตรวจ' : 'Inspector'}
+              className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm"
+            />
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
+          {historyLoading && (
+            <div className="text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'กำลังโหลดประวัติ…' : 'Loading history…'}</div>
+          )}
+          {!!historyError && (
+            <div className="text-sm text-red-600">{historyError}</div>
+          )}
+          {!historyLoading && !historyError && historySessions.length === 0 && (
+            <div className="text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'ไม่พบประวัติ' : 'No history found'}</div>
+          )}
+          {!historyLoading && historySessions.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-gray-600 dark:text-gray-300">
+                    <th className="py-2">{language === 'th' ? 'เลขตั๋ว' : 'Ticket'}</th>
+                    <th className="py-2">{language === 'th' ? 'สถานี' : 'Station'}</th>
+                    <th className="py-2">{language === 'th' ? 'ผู้ตรวจ' : 'Inspector'}</th>
+                    <th className="py-2">{language === 'th' ? 'วันที่' : 'Date'}</th>
+                    <th className="py-2"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                  {historySessions.map((s) => (
+                    <tr key={s.id} className="text-gray-800 dark:text-gray-200">
+                      <td className="py-2">{s.ticket_no}</td>
+                      <td className="py-2">{s.station_name}</td>
+                      <td className="py-2">{s.inspector_name}</td>
+                      <td className="py-2">{new Date(s.created_at).toLocaleString('th-TH', { hour12: false })}</td>
+                      <td className="py-2 text-right">
+                        <Link href={`/qc/history/${s.id}`} className="text-emerald-700 hover:underline">
+                          {language === 'th' ? 'ดูรายละเอียด' : 'View detail'}
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {!historyLoading && historyTotal > pageSize && (
+            <div className="mt-3 flex items-center justify-between text-xs text-gray-600 dark:text-gray-400">
+              <button
+                onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                disabled={historyPage <= 1}
+                className={`px-2 py-1 rounded border ${historyPage <= 1 ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >{language === 'th' ? 'ก่อนหน้า' : 'Prev'}</button>
+              <div>{language === 'th' ? 'หน้า' : 'Page'} {historyPage} / {Math.max(1, Math.ceil(historyTotal / pageSize))}</div>
+              <button
+                onClick={() => setHistoryPage((p) => (p < Math.ceil(historyTotal / pageSize) ? p + 1 : p))}
+                disabled={historyPage >= Math.ceil(historyTotal / pageSize)}
+                className={`px-2 py-1 rounded border ${historyPage >= Math.ceil(historyTotal / pageSize) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >{language === 'th' ? 'ถัดไป' : 'Next'}</button>
+            </div>
+          )}
+        </div>
       </div>
       )}
       </div>

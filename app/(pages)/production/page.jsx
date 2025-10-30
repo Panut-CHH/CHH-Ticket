@@ -16,6 +16,8 @@ export default function ProductionPage() {
   const router = useRouter();
 
   const myName = (user?.name || user?.email || "").trim();
+  const myRole = (user?.role || '').toLowerCase();
+  const isAdmin = myRole === 'admin' || myRole === 'superadmin';
   const myNameLower = myName.toLowerCase();
 
   // Load ERP tickets and merge with DB station assignments
@@ -60,16 +62,16 @@ export default function ProductionPage() {
     }
   };
 
-  // Function to load tickets (reusable for initial load and realtime updates)
+  // Function to load tickets (DB-first)
   const loadTickets = async () => {
     try {
       setLoadingTickets(true);
       setLoadError("");
 
-      // 1) Load tickets to get RPD numbers from ticket no
+      // 1) Load tickets from DB (base info)
       const { data: ticketData, error: ticketError } = await supabase
         .from('ticket')
-        .select('no,source_no,project_id')
+        .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity')
         .order('created_at', { ascending: false });
       if (ticketError) throw ticketError;
 
@@ -78,64 +80,42 @@ export default function ProductionPage() {
         .map(t => t?.no)
         .filter(v => typeof v === 'string' && v.trim().length > 0 && v !== 'N/A');
       
-      // รวม RPD numbers ที่ต้องการ
-      const rpdNumbers = [...new Set(allTicketNumbers)];
-      if (rpdNumbers.length === 0) {
+      if (allTicketNumbers.length === 0) {
         setTickets([]);
         return;
       }
-
-      // 2) Fetch ERP batch
-      const resp = await fetch('/api/erp/production-orders/batch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rpdNumbers })
-      });
-      if (!resp.ok) throw new Error(`Failed ERP batch: ${resp.status}`);
-      const json = await resp.json();
-      const results = Array.isArray(json?.data) ? json.data : [];
-
-      // Build project map for extra fields using ticket data
-      const projectMap = new Map();
-      (ticketData || []).forEach(t => {
-        if (t.no && t.no !== 'N/A') {
-          projectMap.set(t.no, {
-            projectCode: t.source_no || t.no,
-            projectName: t.source_no || t.no
-          });
-        }
-      });
-
-      const erpMapped = results
-        .filter(r => r && r.success && r.data)
-        .map(r => mapErpRecordToTicket(r.data, projectMap));
-      
-      // สำหรับตั๋ว Rework ที่ไม่มีใน ERP ให้สร้าง ticket object จาก DB
-      const reworkTickets = (ticketData || [])
-        .filter(t => t.no && t.no.includes('-RW'))
-        .map(t => ({
-          id: t.no,
-          title: `Rework: ${t.source_no || 'Unknown'}`,
-          priority: "High",
-          priorityClass: "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400",
-          status: "In Progress",
-          statusClass: "text-purple-600",
-          assignee: "-",
-          time: "",
-          route: t.source_no || t.no,
-          routeClass: "bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400",
-          dueDate: "",
-          quantity: 0,
-          rpd: t.no,
-          itemCode: t.source_no || "",
-          projectCode: t.source_no || "",
-          projectName: `Rework Ticket ${t.no}`,
+      // 2) Map DB tickets to base ticket objects (DB-first)
+      const baseMapped = (ticketData || []).map(t => {
+        const id = (t.no || '').replace('#','');
+        const displayQty = (typeof t.pass_quantity === 'number' && t.pass_quantity !== null)
+          ? t.pass_quantity
+          : (t.quantity || 0);
+        return {
+          id,
+          title: t.description || '',
+          priority: t.priority || 'ยังไม่ได้กำหนด Priority',
+          priorityClass: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+          status: 'Pending',
+          statusClass: 'text-blue-600',
+          assignee: '-',
+          time: '',
+          route: t.source_no || id,
+          routeClass: 'bg-blue-100 text-blue-800',
+          dueDate: t.due_date || '',
+          quantity: displayQty,
+          rpd: id,
+          itemCode: t.source_no || '',
+          projectCode: t.source_no || id,
+          projectName: t.description || id,
+          description: t.description || '',
+          description2: t.description_2 || '',
           stations: [],
-          isRework: true,
-          parentTicketNo: t.source_no
-        }));
+          roadmap: [],
+          customerName: t.customer_name || ''
+        };
+      });
       
-      console.log('[PRODUCTION] Rework tickets from DB:', reworkTickets);
+      // DB-first: ไม่ต้องสร้าง rework tickets แยก เพราะ baseMapped ครอบคลุมอยู่แล้ว
 
       // 3) Load station flows and assignments from DB
       let flows = [];
@@ -155,19 +135,7 @@ export default function ProductionPage() {
         }
       }
 
-      // Load tickets from DB for priority and customer info
-      let dbTickets = [];
-      {
-        const { data, error } = await supabase
-          .from('ticket')
-          .select('no, source_no, priority, customer_name')
-          .order('no', { ascending: false });
-        if (!error && Array.isArray(data)) {
-          dbTickets = data;
-        }
-      }
-
-      console.log('[PRODUCTION] Loaded flows:', flows?.length);
+      // console.log('[PRODUCTION] Loaded flows:', flows?.length);
 
       // assignments
       let assignments = [];
@@ -240,9 +208,8 @@ export default function ProductionPage() {
         console.warn('Error loading rework_roadmap:', e);
       }
 
-      console.log('[PRODUCTION] Loaded rework roadmaps:', reworkRoadmaps?.length);
-
-      console.log('[PRODUCTION] Loaded assignments:', assignments?.length);
+      // console.log('[PRODUCTION] Loaded rework roadmaps:', reworkRoadmaps?.length);
+      // console.log('[PRODUCTION] Loaded assignments:', assignments?.length);
 
       // Build assignment map for quick lookup (handle multiple technicians per station)
       // ใช้ step_order เพื่อให้แต่ละ step แยกกัน
@@ -280,13 +247,13 @@ export default function ProductionPage() {
 
       console.log('[PRODUCTION] Assignment map:', assignmentMap);
 
-      // 4) Merge flows/assignments into ERP tickets
-      const merged = erpMapped.map((t) => {
+      // 4) Merge flows/assignments into DB tickets
+      const merged = baseMapped.map((t) => {
         const ticketNo = String(t.id || t.rpd).replace('#','');
         const ticketFlows = flows.filter(f => f.ticket_no === ticketNo);
         
-        // Find corresponding DB ticket for priority and customer info
-        const dbTicket = dbTickets.find(db => db.no === ticketNo);
+        // Find corresponding DB ticket for extra fields
+        const dbTicket = (ticketData || []).find(db => db.no === ticketNo);
         
         console.log(`[PRODUCTION] Ticket ${ticketNo}: found ${ticketFlows.length} flows`);
         
@@ -320,23 +287,6 @@ export default function ProductionPage() {
         const status = calculateTicketStatus(stations, roadmap);
         const statusClass = getStatusClass(status);
 
-        // Use priority from Supabase if available
-        let priority = t.priority;
-        let priorityClass = t.priorityClass;
-        if (dbTicket && dbTicket.priority) {
-          priority = dbTicket.priority === "High" ? "High Priority" : 
-                    dbTicket.priority === "Low" ? "Low Priority" : "Medium Priority";
-          if (priority === "High Priority") {
-            priorityClass = "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400";
-          } else if (priority === "Medium Priority") {
-            priorityClass = "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400";
-          } else if (priority === "Low Priority") {
-            priorityClass = "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400";
-          } else {
-            priorityClass = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
-          }
-        }
-
         return { 
           ...t, 
           roadmap, 
@@ -344,70 +294,14 @@ export default function ProductionPage() {
           assignee: assignee || '-', 
           status, 
           statusClass,
-          priority,
-          priorityClass,
+          priority: t.priority,
+          priorityClass: t.priorityClass,
           customerName: dbTicket?.customer_name || t.customerName
         };
       });
       
-      // 5) เพิ่ม rework tickets พร้อม flows
-      const reworkMerged = reworkTickets.map(t => {
-        const ticketFlows = flows.filter(f => f.ticket_no === t.id && f.is_rework_ticket);
-        
-        // Build stations for rework ticket
-        // ใช้ rework_order_id แทน ticket_no เพื่อ match กับ assignmentMap ที่สร้างจาก rework_roadmap
-        const stations = ticketFlows
-          .map(f => {
-            const techKey = f.rework_order_id 
-              ? `${f.rework_order_id}-${f.station_id}-${f.step_order}` 
-              : `${f.ticket_no}-${f.station_id}-${f.step_order}`;
-            return {
-              name: f.stations?.name_th || 'Unknown',
-              technician: assignmentMap[techKey] || '-',
-              priceType: f.price_type || 'flat',
-              price: Number(f.price) || 0,
-              status: f.status || 'pending'
-            };
-          });
-        
-        const roadmap = ticketFlows.map(f => {
-          const techKey = f.rework_order_id 
-            ? `${f.rework_order_id}-${f.station_id}-${f.step_order}` 
-            : `${f.ticket_no}-${f.station_id}-${f.step_order}`;
-          return {
-            step: f.stations?.name_th || '',
-            status: f.status || 'pending',
-            technician: assignmentMap[techKey] || ''
-          };
-        });
-        
-        // Determine status
-        const currentFlow = flows.find(f => f.ticket_no === t.id && f.status === 'current' && f.is_rework_ticket);
-        const completedCount = flows.filter(f => f.ticket_no === t.id && f.status === 'completed' && f.is_rework_ticket).length;
-        
-        let status = 'In Progress';
-        let statusClass = 'text-purple-600';
-        
-        if (completedCount === stations.length && stations.length > 0) {
-          status = 'Finish';
-          statusClass = 'text-emerald-600';
-        }
-        
-        return {
-          ...t,
-          stations,
-          roadmap,
-          status,
-          statusClass
-        };
-      });
-
-      console.log('[PRODUCTION] Merged tickets:', merged.length);
-      console.log('[PRODUCTION] Rework tickets:', reworkMerged.length);
-      
-      // รวมตั๋วหลักและ rework tickets
-      const allTickets = [...merged, ...reworkMerged];
-      setTickets(allTickets);
+      // รวมเฉพาะ merged (ครอบคลุมทั้งตั๋วหลักและ -RW อยู่แล้ว) เพื่อหลีกเลี่ยง key ซ้ำ
+      setTickets(merged);
     } catch (e) {
       setLoadError(e?.message || 'Failed to load tickets');
     } finally {
@@ -483,6 +377,18 @@ export default function ProductionPage() {
           loadBatchData();
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ticket'
+        },
+        async () => {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          loadTickets();
+        }
+      )
       .subscribe((status) => {
         console.log('[PRODUCTION] Realtime subscription status:', status);
       });
@@ -493,43 +399,7 @@ export default function ProductionPage() {
     };
   }, []);
 
-  function mapErpRecordToTicket(record, projectMap = new Map()) {
-    const rec = record && record.data ? record.data : record;
-    const id = rec?.No || rec?.no || rec?.RPD_No || rec?.rpdNo || rec?.orderNumber || rec?.Order_No || rec?.No_ || rec?.id;
-    const quantity = Number(rec?.Quantity ?? rec?.quantity ?? 0);
-    const dueDate = rec?.Delivery_Date || rec?.deliveryDate || rec?.Ending_Date_Time || rec?.Ending_Date || rec?.Due_Date || "";
-    const itemCode = rec?.Source_No || rec?.Item_No || rec?.itemCode || rec?.Item_Code || rec?.Source_Item || "";
-    const description = rec?.Description || rec?.description || "";
-    const description2 = rec?.Description_2 || rec?.description2 || "";
-    const erpProjectCode = rec?.Shortcut_Dimension_2_Code || rec?.Project_Code || rec?.projectCode || rec?.Project || "";
-    const route = rec?.Routing_No || rec?.Routing || rec?.Route || "";
-    const rpdNo = String(id || "").trim();
-    const projectInfo = projectMap.get(rpdNo) || {};
-    const projectCode = projectInfo.projectCode || erpProjectCode;
-    const projectName = projectInfo.projectName || erpProjectCode;
-    return {
-      id: rpdNo,
-      title: description,
-      priority: "ยังไม่ได้กำหนด Priority",
-      priorityClass: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
-      status: "Pending",
-      statusClass: "text-blue-600",
-      assignee: "-",
-      time: "",
-      route: itemCode || route,
-      routeClass: "bg-blue-100 text-blue-800",
-      dueDate: dueDate || "",
-      quantity: quantity || 0,
-      rpd: rpdNo,
-      itemCode,
-      projectCode,
-      projectName,
-      description,
-      description2,
-      stations: [],
-      roadmap: [],
-    };
-  }
+  // ERP mapping removed (DB-first approach)
 
   function calculateTicketStatus(stations, roadmap) {
     if (!Array.isArray(stations) || stations.length === 0) return "Pending";
@@ -561,6 +431,10 @@ export default function ProductionPage() {
 
   const myTickets = useMemo(() => {
     if (!myName) return [];
+    if (isAdmin) {
+      // Admins see all tickets
+      return tickets;
+    }
     const filtered = tickets.filter((t) => {
       // ถ้าเป็น rework ticket ให้เช็ค technician จาก stations
       if (t.isRework || (t.id && t.id.includes('-RW'))) {
@@ -588,7 +462,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets]);
+  }, [myName, myNameLower, tickets, isAdmin]);
 
   const sumTicketAmount = (ticket) => {
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];

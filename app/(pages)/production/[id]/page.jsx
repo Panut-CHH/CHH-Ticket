@@ -9,7 +9,7 @@ import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
 
-function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = [] }) {
+function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], reworkOrders = [], userId = null, onAfterMerge }) {
   const currentIndex = ticket.roadmap.findIndex((s) => s.status === "current");
   const nextIndex = currentIndex >= 0 ? currentIndex + 1 : -1;
   const currentStep = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.step : null;
@@ -41,8 +41,8 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
   };
   
   // Check if current user is assigned to the step
-  const isAssignedToCurrent = isUserAssigned(currentTechnician, me);
-  const isAssignedToPending = isUserAssigned(firstPendingTechnician, me);
+  const isAssignedToCurrent = isAdmin || isUserAssigned(currentTechnician, me);
+  const isAssignedToPending = isAdmin || isUserAssigned(firstPendingTechnician, me);
 
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
@@ -212,9 +212,9 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
             </div>
           )}
           <div>ผู้รับผิดชอบ: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.assignee}</span></div>
-          {ticket.quantity && (
+          {typeof ticket.quantity === 'number' ? (
             <div>จำนวนที่ต้องผลิต: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.quantity.toLocaleString()} ชิ้น</span></div>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -296,7 +296,7 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
           </div>
 
           <div className="mt-4">
-            {isPendingQC && !isAssignedToPending && (
+            {isPendingQC && !isAssignedToPending && !isAdmin && (
               <div className="mb-3 p-3 rounded-lg border bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-900 dark:text-yellow-300 text-sm">
                 ขั้นตอนปัจจุบันเป็น QC กรุณารอให้ทีม QC ตรวจสอบให้เสร็จก่อนจึงจะเริ่มขั้นตอนถัดไปได้
               </div>
@@ -323,7 +323,7 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
             </div>
             
             {/* Warning message when user is not assigned to current step */}
-              {!isAssignedToPending && firstPendingStep && !isPendingQC && (
+              {!isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && (
                 <div className="mt-3 p-3 rounded-lg border bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-900 dark:text-orange-300 text-sm">
                   ⚠️ คุณไม่ได้รับมอบหมายให้ทำในสถานีนี้
                 </div>
@@ -528,16 +528,16 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
           )}
           
           {/* Rework Orders Information */}
-          {reworkOrders.length > 0 && (
+          {reworkOrders.filter(r => (r.status || 'pending') !== 'merged').length > 0 && (
             <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
               <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">
                 <div className="w-4 h-4 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center">
                   <span className="text-xs font-bold text-orange-600">R</span>
                 </div>
-                Rework Orders ({reworkOrders.length})
+                Rework Orders ({reworkOrders.filter(r => (r.status || 'pending') !== 'merged').length})
               </div>
               <div className="space-y-2">
-                {reworkOrders.map((rework) => (
+                {reworkOrders.filter(r => (r.status || 'pending') !== 'merged').map((rework) => (
                   <div key={rework.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-slate-700 rounded-lg">
                     <div className="flex items-center gap-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
@@ -552,9 +552,32 @@ function DetailCard({ ticket, onDone, onStart, me, batches = [], reworkOrders = 
                         {rework.quantity} ชิ้น
                       </span>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
                       {rework.severity === 'minor' ? 'เล็กน้อย' :
                        rework.severity === 'major' ? 'รุนแรง' : 'Custom'}
+                      {isAdmin && (
+                        <button
+                          onClick={async () => {
+                            try {
+                              const resp = await fetch(`/api/rework/${encodeURIComponent(rework.id)}/merge-approve`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ approvedBy: userId, notes: '' })
+                              });
+                              const json = await resp.json();
+                              if (!resp.ok) throw new Error(json?.error || 'Merge failed');
+                              if (typeof onAfterMerge === 'function') {
+                                await onAfterMerge();
+                              }
+                            } catch (e) {
+                              alert(`Merge failed: ${e.message}`);
+                            }
+                          }}
+                          className="ml-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
+                        >
+                          Merge
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -583,6 +606,7 @@ export default function ProductionDetailPage() {
   // Batch and rework data
   const [batches, setBatches] = useState([]);
   const [reworkOrders, setReworkOrders] = useState([]);
+  const [isClosed, setIsClosed] = useState(false);
 
   // Function to load batch and rework data
   const loadBatchData = useCallback(async () => {
@@ -618,6 +642,16 @@ export default function ProductionDetailPage() {
       console.error('Error loading batch data:', error);
     }
   }, [ticketId]);
+
+  // Evaluate Closed badge when ticket/reworkOrders change
+  useEffect(() => {
+    try {
+      if (!ticket) return;
+      if ((ticketId || '').includes('-RW')) { setIsClosed(false); return; }
+      const open = (reworkOrders || []).filter(r => (r.status || 'pending') !== 'merged' && (r.status || 'pending') !== 'cancelled');
+      setIsClosed((ticket.status === 'Finish') && open.length === 0);
+    } catch {}
+  }, [ticket, reworkOrders, ticketId]);
 
   // Function to reload ticket data from DB
   const reloadTicketData = useCallback(async () => {
@@ -657,13 +691,29 @@ export default function ProductionDetailPage() {
           parentTicketNo: dbTicket.source_no
         };
       } else {
-        // ถ้าเป็นตั๋วปกติ ให้ดึงจาก ERP
-        const resp = await fetch(`/api/erp/production-order/${encodeURIComponent(ticketId)}`);
-        if (!resp.ok) throw new Error(`ERP fetch failed: ${resp.status}`);
-        const json = await resp.json();
-        if (!json?.success || !json?.data) throw new Error('ไม่พบข้อมูล ERP สำหรับตั๋วนี้');
-        
-        erpTicket = mapErpToTicket(json.data);
+        // DB-first: โหลดตั๋วปกติจากฐานข้อมูล
+        const { data: dbTicket, error: dbError } = await supabase
+          .from('ticket')
+          .select('*')
+          .eq('no', ticketId)
+          .single();
+        if (dbError || !dbTicket) throw new Error('ไม่พบข้อมูลตั๋วในฐานข้อมูล');
+
+        erpTicket = {
+          id: dbTicket.no,
+          title: dbTicket.description || dbTicket.no,
+          quantity: dbTicket.quantity || 0,
+          itemCode: dbTicket.source_no || dbTicket.no,
+          description: dbTicket.description || '',
+          description2: dbTicket.description_2 || '',
+          dueDate: dbTicket.due_date || '',
+          priority: dbTicket.priority || 'Medium',
+          status: dbTicket.status || 'Released',
+          projectCode: dbTicket.source_no || '',
+          projectName: dbTicket.description || dbTicket.no,
+          isRework: false,
+          parentTicketNo: null
+        };
       }
 
       // 2) Load station flows for this ticket from DB
@@ -902,6 +952,8 @@ export default function ProductionDetailPage() {
             console.log('[DETAIL REALTIME] Reloaded roadmap:', refreshed.roadmap?.map(r => ({ step: r.step, status: r.status })));
             // Force re-render by creating new object reference
             setTicket({ ...refreshed, _refreshKey: Date.now() });
+            // Also refresh rework/batch data so rework count updates immediately
+            await loadBatchData();
             console.log('[DETAIL REALTIME] ✅ UI updated successfully');
           } catch (e) {
             console.error('[DETAIL REALTIME] Failed to reload:', e);
@@ -980,6 +1032,10 @@ export default function ProductionDetailPage() {
           console.log('[DETAIL REALTIME] 🔥 REWORK ORDER CHANGE DETECTED for ticket:', ticketId);
           await new Promise(resolve => setTimeout(resolve, 300));
           await loadBatchData();
+          try {
+            const refreshed = await reloadTicketData();
+            setTicket({ ...refreshed, _refreshKey: Date.now() });
+          } catch (e) { console.warn('Reload after rework change failed:', e); }
         }
       )
       .on(
@@ -995,7 +1051,27 @@ export default function ProductionDetailPage() {
             console.log('[DETAIL REALTIME] 🔥 FALLBACK rework_orders change for this ticket');
             await new Promise(resolve => setTimeout(resolve, 300));
             await loadBatchData();
+            try {
+              const refreshed = await reloadTicketData();
+              setTicket({ ...refreshed, _refreshKey: Date.now() });
+            } catch (e) { console.warn('Fallback reload after rework change failed:', e); }
           }
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ticket',
+          filter: `no=eq.${ticketId}`
+        },
+        async () => {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            const refreshed = await reloadTicketData();
+            setTicket({ ...refreshed, _refreshKey: Date.now() });
+          } catch {}
         }
       )
       .subscribe((status) => {
@@ -1025,6 +1101,7 @@ export default function ProductionDetailPage() {
               const refreshed = await reloadTicketData();
               console.log('[DETAIL REALTIME] FALLBACK: Reloaded ticket status:', refreshed.status);
               setTicket({ ...refreshed, _refreshKey: Date.now() });
+              await loadBatchData();
               console.log('[DETAIL REALTIME] ✅ FALLBACK: UI updated successfully');
             } catch (e) {
               console.error('[DETAIL REALTIME] FALLBACK: Failed to reload:', e);
@@ -1518,6 +1595,11 @@ export default function ProductionDetailPage() {
           <button onClick={() => router.push('/production')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-gray-100">
             <ArrowLeft className="w-4 h-4" /> กลับหน้า Production
           </button>
+          {isClosed && (
+            <span className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-100 text-emerald-800 text-sm border border-emerald-200">
+              ✅ Closed
+            </span>
+          )}
           <button 
             onClick={async () => {
               console.log('[MANUAL] Force refresh triggered');
@@ -1556,6 +1638,13 @@ export default function ProductionDetailPage() {
             onDone={handleDone} 
             onStart={handleStart} 
             me={myName}
+            isAdmin={(user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'superadmin'}
+            userId={user?.id || null}
+            onAfterMerge={async () => {
+              await loadBatchData();
+              const refreshed = await reloadTicketData();
+              setTicket({ ...refreshed, _refreshKey: Date.now() });
+            }}
             batches={batches}
             reworkOrders={reworkOrders}
           />

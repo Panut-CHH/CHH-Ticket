@@ -70,11 +70,19 @@ export async function POST(request, context) {
       return NextResponse.json({ error: "Failed to update parent ticket" }, { status: 500 });
     }
 
-    // 5) Mark rework order as completed/merged
-    await admin
-      .from('rework_orders')
-      .update({ status: 'completed', approval_status: 'approved', approved_by: approvedBy, approved_at: new Date().toISOString(), notes })
-      .eq('id', reworkOrderId);
+    // 5) Mark rework order as merged (with timestamp)
+    try {
+      await admin
+        .from('rework_orders')
+        .update({ status: 'merged', approval_status: 'approved', approved_by: approvedBy, merged_at: new Date().toISOString(), notes })
+        .eq('id', reworkOrderId);
+    } catch (e) {
+      // fallback: if merged_at column not exists
+      await admin
+        .from('rework_orders')
+        .update({ status: 'merged', approval_status: 'approved', approved_by: approvedBy, notes })
+        .eq('id', reworkOrderId);
+    }
 
     // 6) Optionally close rework ticket
     if (reworkTicketNo) {
@@ -84,7 +92,23 @@ export async function POST(request, context) {
         .eq('no', reworkTicketNo);
     }
 
-    // 7) Notify
+    // 7) Auto-finish parent if it has no pending/current steps left
+    try {
+      const { data: flows } = await admin
+        .from('ticket_station_flow')
+        .select('status')
+        .eq('ticket_no', reworkOrder.ticket_no);
+      const list = Array.isArray(flows) ? flows : [];
+      const hasActive = list.some(f => (f.status || 'pending') === 'pending' || (f.status || 'pending') === 'current');
+      if (!hasActive) {
+        await admin
+          .from('ticket')
+          .update({ status: 'Finished' })
+          .eq('no', reworkOrder.ticket_no);
+      }
+    } catch {}
+
+    // 8) Notify
     try {
       await admin.from('notifications').insert({
         type: 'batch_merged',

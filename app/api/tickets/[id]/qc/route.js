@@ -88,7 +88,7 @@ export async function POST(request, context) {
       return NextResponse.json({ error: "Missing ticket number" }, { status: 400 });
     }
 
-    const { formType, header, rows, categories } = body;
+    const { formType, header, rows, categories, passQuantity: bodyPassQty, failQuantity: bodyFailQty, qc_task_uuid: bodyQcTaskUuid } = body;
 
     // Debug logging
     console.log('=== QC API Debug ===');
@@ -105,6 +105,48 @@ export async function POST(request, context) {
 
     const admin = supabaseServer;
 
+    // Resolve qc_task_uuid: prefer from body, otherwise map active QC task for this ticket
+    let resolvedQcTaskUuid = bodyQcTaskUuid || null;
+    if (!resolvedQcTaskUuid) {
+      try {
+        // Prefer the current QC step; if none, take the first pending QC step
+        const { data: flows } = await admin
+          .from('ticket_station_flow')
+          .select('qc_task_uuid, status')
+          .eq('ticket_no', ticketNo)
+          .not('qc_task_uuid', 'is', null)
+          .order('step_order', { ascending: true });
+        if (Array.isArray(flows) && flows.length > 0) {
+          const current = flows.find(f => f.status === 'current');
+          const pending = flows.find(f => f.status === 'pending');
+          resolvedQcTaskUuid = current?.qc_task_uuid || pending?.qc_task_uuid || flows[0]?.qc_task_uuid || null;
+        }
+      } catch (e) {
+        console.warn('Failed to resolve qc_task_uuid, proceeding without it:', e?.message);
+      }
+    }
+
+    // Resolve station snapshot from qc_task_uuid for accurate historical linkage
+    let stationSnapshot = { station_id: null, step_order: null };
+    if (resolvedQcTaskUuid) {
+      try {
+        const { data: flowRow } = await admin
+          .from('ticket_station_flow')
+          .select('station_id, step_order')
+          .eq('ticket_no', ticketNo)
+          .eq('qc_task_uuid', resolvedQcTaskUuid)
+          .maybeSingle();
+        if (flowRow) {
+          stationSnapshot = {
+            station_id: flowRow.station_id || null,
+            step_order: flowRow.step_order ?? null
+          };
+        }
+      } catch (e) {
+        console.warn('Failed to get station snapshot:', e?.message);
+      }
+    }
+
     // สร้าง QC session
     const sessionPayload = {
       ticket_no: ticketNo,
@@ -114,6 +156,10 @@ export async function POST(request, context) {
       inspector: header?.inspector || null,
       inspected_date: header?.inspectedDate || new Date().toISOString().split("T")[0],
       remark: header?.remark || null,
+      qc_task_uuid: resolvedQcTaskUuid || null,
+      inspector_id: header?.inspector_id || null,
+      station_id: stationSnapshot.station_id,
+      step_order: stationSnapshot.step_order,
     };
 
     const { data: session, error: sessionError } = await admin
@@ -194,8 +240,46 @@ export async function POST(request, context) {
     const passRate = calculatePassRate(insertedRows);
     console.log('Calculated Pass Rate:', passRate);
 
-    // อัปเดตสถานะตั๋วตาม pass rate
+    // คำนวณจำนวนที่ไม่ผ่านจาก rows (fallback ถ้าไม่ได้ส่งมาใน body)
     const failedRows = insertedRows.filter((r) => r.pass === false);
+    const failedQtyFromRows = failedRows.reduce((sum, r) => sum + (Number(r.actual_qty) || 0), 0);
+
+    // อัปเดตจำนวนผ่าน/ตั้งต้นใน ticket (ใช้ DB เป็น source of truth)
+    try {
+      const { data: ticketRow } = await admin
+        .from('ticket')
+        .select('quantity, pass_quantity, initial_quantity')
+        .eq('no', ticketNo)
+        .single();
+
+      const initialQty = Number(ticketRow?.initial_quantity);
+      const quantity = Number(ticketRow?.quantity) || 0;
+      const hasInitial = Number.isFinite(initialQty);
+      const currentPass = Number.isFinite(ticketRow?.pass_quantity) ? Number(ticketRow?.pass_quantity) : null;
+      const baseForCalc = Number.isFinite(currentPass) ? currentPass : quantity; // COALESCE(pass_quantity, quantity)
+
+      const providedFail = Number(bodyFailQty);
+      const failQty = Number.isFinite(providedFail) ? providedFail : failedQtyFromRows;
+
+      // Authoritative calculation on server: newPass = COALESCE(pass_quantity, quantity) - failQty
+      let newPassQuantity = Math.max(0, baseForCalc - (Number(failQty) || 0));
+
+      if (newPassQuantity !== null) {
+        const updatePayload = { pass_quantity: newPassQuantity };
+        if (!hasInitial) updatePayload.initial_quantity = quantity; // lock initial once
+        const { error: updateTicketErr } = await admin
+          .from('ticket')
+          .update(updatePayload)
+          .eq('no', ticketNo);
+        if (updateTicketErr) {
+          console.warn('Failed updating ticket pass_quantity:', updateTicketErr.message);
+        }
+      }
+    } catch (e) {
+      console.warn('Ticket quantity update failed (non-fatal):', e.message);
+    }
+
+    // อัปเดตสถานะตั๋วตาม pass rate
     console.log('Failed Rows:', failedRows);
 
     try {
@@ -220,6 +304,29 @@ export async function POST(request, context) {
     } catch (workflowError) {
       console.error("Error in QC workflow:", workflowError);
       // ไม่ return error เพราะ QC session ถูกสร้างแล้ว
+    }
+
+    // Store a snapshot of input and computed summary for immutable audit
+    try {
+      const snapshot = {
+        input: {
+          formType,
+          header,
+          categories,
+          rows
+        },
+        computed: {
+          passRate,
+          failedQtyFromRows,
+          providedFail: Number(bodyFailQty) || null
+        }
+      };
+      await admin
+        .from('qc_sessions')
+        .update({ snapshot_json: snapshot })
+        .eq('id', session.id);
+    } catch (e) {
+      console.warn('Failed to save snapshot_json:', e?.message);
     }
 
     const response = {

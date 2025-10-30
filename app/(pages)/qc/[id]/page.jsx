@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRouter } from "next/navigation";
@@ -71,6 +71,19 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   const [activeQcTaskUuid, setActiveQcTaskUuid] = useState(null);
   const [qcCompleted, setQcCompleted] = useState(false);
 
+  // Toast state
+  const [toast, setToast] = useState({ open: false, type: "info", message: "" });
+  const showToast = (message, type = "info", timeoutMs = 2500) => {
+    setToast({ open: true, type, message });
+    if (timeoutMs > 0) {
+      setTimeout(() => setToast((t) => ({ ...t, open: false })), timeoutMs);
+    }
+  };
+
+  // Team presence (soft lock)
+  const [collaborators, setCollaborators] = useState([]); // list of other users
+  const othersEditing = collaborators.length > 0;
+
   const storageKey = `qc_main_form_${id}`;
 
   // Load draft from localStorage
@@ -95,16 +108,46 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     loadHistory();
   }, [id]);
 
+  // Presence channel for soft-lock teamwork guard
+  useEffect(() => {
+    if (!id || !user?.id) return;
+    const channel = supabase.channel(`qc-form-${id}`, {
+      config: { presence: { key: user.id } }
+    });
+
+    channel.on('presence', { event: 'sync' }, () => {
+      try {
+        const state = channel.presenceState();
+        const others = Object.entries(state)
+          .filter(([key]) => key !== user.id)
+          .flatMap(([, arr]) => arr)
+          .map((p) => ({ userId: p.user_id, name: p.name }));
+        setCollaborators(others);
+      } catch {}
+    });
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        try {
+          await channel.track({ user_id: user.id, name: user.name || user.email || 'user' });
+        } catch {}
+      }
+    });
+
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [id, user?.id]);
+
   const loadTicketData = async () => {
     try {
-      // Load ticket data from ERP
-      const resp = await fetch(`/api/erp/production-order/${encodeURIComponent(id)}`);
-      if (resp.ok) {
-        const json = await resp.json();
-        if (json?.success && json?.data) {
-          setTicketData(json.data);
-        }
-      }
+      // DB-first: load ticket from database
+      const { data: dbTicket, error: dbError } = await supabase
+        .from('ticket')
+        .select('*')
+        .eq('no', id)
+        .single();
+      if (!dbError && dbTicket) setTicketData(dbTicket);
       
       // Load ticket_station_flow to create default roadmap
       await loadTicketStationFlow();
@@ -136,6 +179,11 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
           return isQC && ['pending','current'].includes(f.status || 'pending');
         })[0] || null;
       setActiveQcTaskUuid(activeQc?.qc_task_uuid || null);
+      // หากสถานี QC ของตั๋วนี้เป็นสถานะกำลังดำเนินการอยู่ (current)
+      // ให้เปิดฟอร์มอัตโนมัติ โดยไม่ต้องกด "เริ่ม QC" ใหม่
+      if (activeQc && String(activeQc.status || '') === 'current') {
+        setQcStarted(true);
+      }
 
       // แปลงเป็น default roadmap
       const roadmap = flows.map((flow, index) => ({
@@ -253,8 +301,10 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       return { passQuantity: 0, failQuantity: 0, totalQuantity: 0, passRate: 0 };
     }
 
-    // จำนวนชิ้นงานทั้งหมดจากตั๋ว
-    const totalTicketQuantity = ticketData?.data?.Quantity || ticketData?.Quantity || 0;
+    // จำนวนชิ้นงานทั้งหมดจากตั๋ว (DB-first)
+    const totalTicketQuantity = (typeof ticketData?.pass_quantity === 'number' && ticketData?.pass_quantity !== null)
+      ? ticketData.pass_quantity
+      : (ticketData?.quantity || 0);
     
     if (totalTicketQuantity === 0) {
       // ถ้าไม่มีข้อมูลตั๋ว ให้ใช้วิธีเดิม
@@ -339,6 +389,10 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     }
 
     try {
+      if (othersEditing) {
+        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
+        return;
+      }
       setSaving(true);
       
       const inspectorName = (user?.name || user?.email || "").trim();
@@ -348,6 +402,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         formType: 'main_qc',
         header: {
           inspector: inspectorName,
+          inspector_id: user?.id || null,
           inspectedDate,
           remark: `QC Form for ticket ${id}`
         },
@@ -416,20 +471,21 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         const responseData = await resp.json();
         console.log('Response Data:', responseData);
         try { localStorage.removeItem(storageKey); } catch {}
+        showToast(language === 'th' ? 'บันทึกสำเร็จ' : 'Saved', 'success');
         // กลับไปหน้า QC หลักอัตโนมัติหลังบันทึกสำเร็จ
         router.replace('/qc');
         return;
       } else {
         const json = await resp.json().catch(() => ({}));
         console.log('Error Response:', json);
-        alert(`Save failed: ${json?.error || resp.status}`);
+        showToast(`Save failed: ${json?.error || resp.status}`, 'error', 4000);
       }
     } catch (e) {
       console.error('=== QC Form Error ===');
       console.error('Error:', e);
       console.error('Error Message:', e.message);
       console.error('Error Stack:', e.stack);
-      alert(`Save failed: ${e.message}`);
+      showToast(`Save failed: ${e.message}`, 'error', 4000);
     } finally {
       setSaving(false);
     }
@@ -438,6 +494,10 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   // จัดการการสร้าง Rework Order
   const handleReworkOrder = async (reworkOrderData) => {
     try {
+      if (othersEditing) {
+        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
+        return;
+      }
       setSaving(true);
       
       const inspectorName = (user?.name || user?.email || "").trim();
@@ -448,6 +508,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         formType: 'main_qc',
         header: {
           inspector: inspectorName,
+          inspector_id: user?.id || null,
           inspectedDate,
           remark: `QC Form for ticket ${id}`
         },
@@ -558,6 +619,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         // กลับไปหน้า QC หลักอัตโนมัติหลังสร้าง Rework Order สำเร็จ
         setShowBatchSplitModal(false);
         setReworkData(null);
+        showToast(language === 'th' ? 'สร้าง Rework สำเร็จ' : 'Rework created', 'success');
         router.replace('/qc');
         return;
       } else {
@@ -569,7 +631,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       }
     } catch (error) {
       console.error('Error creating rework order:', error);
-      alert(`เกิดข้อผิดพลาด: ${error.message}`);
+      showToast(`เกิดข้อผิดพลาด: ${error.message}`, 'error', 4000);
     } finally {
       setSaving(false);
     }
@@ -742,7 +804,14 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     type="radio"
                     name={`pass_${item.id}`}
                     checked={item.pass === true}
-                    onChange={() => updateItem(categoryKey, item.id, 'pass', true)}
+                    onChange={() => {
+                      updateItem(categoryKey, item.id, 'pass', true);
+                      // ล้าง qty และ reason เมื่อเปลี่ยนเป็น "ผ่าน"
+                      if (item.qty || item.reason) {
+                        updateItem(categoryKey, item.id, 'qty', '');
+                        updateItem(categoryKey, item.id, 'reason', '');
+                      }
+                    }}
                     className="w-4 h-4"
                     disabled={!qcStarted}
                   />
@@ -752,7 +821,13 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     type="radio"
                     name={`pass_${item.id}`}
                     checked={item.pass === false}
-                    onChange={() => updateItem(categoryKey, item.id, 'pass', false)}
+                    onChange={() => {
+                      // set fail and default qty=1 if empty
+                      updateItem(categoryKey, item.id, 'pass', false);
+                      if (!item.qty || String(item.qty).trim() === '' || String(item.qty) === '0') {
+                        updateItem(categoryKey, item.id, 'qty', '1');
+                      }
+                    }}
                     className="w-4 h-4"
                     disabled={!qcStarted}
                   />
@@ -760,21 +835,34 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                 <td className="px-3 py-2 border">
                   <input
                     type="number"
-                    className="w-full px-2 py-1 text-sm border rounded"
+                    className="w-full px-2 py-1 text-sm border rounded disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500"
                     value={item.qty}
-                    onChange={e => updateItem(categoryKey, item.id, 'qty', e.target.value)}
+                    onChange={e => {
+                      const raw = e.target.value;
+                      if (raw === '') { updateItem(categoryKey, item.id, 'qty', ''); return; }
+                      const n = Math.max(0, parseInt(raw, 10) || 0);
+                      updateItem(categoryKey, item.id, 'qty', String(n));
+                    }}
                     placeholder="0"
-                    disabled={!qcStarted}
+                    disabled={!qcStarted || item.pass !== false}
+                    onWheel={(e) => { e.currentTarget.blur(); }}
+                    min={0}
+                    step={1}
+                    inputMode="numeric"
+                    onKeyDown={(e) => {
+                      const blocked = ['e','E','+','-'];
+                      if (blocked.includes(e.key)) e.preventDefault();
+                    }}
                   />
                 </td>
                 <td className="px-3 py-2 border">
                   <input
                     type="text"
-                    className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-amber-400/60 ${item.pass === false && !item.reason ? 'border-amber-500 bg-amber-50 placeholder-amber-400' : ''}`}
+                    className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-amber-400/60 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500 ${item.pass === false && !item.reason ? 'border-amber-500 bg-amber-50 placeholder-amber-400' : ''}`}
                     value={item.reason}
                     onChange={e => updateItem(categoryKey, item.id, 'reason', e.target.value)}
                     placeholder={language === 'th' ? 'สาเหตุ' : 'Reason'}
-                    disabled={!qcStarted}
+                    disabled={!qcStarted || item.pass !== false}
                   />
                 </td>
                 <td className="px-3 py-2 border text-center">
@@ -809,6 +897,57 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       <RoleGuard pagePath="/qc">
         <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-gray-50 dark:bg-slate-900">
           <div className="max-w-6xl mx-auto">
+            {/* Toast */}
+            {toast.open && (
+              <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-md shadow ${
+                toast.type === 'success' ? 'bg-emerald-600 text-white' :
+                toast.type === 'error' ? 'bg-red-600 text-white' :
+                toast.type === 'warning' ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'
+              }`}>
+                {toast.message}
+              </div>
+            )}
+
+            {/* Presence warning */}
+            {othersEditing && (
+              <div className="mb-3 p-3 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-sm">
+                {language === 'th' ? 'มีผู้ใช้อื่นกำลังเปิดฟอร์มนี้: ' : 'Other editors: '} {collaborators.map(c => c.name || 'user').join(', ')}
+              </div>
+            )}
+
+            {/* Document summary & report link */}
+            {Array.isArray(history) && history.length > 0 && (
+              <div className="mb-4 p-3 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'เอกสารการตรวจล่าสุด' : 'Latest QC Document'}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      {new Date(history[0]?.created_at || Date.now()).toLocaleString()}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const sid = history[0]?.id;
+                        if (sid) window.open(`/qc/report/${encodeURIComponent(sid)}`, '_blank');
+                      }}
+                      className="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm"
+                    >
+                      {language === 'th' ? 'พิมพ์/บันทึก PDF' : 'Print/Save PDF'}
+                    </button>
+                    <button
+                      onClick={() => {
+                        const url = `/qc/history?ticket_no=${encodeURIComponent(id)}`;
+                        window.open(url, '_blank');
+                      }}
+                      className="px-3 py-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 text-sm"
+                    >
+                      {language === 'th' ? 'ประวัติการตรวจทั้งหมด' : 'All QC History'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Header */}
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
               <div className="flex items-center gap-4 mb-4">
@@ -830,12 +969,12 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     <p className="text-sm">
                       <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
                       <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
-                        {(ticketData?.data?.Quantity || ticketData?.Quantity || 0).toLocaleString()} ชิ้น
+                        {(((typeof ticketData?.pass_quantity === 'number' && ticketData?.pass_quantity !== null) ? ticketData.pass_quantity : (ticketData?.quantity || 0)) || 0).toLocaleString()} ชิ้น
                       </span>
                     </p>
                     <p className="text-sm">
                       <span className="font-medium">รายการ:</span> 
-                      <span className="ml-2">{ticketData?.data?.Description || ticketData?.Description || '-'}</span>
+                      <span className="ml-2">{ticketData?.description || '-'}</span>
                     </p>
                   </div>
                 )}

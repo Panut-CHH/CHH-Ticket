@@ -51,7 +51,34 @@ export async function POST(request, context) {
       return NextResponse.json({ error: "Failed to approve rework order" }, { status: 500 });
     }
 
-    // 3. สร้าง Rework Ticket ใหม่
+    // 3. คำนวณ root ticket (สุดสาย) เพื่อผูกกับ rework order ทั้งสาย
+    let rootTicketNo = reworkOrder.ticket_no;
+    try {
+      let currentNo = reworkOrder.ticket_no;
+      let guard = 0;
+      while (currentNo && currentNo.includes('-RW') && guard < 10) {
+        const { data: t } = await admin.from('ticket').select('no, source_no').eq('no', currentNo).single();
+        if (!t || !t.source_no || t.source_no === currentNo) break;
+        currentNo = t.source_no;
+        guard++;
+      }
+      rootTicketNo = currentNo || reworkOrder.ticket_no;
+    } catch (e) {
+      console.warn('Failed to resolve root ticket (non-fatal):', e?.message);
+      rootTicketNo = reworkOrder.ticket_no;
+    }
+
+    // พยายามอัปเดต root_ticket_no (ถ้าไม่มีคอลัมน์จะข้าม)
+    try {
+      await admin
+        .from('rework_orders')
+        .update({ root_ticket_no: rootTicketNo })
+        .eq('id', reworkOrderId);
+    } catch (e) {
+      console.warn('Optional: root_ticket_no column missing or update failed');
+    }
+
+    // 4. สร้าง Rework Ticket ใหม่
     if (!reworkOrder.rework_roadmap || reworkOrder.rework_roadmap.length === 0) {
       console.warn('No roadmap found for rework order');
       return NextResponse.json({ error: "No roadmap found" }, { status: 400 });
@@ -69,11 +96,11 @@ export async function POST(request, context) {
       return NextResponse.json({ error: "Original ticket not found" }, { status: 404 });
     }
 
-    // 3.2 สร้าง Rework Ticket Number
+    // 4.2 สร้าง Rework Ticket Number
     const reworkTicketNo = `${reworkOrder.ticket_no}-RW${Date.now().toString().slice(-6)}`;
     console.log('Creating rework ticket:', reworkTicketNo);
 
-    // 3.3 สร้างตั๋วใหม่สำหรับ Rework
+    // 4.3 สร้างตั๋วใหม่สำหรับ Rework
     const { data: reworkTicket, error: reworkTicketError } = await admin
       .from('ticket')
       .insert({
@@ -98,7 +125,7 @@ export async function POST(request, context) {
 
     console.log('Rework ticket created:', reworkTicket);
 
-    // 3.4 สร้าง ticket_station_flow สำหรับ Rework Ticket
+    // 4.4 สร้าง ticket_station_flow สำหรับ Rework Ticket
     // เปลี่ยนให้ทุก station เริ่มต้นเป็น pending (ไม่ใช่ current)
     const flowData = reworkOrder.rework_roadmap.map((step, index) => ({
       ticket_no: reworkTicketNo,
@@ -125,7 +152,7 @@ export async function POST(request, context) {
     
     console.log('Successfully created rework flows');
 
-    // 3.5 อัปเดต ticket_batches
+    // 4.5 อัปเดต ticket_batches
     const { error: batchUpdateError } = await admin
       .from('ticket_batches')
       .update({
@@ -140,7 +167,7 @@ export async function POST(request, context) {
       console.error('Error updating batch:', batchUpdateError);
     }
 
-    // 4. ส่ง Notification ไปหาช่างที่ได้รับมอบหมาย
+    // 5. ส่ง Notification ไปหาช่างที่ได้รับมอบหมาย
     const technicianIds = reworkOrder.rework_roadmap
       ?.map(step => step.assigned_technician_id)
       .filter(id => id);
@@ -164,7 +191,7 @@ export async function POST(request, context) {
       }
     }
 
-    // 5. ส่ง Notification ไปหา QC Inspector
+    // 6. ส่ง Notification ไปหา QC Inspector
     try {
       const { error: qcNotificationError } = await admin
         .from('notifications')

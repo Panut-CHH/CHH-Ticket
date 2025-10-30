@@ -483,6 +483,15 @@ export default function UIProject() {
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('manageProjects', language)}</h1>
               <p className="text-gray-600 dark:text-gray-400">{t('uploadBlueprintDesc', language)}</p>
             </div>
+            <div className="ml-auto">
+              <button
+                onClick={() => router.push('/dashboard')}
+                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/10 transition-colors"
+                title={language === 'th' ? 'เปิดแดชบอร์ด' : 'Open Dashboard'}
+              >
+                📊 <span className="hidden sm:inline">{language === 'th' ? 'แดชบอร์ด' : 'Dashboard'}</span>
+              </button>
+            </div>
           </div>
 
           {/* ERP Connection Status */}

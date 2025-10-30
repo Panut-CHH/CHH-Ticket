@@ -49,8 +49,22 @@ export async function POST(request, { params }) {
       );
     }
 
+    // Admin bypass: allow admin/superadmin to operate any step
+    let isAdmin = false;
+    try {
+      const { data: userRow } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', user_id)
+        .maybeSingle();
+      const role = String(userRow?.role || '').toLowerCase();
+      if (role === 'admin' || role === 'superadmin') {
+        isAdmin = true;
+      }
+    } catch {}
+
     // Check if user is assigned to this station (ต้องใช้ step_order เพื่อให้แต่ละ step แยกกัน)
-    console.log('[API] Checking assignment for:', { ticketNo, station_id, step_order, user_id });
+    console.log('[API] Checking assignment for:', { ticketNo, station_id, step_order, user_id, isAdmin });
     
     const { data: assignment, error: assignmentError } = await supabaseAdmin
       .from('ticket_assignments')
@@ -61,7 +75,7 @@ export async function POST(request, { params }) {
       .eq('technician_id', user_id)
       .single();
 
-    if (assignmentError || !assignment) {
+    if (!isAdmin && (assignmentError || !assignment)) {
       console.log('[API] Assignment check failed in ticket_assignments, trying rework_roadmap fallback...');
       // Fallback สำหรับตั๋ว Rework: ตรวจใน rework_roadmap
       try {
@@ -82,7 +96,7 @@ export async function POST(request, { params }) {
             .eq('step_order', step_order)
             .single();
 
-          if (rwAssign && rwAssign.assigned_technician_id === user_id) {
+          if (isAdmin || (rwAssign && rwAssign.assigned_technician_id === user_id)) {
             console.log('[API] Fallback rework_roadmap assignment matched. Proceeding.');
           } else {
             return NextResponse.json(
@@ -91,23 +105,25 @@ export async function POST(request, { params }) {
             );
           }
         } else {
+          if (!isAdmin) {
+            return NextResponse.json(
+              { success: false, error: 'You are not assigned to this station' },
+              { status: 403 }
+            );
+          }
+        }
+      } catch (e) {
+        console.warn('[API] Fallback rework assignment check error:', e?.message);
+        if (!isAdmin) {
           return NextResponse.json(
             { success: false, error: 'You are not assigned to this station' },
             { status: 403 }
           );
         }
-      } catch (e) {
-        console.warn('[API] Fallback rework assignment check error:', e?.message);
-        return NextResponse.json(
-          { success: false, error: 'You are not assigned to this station' },
-          { status: 403 }
-        );
       }
     }
 
-    console.log('[API] Assignment found:', assignment);
-
-    console.log('[API] User is assigned to station, proceeding with update');
+    console.log('[API] Assignment check passed (admin bypass =', isAdmin, ') proceeding');
 
     if (action === 'start') {
       // Get all flows for this ticket
