@@ -202,8 +202,84 @@ export default function DashboardPage() {
         const safeStatusData = totalStatus > 0 ? statusValues : [1,0,0,0];
         const inst = new Chart(statusChartRef.current.getContext('2d'), {
           type: 'doughnut',
-          data: { labels: ['Open','In Progress','Waiting','Done'], datasets: [{ data: safeStatusData, backgroundColor: ['#34d399','#10b981','#f4c06a','#94a3b8'], borderWidth: 0 }] },
-          options: { plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }, cutout: '62%'}
+          data: {
+            labels: ['Open','In Progress','Waiting','Done'],
+            datasets: [{
+              data: safeStatusData,
+              backgroundColor: ['#3b82f6', '#10b981', '#f59e0b', '#6366f1'],
+              borderWidth: 2,
+              borderColor: '#ffffff',
+              hoverBackgroundColor: ['#2563eb', '#059669', '#d97706', '#4f46e5'],
+              hoverBorderWidth: 3,
+              hoverBorderColor: '#ffffff'
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+              title: {
+                display: true,
+                text: 'สถานะตั๋วทั้งหมด',
+                font: { size: 16, weight: 'bold' },
+                padding: { top: 10, bottom: 20 },
+                color: '#1f2937'
+              },
+              legend: {
+                position: 'bottom',
+                labels: {
+                  boxWidth: 15,
+                  padding: 15,
+                  font: { size: 12 },
+                  usePointStyle: true,
+                  pointStyle: 'circle'
+                }
+              },
+              tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                padding: 12,
+                titleFont: { size: 14, weight: 'bold' },
+                bodyFont: { size: 13 },
+                callbacks: {
+                  label: function(context) {
+                    const label = context.label || '';
+                    const value = context.parsed || 0;
+                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                    return `${label}: ${value} ตั๋ว (${percentage}%)`;
+                  }
+                }
+              }
+            },
+            cutout: '65%'
+          },
+          plugins: [{
+            id: 'centerText',
+            beforeDraw: function(chart) {
+              const ctx = chart.ctx;
+              const width = chart.width;
+              const height = chart.height;
+              const total = chart.data.datasets[0].data.reduce((a, b) => a + b, 0);
+
+              ctx.restore();
+              ctx.font = 'bold 24px sans-serif';
+              ctx.fillStyle = '#1f2937';
+              ctx.textBaseline = 'middle';
+              ctx.textAlign = 'center';
+
+              const text = total.toString();
+              const textX = width / 2;
+              const textY = height / 2 - 10;
+
+              ctx.fillText(text, textX, textY);
+
+              ctx.font = '12px sans-serif';
+              ctx.fillStyle = '#6b7280';
+              ctx.fillText('ตั๋วทั้งหมด', textX, textY + 25);
+
+              ctx.save();
+            }
+          }]
         });
         statusChartRef.current._chart = inst;
       }
