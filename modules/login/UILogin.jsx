@@ -268,15 +268,6 @@ export default function UILogin() {
                       )}
                     </Button>
                   </div>
-
-                  <div className="text-center pt-2 animate-in fade-in-0 slide-in-from-left-4 duration-500 delay-700">
-                    <div className="inline-flex items-center gap-2 px-3 py-2 bg-gray-50/80 dark:bg-gray-700/50 backdrop-blur-sm rounded-lg">
-                      <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-                      <p className="text-xs text-gray-500 dark:text-gray-400">
-                        {t('testAccount', language)}: <span className="font-mono text-primary">admin@example.com</span> / <span className="font-mono text-primary">password123</span>
-                      </p>
-                    </div>
-                  </div>
                 </form>
               </div>
             </div>
