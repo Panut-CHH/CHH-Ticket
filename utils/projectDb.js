@@ -4,7 +4,8 @@
  */
 
 import { supabase } from './supabaseClient';
-import { logActivity } from './activityLogger';
+// Use client-side logger to avoid RLS issues and prevent exposing service role
+import { logActivity } from './clientLogger';
 
 /**
  * โครงสร้างตาราง projects ใน Supabase
