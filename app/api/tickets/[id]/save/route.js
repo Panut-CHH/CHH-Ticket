@@ -1,6 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { logApiCall, logError } from '@/utils/activityLogger';
+import { createTicketAssignmentNotification } from '@/utils/notificationManager';
 
 // สร้าง Supabase client ที่ใช้ session ของผู้ใช้ (รองรับทั้ง Cookie และ Authorization header)
 async function createSupabaseClient(request) {
@@ -262,7 +264,7 @@ export async function POST(request, { params }) {
         }
 
         if (technicianId) {
-          await supabase
+          const assignmentResult = await supabase
             .from('ticket_assignments')
             .insert({
               ticket_no: ticketId,
@@ -271,10 +273,37 @@ export async function POST(request, { params }) {
               technician_id: technicianId,
               assignment_type: 'primary',
               status: 'assigned',
-            });
+              assigned_by: user.id,
+            })
+            .select()
+            .single();
+
+          // แจ้งเตือนช่างเมื่อได้รับมอบหมาย
+          if (assignmentResult.data && !assignmentResult.error) {
+            // ดึงชื่อสถานี
+            const { data: stationData } = await supabase
+              .from('stations')
+              .select('name_th')
+              .eq('id', stationId)
+              .single();
+            
+            await createTicketAssignmentNotification(
+              ticketId,
+              technicianId,
+              stationData?.name_th || station.name,
+              user.id
+            );
+          }
         }
       }
     }
+
+    // Log successful ticket update
+    await logApiCall(request, 'update', 'ticket', ticketId, {
+      ticket_no: ticketId,
+      stations_count: stations?.length || 0,
+      priority
+    }, 'success', null, user ? { id: user.id, email: user.email, name: user.user_metadata?.full_name || user.email?.split("@")[0] } : null);
 
     return NextResponse.json({
       success: true,
@@ -283,6 +312,12 @@ export async function POST(request, { params }) {
 
   } catch (error) {
     console.error('Error in save ticket API:', error);
+    const { id: ticketId } = params || {};
+    await logError(error, {
+      action: 'update',
+      entityType: 'ticket',
+      entityId: ticketId
+    }, request);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

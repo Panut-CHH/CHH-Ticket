@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -60,14 +61,17 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'User created successfully',
       userId: userId
     });
+    await logApiCall(request, 'create', 'user', userId, { email, role }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error in create user API:', error);
+    await logError(error, { action: 'create', entityType: 'user' }, request);
     return NextResponse.json(
       { success: false, error: error.message.includes('service key') ? 'Server misconfiguration: service key missing' : error.message },
       { status: error.message.includes('service key') ? 500 : 500 }

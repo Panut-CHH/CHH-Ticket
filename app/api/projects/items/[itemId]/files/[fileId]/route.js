@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { deleteFile } from '@/utils/projectFilesDb';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * DELETE /api/projects/items/[itemId]/files/[fileId]
@@ -18,13 +19,17 @@ export async function DELETE(request, ctx) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       error: null
     });
+    // Log delete project file
+    await logApiCall(request, 'delete', 'project_file', fileId, {}, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error deleting file:', error);
+    await logError(error, { action: 'delete', entityType: 'project_file', entityId: (await ctx.params)?.fileId }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

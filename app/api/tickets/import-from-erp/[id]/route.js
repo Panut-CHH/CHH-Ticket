@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { fetchProductionOrder } from '@/utils/erpApi';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 // Supabase admin client
 const supabaseAdmin = createClient(
@@ -52,9 +53,16 @@ export async function GET(req, { params }) {
 
     if (error) throw error;
 
-    return NextResponse.json({ success: true, data: { no: upserted?.no || rpdNo } });
+    const response = NextResponse.json({ success: true, data: { no: upserted?.no || rpdNo } });
+    await logApiCall(req, 'create', 'ticket_import', upserted?.no || rpdNo, {
+      source: 'erp',
+      rpd_no: rpdNo,
+      item_code: itemCode
+    }, 'success', null);
+    return response;
   } catch (e) {
     console.error('[IMPORT ERP] error:', e);
+    await logError(e, { action: 'create', entityType: 'ticket_import', entityId: (await params)?.id }, req);
     return NextResponse.json({ success: false, error: e?.message || 'Internal server error' }, { status: 500 });
   }
 }

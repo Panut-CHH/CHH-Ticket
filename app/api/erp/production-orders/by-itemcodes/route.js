@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 export async function POST(request) {
   try {
@@ -19,13 +20,16 @@ export async function POST(request) {
     
     console.log(`✅ Found ${allTickets.length} tickets matching item codes`);
     
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: allTickets
     });
+    await logApiCall(request, 'read', 'erp_by_itemcodes', null, { itemCodesCount: itemCodes.length, resultCount: allTickets.length }, 'success', null);
+    return response;
     
   } catch (error) {
     console.error('API Error:', error);
+    await logError(error, { action: 'read', entityType: 'erp_by_itemcodes' }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

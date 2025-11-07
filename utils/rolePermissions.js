@@ -1,23 +1,23 @@
 // Role-based permissions configuration
 export const ROLE_PERMISSIONS = {
   Drawing: {
-    pages: ['dashboard', 'project', 'settings', 'debug-user-role'],
+    pages: ['project', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
   Technician: {
-    pages: ['production', 'settings', 'debug-user-role'],
+    pages: ['production', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
   QC: {
-    pages: ['dashboard', 'qc', 'settings', 'debug-user-role'],
+    pages: ['qc', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
   Admin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role', 'reports'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security', 'users']
   },
   SuperAdmin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role', 'reports'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security', 'users', 'erpTest']
   }
 };

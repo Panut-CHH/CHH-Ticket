@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { uploadFile } from '@/utils/projectFilesDb';
 import { supabaseServer } from '@/utils/supabaseServer';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * POST /api/projects/items/[itemId]/upload
@@ -89,14 +90,24 @@ export async function POST(request, ctx) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: { id: result.data.id },
       error: null
     });
+    // Log file upload
+    await logApiCall(request, 'create', 'project_file', result.data?.id, {
+      project_item_id: itemId,
+      file_name: file.name,
+      file_path: filePath,
+      file_type: fileExt,
+      file_size: file.size
+    }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error uploading file:', error);
+    await logError(error, { action: 'create', entityType: 'project_file', entityId: (await ctx.params)?.itemId }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error', data: null },
       { status: 500 }

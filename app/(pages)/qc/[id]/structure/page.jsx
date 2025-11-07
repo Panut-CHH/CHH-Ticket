@@ -13,7 +13,7 @@ export default function QCStructurePage({ params }) {
   const id = String(resolvedParams?.id || "");
 
   const [activeTab, setActiveTab] = useState("cut_edge");
-  const [header, setHeader] = useState({ stationMachine: "", inspector: "", inspectedDate: "", remark: "" });
+  const [header, setHeader] = useState({ remark: "" });
   const [rows, setRows] = useState([{ id: 1 }]);
   const storageKey = `qc_structure_draft_${id}_${activeTab}`;
 
@@ -51,9 +51,6 @@ export default function QCStructurePage({ params }) {
       const payload = {
       formType: activeTab, 
       header: {
-        station: header.stationMachine,
-        inspector: header.inspector,
-        inspectedDate: header.inspectedDate,
         remark: header.remark
       }, 
       rows 
@@ -98,23 +95,6 @@ export default function QCStructurePage({ params }) {
               <TabBtn id="press_glue" th="การอัดกาว" en="Press Glue" />
             </div>
 
-            <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg p-4 mb-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <input
-                  className="px-3 py-2 border rounded" 
-                  placeholder={
-                    activeTab === 'cut_edge' ? (language === 'th' ? 'สถานีเครื่องตัด หมายเลขเครื่อง' : 'Cutting Station Machine No.') :
-                    activeTab === 'shoot_frame' ? (language === 'th' ? 'สถานียิงโครง ยิงด้วยปืนยิงลูกแม็ก' : 'Frame Shooting Station with Staple Gun') :
-                    activeTab === 'press_glue' ? (language === 'th' ? 'สถานีอัดกาว หมายเลขเครื่อง' : 'Glue Pressing Station Machine No.') :
-                    (language === 'th' ? 'สถานี หมายเลขเครื่อง' : 'Station Machine No.')
-                  }
-                  value={header.stationMachine} 
-                  onChange={e => setHeader({ ...header, stationMachine: e.target.value })} 
-                />
-                <input className="px-3 py-2 border rounded" placeholder={language === 'th' ? 'ผู้ตรวจ' : 'Inspector'} value={header.inspector} onChange={e => setHeader({ ...header, inspector: e.target.value })} />
-                <input type="date" className="px-3 py-2 border rounded" value={header.inspectedDate} onChange={e => setHeader({ ...header, inspectedDate: e.target.value })} />
-              </div>
-            </div>
 
             {activeTab === 'cut_edge' && (
               <div className="overflow-x-auto">

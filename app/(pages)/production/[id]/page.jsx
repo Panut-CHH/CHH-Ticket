@@ -4,18 +4,18 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText } from "lucide-react";
+import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2 } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
 
-function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], reworkOrders = [], userId = null, onAfterMerge }) {
+function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null }) {
+  // ใช้ userId สำหรับการเปรียบเทียบ (ถ้ามี)
   const currentIndex = ticket.roadmap.findIndex((s) => s.status === "current");
   const nextIndex = currentIndex >= 0 ? currentIndex + 1 : -1;
   const currentStep = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.step : null;
   const nextStep = nextIndex >= 0 ? ticket.roadmap[nextIndex]?.step : null;
-  // Treat 'rework' as completed for gating (allow the flow to continue)
-  const isCompletedLike = (status) => status === "completed" || status === "rework";
+  const isCompletedLike = (status) => status === "completed";
   const isFinished = currentIndex === -1 && ticket.roadmap.every((s) => isCompletedLike(s.status));
   const hasPending = ticket.roadmap.some((s) => !isCompletedLike(s.status));
   const canStart = !currentStep && hasPending && !isFinished;
@@ -65,6 +65,13 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   // Work session data from database
   const [workSessions, setWorkSessions] = useState([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
+  const [savingStart, setSavingStart] = useState(false);
+  // Store ticket flows for duration calculation
+  const [ticketFlows, setTicketFlows] = useState([]);
+  // Store QC sessions for final step completion time
+  const [qcSessions, setQcSessions] = useState([]);
+  // Store activity logs to find who started QC
+  const [activityLogs, setActivityLogs] = useState([]);
 
   // Load work sessions from database
   const loadWorkSessions = useCallback(async () => {
@@ -72,6 +79,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     
     try {
       setLoadingSessions(true);
+      const ticketNo = ticket.id.replace('#', '');
+      
+      // Load work sessions
       const { data: sessions, error } = await supabase
         .from('technician_work_sessions')
         .select(`
@@ -87,7 +97,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             email
           )
         `)
-        .eq('ticket_no', ticket.id.replace('#', ''))
+        .eq('ticket_no', ticketNo)
         .order('started_at', { ascending: true });
 
       if (error) {
@@ -95,6 +105,74 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
       } else {
         console.log('[DEBUG] Loaded work sessions:', sessions?.length || 0, 'sessions');
         setWorkSessions(sessions || []);
+      }
+      
+      // Also load ticket flows for duration calculation fallback
+      const { data: flows, error: flowsError } = await supabase
+        .from('ticket_station_flow')
+        .select(`
+          started_at, 
+          completed_at, 
+          step_order, 
+          qc_task_uuid,
+          stations (
+            id,
+            name_th,
+            code
+          )
+        `)
+        .eq('ticket_no', ticketNo)
+        .order('step_order', { ascending: true });
+      
+      if (!flowsError && flows) {
+        console.log('[DEBUG] Loaded ticket flows:', flows?.length || 0, 'flows');
+        setTicketFlows(flows || []);
+      }
+      
+      // Load activity logs to find who started QC (for steps with started_at)
+      try {
+        const { data: logs, error: logsError } = await supabase
+          .from('activity_logs')
+          .select('action, entity_id, entity_type, user_data, metadata, created_at')
+          .eq('entity_type', 'qc_workflow')
+          .eq('entity_id', ticketNo)
+          .eq('action', 'qc_started')
+          .order('created_at', { ascending: true });
+        
+        if (!logsError && logs) {
+          console.log('[DEBUG] Loaded QC start activity logs:', logs?.length || 0, 'logs');
+          setActivityLogs(logs || []);
+        }
+      } catch (e) {
+        console.warn('Failed to load activity logs:', e);
+        setActivityLogs([]);
+      }
+      
+      // Load QC sessions to get actual completion time for QC steps
+      const { data: qcSess, error: qcError } = await supabase
+        .from('qc_sessions')
+        .select(`
+          id, 
+          ticket_no, 
+          created_at, 
+          completed_at, 
+          inspected_date, 
+          qc_task_uuid, 
+          step_order,
+          inspector,
+          inspector_id,
+          users:inspector_id (
+            id,
+            name,
+            email
+          )
+        `)
+        .eq('ticket_no', ticketNo)
+        .order('step_order', { ascending: true });
+      
+      if (!qcError && qcSess) {
+        console.log('[DEBUG] Loaded QC sessions:', qcSess?.length || 0, 'sessions');
+        setQcSessions(qcSess || []);
       }
     } catch (e) {
       console.error('Failed to load work sessions:', e);
@@ -107,10 +185,12 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     loadWorkSessions();
   }, [loadWorkSessions]);
 
+
   function onStartClick() {
     if (!canStart || isCoolingDown || !isAssignedToPending) return;
     onStart(ticket.id);
     setCooldownUntil(Date.now() + 2000);
+    setSavingStart(true);
     
     // Reload work sessions after starting
     setTimeout(() => {
@@ -124,6 +204,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     if (currentIndex === -1) return;
     onDone(ticket.id);
     setCooldownUntil(Date.now() + 2000);
+    setSavingStart(false);
     
     // Reload work sessions after completing
     setTimeout(() => {
@@ -144,6 +225,12 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
            session.completed_at === null &&
            session.users?.name === currentTechnician;
   });
+  // Auto-hide saving indicator once a live current session is detected
+  useEffect(() => {
+    if (savingStart && currentSession) {
+      setSavingStart(false);
+    }
+  }, [savingStart, currentSession]);
 
   // Debug logging
   if (!currentSession && workSessions.length > 0) {
@@ -159,6 +246,17 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     return new Date(ts).toLocaleString('th-TH');
   };
   
+  const formatDateTime = (ts) => {
+    if (!ts) return "-";
+    const date = new Date(ts);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${day}/${month}/${year} : ${hours}:${minutes}`;
+  };
+  
   const formatDuration = (minutes) => {
     if (!minutes) return "-";
     const mins = Math.floor(minutes);
@@ -166,12 +264,157 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     return `${mins}น. ${secs}วิ.`;
   };
 
+  // Calculate total duration for finished ticket
+  const calculateTotalDuration = useMemo(() => {
+    // Check if ticket is finished (both from roadmap and status)
+    const ticketFinished = ticket.status === "Finish" || ticket.status === "Finished" || isFinished;
+    
+    if (!ticketFinished) {
+      console.log('[DURATION] Ticket is not finished');
+      return null;
+    }
+    
+    console.log('[DURATION] Calculating duration for finished ticket');
+    
+    if (!ticketFlows || ticketFlows.length === 0) {
+      console.log('[DURATION] No ticket flows available');
+      return null;
+    }
+    
+    // Sort flows by step_order to get first and last step
+    const sortedFlows = [...ticketFlows].sort((a, b) => a.step_order - b.step_order);
+    const firstStep = sortedFlows[0];
+    const lastStep = sortedFlows[sortedFlows.length - 1];
+    
+    console.log('[DURATION] First step:', firstStep?.step_order, 'Last step:', lastStep?.step_order);
+    
+    // Get start time from first step
+    let firstStarted = null;
+    
+    // Try to get from ticket_station_flow.started_at first
+    if (firstStep?.started_at) {
+      firstStarted = firstStep.started_at;
+    } else {
+      // Fallback: find work session for first step
+      const firstStepWorkSession = workSessions?.find(s => s.step_order === firstStep?.step_order);
+      if (firstStepWorkSession?.started_at) {
+        firstStarted = firstStepWorkSession.started_at;
+      } else {
+        // Fallback: use earliest work session
+        const earliestSession = workSessions?.length > 0
+          ? workSessions.reduce((earliest, session) => {
+              if (!earliest) return session;
+              return new Date(session.started_at) < new Date(earliest.started_at) ? session : earliest;
+            }, null)
+          : null;
+        if (earliestSession?.started_at) {
+          firstStarted = earliestSession.started_at;
+        }
+      }
+    }
+    
+    // Get end time from last step
+    let lastCompleted = null;
+    
+    // Try to get from ticket_station_flow.completed_at first
+    if (lastStep?.completed_at) {
+      lastCompleted = lastStep.completed_at;
+    } else if (lastStep?.qc_task_uuid) {
+      // If last step is QC and has no completed_at, use QC session
+      const qcSession = qcSessions?.find(qs => qs.qc_task_uuid === lastStep.qc_task_uuid);
+      if (qcSession) {
+        // Use completed_at from QC session (actual time when QC was completed)
+        if (qcSession.completed_at) {
+          lastCompleted = qcSession.completed_at;
+        } else if (qcSession.created_at) {
+          // Fallback to created_at if completed_at not set yet
+          lastCompleted = qcSession.created_at;
+        } else if (qcSession.inspected_date) {
+          // If only inspected_date exists, use end of that day
+          lastCompleted = new Date(qcSession.inspected_date + 'T23:59:59').toISOString();
+        }
+      }
+    } else {
+      // Fallback: find work session for last step
+      const lastStepWorkSession = workSessions?.find(s => s.step_order === lastStep?.step_order);
+      if (lastStepWorkSession?.completed_at) {
+        lastCompleted = lastStepWorkSession.completed_at;
+      } else {
+        // Fallback: use latest completion time from all flows
+        const allCompleted = ticketFlows
+          .map(flow => {
+            if (flow.completed_at) {
+              return flow.completed_at;
+            }
+            if (flow.qc_task_uuid) {
+              const qcSess = qcSessions?.find(qs => qs.qc_task_uuid === flow.qc_task_uuid);
+              return qcSess?.completed_at || qcSess?.created_at || null;
+            }
+            return null;
+          })
+          .filter(time => time !== null);
+        
+        if (allCompleted.length > 0) {
+          lastCompleted = allCompleted.reduce((latest, time) => {
+            if (!latest) return time;
+            return new Date(time) > new Date(latest) ? time : latest;
+          }, null);
+        }
+      }
+    }
+    
+    if (!firstStarted || !lastCompleted) {
+      console.log('[DURATION] Missing start or end time:', { firstStarted, lastCompleted });
+      return null;
+    }
+    
+    const totalMs = new Date(lastCompleted) - new Date(firstStarted);
+    const totalMinutes = totalMs / (1000 * 60);
+    
+    console.log('[DURATION] Calculated:', {
+      startTime: firstStarted,
+      endTime: lastCompleted,
+      totalMinutes,
+      firstStep: firstStep?.step_order,
+      lastStep: lastStep?.step_order
+    });
+    
+    return {
+      startTime: firstStarted,
+      endTime: lastCompleted,
+      totalMinutes: totalMinutes
+    };
+  }, [isFinished, ticket.status, workSessions, ticketFlows, qcSessions]);
+
   const myEarnings = useMemo(() => {
+    if (!ticket) return 0;
+    
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
-    return steps
-      .filter((s) => (s.technician || "") === me)
-      .reduce((sum, s) => sum + (Number(s.price) || 0), 0);
-  }, [ticket.stations, me]);
+    
+    // ใช้ userId สำหรับการเปรียบเทียบ (ถ้ามี) ไม่งั้นใช้ชื่อ
+    const filtered = steps.filter((s) => {
+      if (userId && Array.isArray(s.technicianIds) && s.technicianIds.length > 0) {
+        // เปรียบเทียบด้วย ID (แนะนำ)
+        const isAssigned = s.technicianIds.includes(userId);
+        console.log('[MY_EARNINGS] Station', s.name, '- Technician IDs:', s.technicianIds, '- My ID:', userId, '- Assigned:', isAssigned);
+        return isAssigned;
+      } else {
+        // Fallback: เปรียบเทียบด้วยชื่อ
+        const assigned = isUserAssigned(s.technician, me);
+        console.log('[MY_EARNINGS] Station', s.name, '- Technician:', s.technician, '- Me:', me, '- Assigned:', assigned);
+        return assigned;
+      }
+    });
+    
+    const total = filtered.reduce((sum, s) => {
+      const price = Number(s.price) || 0;
+      return sum + price;
+    }, 0);
+    
+    console.log('[MY_EARNINGS] Filtered stations count:', filtered.length, 'Total earnings:', total);
+    
+    return total;
+  }, [ticket.stations, me, userId]);
 
   const totalLabor = useMemo(() => {
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
@@ -281,18 +524,39 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           </Modal>
 
           <div className="p-4 rounded-xl bg-gray-50 dark:bg-slate-700 border border-gray-100 dark:border-slate-600">
-            <div className="text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-1">ขั้นตอนปัจจุบัน</div>
-            {(() => {
-              const headerStepName = currentIndex >= 0 ? (currentStep || "-") : (firstPendingStep || "-");
-              const headerStatusText = currentIndex >= 0 ? "กำลังทำ" : (isFinished ? "เสร็จสิ้นแล้ว" : "ยังไม่เริ่ม");
-              return (
-                <>
-                  <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{headerStepName}</div>
-                  <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">สถานะ: <span className={`font-medium ${headerStatusText === 'กำลังทำ' ? 'text-amber-700' : headerStatusText === 'เสร็จสิ้นแล้ว' ? 'text-emerald-700' : 'text-gray-700 dark:text-gray-300'}`}>{headerStatusText}</span></div>
-                </>
-              );
-            })()}
-            <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">ถัดไป: <span className="text-gray-800 dark:text-gray-200 font-medium">{nextStep || (isFinished ? "-" : "รอเริ่มงาน")}</span></div>
+            {(isFinished || ticket.status === "Finish") ? (
+              <>
+                <div className="text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-3">สถานะตั๋วใบนี้ : <span className="font-medium text-emerald-700 dark:text-emerald-400">เสร็จสิ้นแล้ว</span></div>
+                {!calculateTotalDuration ? (
+                  <div className="space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                    <div>เริ่มต้น : -</div>
+                    <div>สิ้นสุด : -</div>
+                    <div>ใช้เวลาไปทั้งหมด : -</div>
+                  </div>
+                ) : (
+                  <div className="space-y-2 text-sm">
+                    <div className="text-gray-600 dark:text-gray-400">เริ่มต้น : <span className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(calculateTotalDuration.startTime)}</span></div>
+                    <div className="text-gray-600 dark:text-gray-400">สิ้นสุด : <span className="font-medium text-gray-900 dark:text-gray-100">{formatDateTime(calculateTotalDuration.endTime)}</span></div>
+                    <div className="text-gray-600 dark:text-gray-400">ใช้เวลาไปทั้งหมด : <span className="font-medium text-emerald-700 dark:text-emerald-400">{formatDuration(calculateTotalDuration.totalMinutes)}</span></div>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-1">ขั้นตอนปัจจุบัน</div>
+                {(() => {
+                  const headerStepName = currentIndex >= 0 ? (currentStep || "-") : (firstPendingStep || "-");
+                  const headerStatusText = currentIndex >= 0 ? "กำลังทำ" : "ยังไม่เริ่ม";
+                  return (
+                    <>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{headerStepName}</div>
+                      <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">สถานะ: <span className={`font-medium ${headerStatusText === 'กำลังทำ' ? 'text-amber-700' : 'text-gray-700 dark:text-gray-300'}`}>{headerStatusText}</span></div>
+                    </>
+                  );
+                })()}
+                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">ถัดไป: <span className="text-gray-800 dark:text-gray-200 font-medium">{nextStep || "รอเริ่มงาน"}</span></div>
+              </>
+            )}
           </div>
 
           <div className="mt-4">
@@ -304,9 +568,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             <div className="flex items-center gap-3">
               <button
                 onClick={onStartClick}
-                disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || (isPendingQC && !isAssignedToPending)}
+                disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC}
                 className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${
-                  !canStart || isFinished || isCoolingDown || !isAssignedToPending || (isPendingQC && !isAssignedToPending) 
+                  !canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC 
                     ? "bg-gray-400 text-gray-600 dark:bg-gray-600 dark:text-gray-400 cursor-not-allowed" 
                     : "bg-blue-600 hover:bg-blue-700"
                 }`}
@@ -342,13 +606,12 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 const isQCStep = (step.step || "").toUpperCase().includes("QC");
                 const techName = isQCStep ? "-" : (stationData?.technician || "ยังไม่ได้มอบหมาย");
                 const isMyStation = !isQCStep && stationData?.technician && me && stationData.technician.includes(me);
-                // แสดง rework count เฉพาะเมื่อเป็นขั้น QC และเป็นขั้นที่มีสถานะ rework เท่านั้น
-                const showReworkCount = isQCStep && step.status === 'rework';
+                const showReworkCount = false;
                 return (
                   <div key={index} className={`min-w-[220px] rounded-xl border p-4 shadow-sm ${
                     step.status === 'current' ? 'border-amber-300 bg-amber-50' : 
                     step.status === 'completed' ? 'border-emerald-200 bg-emerald-50' : 
-                    step.status === 'rework' ? 'border-orange-300 bg-orange-50' :
+                    false ? 'border-orange-300 bg-orange-50' :
                     'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800'
                   }`}>
                     <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ขั้นที่ {index + 1}</div>
@@ -356,39 +619,19 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                     <div className={`mt-3 h-2 rounded-full ${
                       step.status === 'completed' ? 'bg-emerald-500' : 
                       step.status === 'current' ? 'bg-amber-500 animate-pulse' : 
-                      step.status === 'rework' ? 'bg-orange-500' :
+                      false ? 'bg-orange-500' :
                       'bg-gray-200'
                     }`} />
                     <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500">สถานะ: <span className={`font-medium ${
                       step.status === 'current' ? 'text-amber-700' : 
                       step.status === 'completed' ? 'text-emerald-700' : 
-                      step.status === 'rework' ? 'text-orange-700' :
+                      false ? 'text-orange-700' :
                       'text-gray-600 dark:text-gray-400 dark:text-gray-500'
                     }`}>{step.status}</span></div>
-                    {/* แสดงจำนวนชิ้น rework ใต้ขั้น QC เฉพาะเมื่อ uuid ตรงกัน */}
-                    {showReworkCount && (reworkOrders || []).length > 0 && (
-                      <div className="mt-1 text-[11px] text-orange-700">
-                        {(() => {
-                          const sid = stationData?.stationId || stationData?.id;
-                          const isSameUuid = (ro) => ro.failed_qc_task_uuid && step.qc_task_uuid && ro.failed_qc_task_uuid === step.qc_task_uuid;
-                          const isSameStationFallback = (ro) => !ro.failed_qc_task_uuid && sid && ro.failed_at_station_id === sid;
-                          const related = (reworkOrders || []).filter(ro => isSameUuid(ro) || isSameStationFallback(ro));
-                          const total = related.reduce((sum, ro) => sum + (Number(ro.quantity) || 0), 0);
-                          return (
-                            <>
-                              {`rework: ${total} ชิ้น`}
-                              {related.map(ro => (
-                                ro.rework_ticket_no ? (
-                                  <span key={ro.id} className="ml-2 inline-flex items-center gap-1">
-                                    <a href={`/production/${encodeURIComponent(ro.rework_ticket_no)}`} className="text-blue-600 hover:underline">
-                                      {ro.rework_ticket_no}
-                                    </a>
-                                  </span>
-                                ) : null
-                              ))}
-                            </>
-                          );
-                        })()}
+                    {/* แสดงจำนวน defect เมื่อเป็น QC step ที่เสร็จแล้วและมี defect */}
+                    {isQCStep && step.status === 'completed' && step.qc_task_uuid && ticket.defectCounts?.[step.qc_task_uuid] > 0 && (
+                      <div className="mt-1 text-[11px] text-red-700 dark:text-red-400 font-medium">
+                        Defect: {ticket.defectCounts[step.qc_task_uuid]} ชิ้น
                       </div>
                     )}
                     {!isQCStep && (
@@ -412,57 +655,176 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
         </div>
 
         <div className="space-y-3">
-          {/* Current technician and time info */}
+          {/* Current technician (hide time summary – tracked in reports) */}
           {currentTechnician && currentIndex >= 0 && !isCurrentQC && (
             <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
               <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ช่างประจำสถานีปัจจุบัน</div>
               <div className="mt-1 text-sm font-medium text-gray-900 dark:text-gray-100">{currentTechnician}</div>
-              {currentIndex >= 0 && (
-                <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500">
-                  <div>เริ่ม: <span className="text-gray-900 dark:text-gray-100 font-medium">{formatTime(startedAt)}</span></div>
-                  <div>สิ้นสุด: <span className="text-gray-900 dark:text-gray-100 font-medium">{formatTime(doneAt)}</span></div>
-                  <div>ใช้เวลา: <span className="text-gray-900 dark:text-gray-100 font-medium">{formatDuration(durationMinutes)}</span></div>
+              {savingStart && (
+                <div className="mt-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  ระบบกำลังบันทึกเวลาการทำงานของคุณ
                 </div>
               )}
             </div>
           )}
 
           {/* Historical Stations Section */}
-          {workSessions.filter(s => s.completed_at).length > 0 && (
-            <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
-              <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">ประวัติสถานีที่ผ่านมา</div>
-              <div className="space-y-2 max-h-48 overflow-y-auto">
-                {workSessions
-                  .filter(session => session.completed_at)
-                  .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))
-                  .slice(0, 5) // Show last 5 completed sessions
-                  .map(session => (
-                    <div key={session.id} className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
+          {(() => {
+            // Build history from completed roadmap steps + work sessions + ticket flows + QC sessions
+            // Roadmap and flows are both ordered by step_order, so index should match
+            const completedSteps = (ticket.roadmap || [])
+              .map((step, index) => {
+                if (step.status !== 'completed') return null;
+                
+                const stationData = stations[index];
+                const stepName = step.step;
+                const isQCStep = (stepName || '').toUpperCase().includes('QC');
+                
+                // Get flow data by index (roadmap and flows are in same order)
+                // Since roadmap is created from flows.map(), roadmap[index] = flows[index]
+                const flowData = ticketFlows && ticketFlows.length > index 
+                  ? ticketFlows[index] 
+                  : null;
+                
+                // For QC steps, use qc_sessions instead of work_sessions
+                let matchingQCSession = null;
+                if (isQCStep && qcSessions && qcSessions.length > 0) {
+                  // Match QC session by qc_task_uuid or step_order
+                  if (step.qc_task_uuid) {
+                    matchingQCSession = qcSessions.find(qs => qs.qc_task_uuid === step.qc_task_uuid);
+                  }
+                  // Fallback: match by step_order or index
+                  if (!matchingQCSession) {
+                    const stepOrder = flowData?.step_order ?? index;
+                    matchingQCSession = qcSessions.find(qs => 
+                      qs.step_order === stepOrder || qs.step_order === index || qs.step_order === index + 1
+                    );
+                  }
+                }
+                
+                // Find matching work session by step_order or station name (for non-QC steps)
+                let matchingSession = null;
+                if (!isQCStep && workSessions && workSessions.length > 0) {
+                  // Get step_order from flowData if available
+                  const stepOrder = flowData?.step_order ?? index;
+                  // Try to match by step_order first
+                  matchingSession = workSessions.find(session => {
+                    if (session.step_order !== undefined) {
+                      // Match by step_order (try both 0-based and 1-based)
+                      return (session.step_order === stepOrder || session.step_order === stepOrder + 1) && session.completed_at;
+                    }
+                    // Fallback: match by station name
+                    const sessionStationName = session.stations?.name_th;
+                    return sessionStationName === stepName && session.completed_at;
+                  });
+                }
+                
+                // Get technician name
+                let technicianName = '';
+                if (isQCStep) {
+                  // For QC: find who started QC from activity logs or work sessions
+                  // First try to find from work sessions (if someone started QC via normal flow)
+                  if (matchingSession) {
+                    technicianName = matchingSession.users?.name || matchingSession.users?.email || '';
+                  }
+                  
+                  // If not found, try to find from activity logs (qc_started action)
+                  if (!technicianName && activityLogs && activityLogs.length > 0) {
+                    // Match by step_order from metadata or find the most recent QC start
+                    const stepOrder = flowData?.step_order ?? index;
+                    const matchingLog = activityLogs.find(log => {
+                      const logStepOrder = log.metadata?.step_order;
+                      return logStepOrder === stepOrder || logStepOrder === index || logStepOrder === index + 1;
+                    }) || activityLogs[activityLogs.length - 1]; // Fallback to most recent
+                    
+                    if (matchingLog && matchingLog.user_data) {
+                      technicianName = matchingLog.user_data.name || matchingLog.user_data.email || '';
+                    }
+                  }
+                  
+                  // Last fallback: use inspector from QC session
+                  if (!technicianName && matchingQCSession) {
+                    if (matchingQCSession.users && Array.isArray(matchingQCSession.users) && matchingQCSession.users.length > 0) {
+                      technicianName = matchingQCSession.users[0].name || matchingQCSession.users[0].email || '';
+                    } else if (matchingQCSession.users && matchingQCSession.users.name) {
+                      technicianName = matchingQCSession.users.name || matchingQCSession.users.email || '';
+                    } else if (matchingQCSession.inspector) {
+                      technicianName = matchingQCSession.inspector;
+                    }
+                  }
+                } else {
+                  // For non-QC: use technician from station data or work session
+                  technicianName = stationData?.technician || '';
+                  if (!technicianName && matchingSession) {
+                    technicianName = matchingSession.users?.name || matchingSession.users?.email || '';
+                  }
+                }
+                
+                // Get start/end times
+                let startedAt = null;
+                let completedAt = null;
+                if (isQCStep) {
+                  // For QC: prioritize started_at from flow (when QC was started), then work session, then QC session created_at
+                  startedAt = flowData?.started_at || matchingSession?.started_at || matchingQCSession?.created_at || null;
+                  completedAt = matchingQCSession?.completed_at || matchingQCSession?.inspected_date || flowData?.completed_at || null;
+                } else {
+                  // For non-QC: prefer work session, then flow
+                  startedAt = matchingSession?.started_at || flowData?.started_at || null;
+                  completedAt = matchingSession?.completed_at || flowData?.completed_at || null;
+                }
+                
+                // Calculate duration
+                let duration = null;
+                if (isQCStep && matchingQCSession && startedAt && completedAt) {
+                  const ms = new Date(completedAt) - new Date(startedAt);
+                  duration = ms / (1000 * 60); // Convert to minutes
+                } else if (matchingSession?.duration_minutes) {
+                  duration = matchingSession.duration_minutes;
+                } else if (startedAt && completedAt) {
+                  const ms = new Date(completedAt) - new Date(startedAt);
+                  duration = ms / (1000 * 60); // Convert to minutes
+                }
+                
+                return {
+                  stepName,
+                  technicianName,
+                  startedAt,
+                  completedAt,
+                  duration
+                };
+              })
+              .filter(item => item !== null);
+            
+            return completedSteps.length > 0 && (
+              <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
+                <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">ประวัติสถานีที่ผ่านมา</div>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {completedSteps.map((item, idx) => (
+                    <div key={`${item.stepName}-${idx}`} className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
                       <div className="font-medium text-sm text-gray-900 dark:text-gray-100">
-                        {session.stations?.name_th || 'Unknown Station'}
+                        {item.stepName}
                       </div>
                       <div className="text-xs text-gray-600 dark:text-gray-400">
-                        ช่าง: {session.users?.name || session.users?.email || 'Unknown'}
+                        ช่าง: {item.technicianName || 'ยังไม่ได้ระบุ'}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-500">
-                        เริ่ม: {formatTime(session.started_at)}
+                        เริ่ม: {formatTime(item.startedAt)}
                       </div>
                       <div className="text-xs text-gray-500 dark:text-gray-500">
-                        สิ้นสุด: {formatTime(session.completed_at)}
+                        สิ้นสุด: {formatTime(item.completedAt)}
                       </div>
-                      <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                        ใช้เวลา: {formatDuration(session.duration_minutes)}
-                      </div>
+                      {item.duration && (
+                        <div className="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                          ใช้เวลา: {formatDuration(item.duration)}
+                        </div>
+                      )}
                     </div>
                   ))}
-                {workSessions.filter(s => s.completed_at).length > 5 && (
-                  <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-2">
-                    และอีก {workSessions.filter(s => s.completed_at).length - 5} สถานี...
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
             <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ค่าแรงรวมตั๋ว</div>
@@ -484,7 +846,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                   <div className="truncate">
                     <span className="text-gray-700 dark:text-gray-300 font-medium">{it.code}</span> — <span className="text-gray-600 dark:text-gray-400 dark:text-gray-500">{it.name}</span>
                   </div>
-                  <div className="shrink-0 text-gray-700 dark:text-gray-300">{it.issued}/{it.qty} {it.unit}</div>
+                  <div className="shrink-0 text-gray-700 dark:text-gray-300">{it.qty} {it.unit}</div>
                 </div>
               ))}
               {bomItems.length > 5 && (
@@ -493,97 +855,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             </div>
           </div>
           
-          {/* Batch Information */}
-          {batches.length > 0 && (
-            <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">
-                <div className="w-4 h-4 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold text-blue-600">B</span>
-                </div>
-                Batches ({batches.length})
-              </div>
-              <div className="space-y-2">
-                {batches.map((batch) => (
-                  <div key={batch.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        batch.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        batch.status === 'rework' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
-                        batch.status === 'waiting_merge' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400' :
-                        'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
-                      }`}>
-                        {batch.batch_name}
-                      </span>
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {batch.quantity} ชิ้น
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                      {batch.stations?.name_th || batch.stations?.code || 'Unknown Station'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Batch Information removed per request */}
           
-          {/* Rework Orders Information */}
-          {reworkOrders.filter(r => (r.status || 'pending') !== 'merged').length > 0 && (
-            <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-3">
-                <div className="w-4 h-4 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-xs font-bold text-orange-600">R</span>
-                </div>
-                Rework Orders ({reworkOrders.filter(r => (r.status || 'pending') !== 'merged').length})
-              </div>
-              <div className="space-y-2">
-                {reworkOrders.filter(r => (r.status || 'pending') !== 'merged').map((rework) => (
-                  <div key={rework.id} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        rework.approval_status === 'approved' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        rework.approval_status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400' :
-                        'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                      }`}>
-                        {rework.approval_status === 'approved' ? 'อนุมัติแล้ว' :
-                         rework.approval_status === 'rejected' ? 'ปฏิเสธ' : 'รออนุมัติ'}
-                      </span>
-                      <span className="text-sm text-gray-700 dark:text-gray-300">
-                        {rework.quantity} ชิ้น
-                      </span>
-                    </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
-                      {rework.severity === 'minor' ? 'เล็กน้อย' :
-                       rework.severity === 'major' ? 'รุนแรง' : 'Custom'}
-                      {isAdmin && (
-                        <button
-                          onClick={async () => {
-                            try {
-                              const resp = await fetch(`/api/rework/${encodeURIComponent(rework.id)}/merge-approve`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ approvedBy: userId, notes: '' })
-                              });
-                              const json = await resp.json();
-                              if (!resp.ok) throw new Error(json?.error || 'Merge failed');
-                              if (typeof onAfterMerge === 'function') {
-                                await onAfterMerge();
-                              }
-                            } catch (e) {
-                              alert(`Merge failed: ${e.message}`);
-                            }
-                          }}
-                          className="ml-2 px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white"
-                        >
-                          Merge
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          {/* Rework orders section removed */}
         </div>
       </div>
     </div>
@@ -603,12 +877,11 @@ export default function ProductionDetailPage() {
   const [error, setError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
   
-  // Batch and rework data
+  // Batch data
   const [batches, setBatches] = useState([]);
-  const [reworkOrders, setReworkOrders] = useState([]);
   const [isClosed, setIsClosed] = useState(false);
 
-  // Function to load batch and rework data
+  // Function to load batch data
   const loadBatchData = useCallback(async () => {
     try {
       // Load batches for this ticket
@@ -624,73 +897,24 @@ export default function ProductionDetailPage() {
       
       if (batchError) throw batchError;
       setBatches(batchData || []);
-
-      // Load rework orders for this ticket
-      const { data: reworkData, error: reworkError } = await supabase
-        .from('rework_orders')
-        .select(`
-          *,
-          users!rework_orders_created_by_fkey(name),
-          stations(name_th, code)
-        `)
-        .eq('ticket_no', ticketId)
-        .order('created_at', { ascending: false });
-      
-      if (reworkError) throw reworkError;
-      setReworkOrders(reworkData || []);
     } catch (error) {
       console.error('Error loading batch data:', error);
     }
   }, [ticketId]);
 
-  // Evaluate Closed badge when ticket/reworkOrders change
+  // Evaluate Closed badge when ticket changes
   useEffect(() => {
     try {
       if (!ticket) return;
-      if ((ticketId || '').includes('-RW')) { setIsClosed(false); return; }
-      const open = (reworkOrders || []).filter(r => (r.status || 'pending') !== 'merged' && (r.status || 'pending') !== 'cancelled');
-      setIsClosed((ticket.status === 'Finish') && open.length === 0);
+      setIsClosed(ticket.status === 'Finish');
     } catch {}
-  }, [ticket, reworkOrders, ticketId]);
+  }, [ticket, ticketId]);
 
   // Function to reload ticket data from DB
   const reloadTicketData = useCallback(async () => {
     try {
-      // ตรวจสอบว่าเป็นตั๋ว Rework หรือไม่
-      const isReworkTicket = ticketId && ticketId.includes('-RW');
-      
       let erpTicket;
-      
-      if (isReworkTicket) {
-        // ถ้าเป็น Rework ticket ให้ดึงข้อมูลจาก DB แทน ERP
-        console.log('[RELOAD] Loading rework ticket from DB:', ticketId);
-        const { data: dbTicket, error: dbError } = await supabase
-          .from('ticket')
-          .select('*')
-          .eq('no', ticketId)
-          .single();
-        
-        if (dbError || !dbTicket) {
-          throw new Error('ไม่พบข้อมูลตั๋ว Rework ในฐานข้อมูล');
-        }
-        
-        // แปลง dbTicket เป็น erpTicket format
-        erpTicket = {
-          id: dbTicket.no,
-          title: dbTicket.description || `Rework: ${dbTicket.source_no}`,
-          quantity: dbTicket.quantity || 0,
-          itemCode: dbTicket.source_no || dbTicket.no,
-          description: dbTicket.description || '',
-          description2: dbTicket.description_2 || '',
-          dueDate: dbTicket.due_date || '',
-          priority: dbTicket.priority || 'High',
-          status: dbTicket.status || 'In Progress',
-          projectCode: dbTicket.source_no || '',
-          projectName: `Rework Ticket ${dbTicket.no}`,
-          isRework: true,
-          parentTicketNo: dbTicket.source_no
-        };
-      } else {
+      {
         // DB-first: โหลดตั๋วปกติจากฐานข้อมูล
         const { data: dbTicket, error: dbError } = await supabase
           .from('ticket')
@@ -717,8 +941,6 @@ export default function ProductionDetailPage() {
       }
 
       // 2) Load station flows for this ticket from DB
-      // สำหรับ rework ticket ให้ดูเฉพาะ flows ที่มี is_rework_ticket = true
-      // สำหรับตั๋วปกติ ให้ดูเฉพาะ flows ที่ไม่มี is_rework_ticket
       const { data: flows, error: flowError } = await supabase
         .from('ticket_station_flow')
         .select(`
@@ -729,10 +951,9 @@ export default function ProductionDetailPage() {
           )
         `)
         .eq('ticket_no', ticketId)
-        .eq('is_rework_ticket', isReworkTicket) // Filter by is_rework_ticket
         .order('step_order', { ascending: true });
       
-      console.log('[RELOAD] Raw flows from DB (isRework:', isReworkTicket, '):', flows?.map(f => ({
+      console.log('[RELOAD] Raw flows from DB:', flows?.map(f => ({
         station: f.stations?.name_th,
         status: f.status,
         station_id: f.station_id,
@@ -823,46 +1044,66 @@ export default function ProductionDetailPage() {
       }
     } catch {}
 
-    // ถ้าเป็น rework ticket และยังไม่มี assignments ให้ดึงจาก rework_roadmap
-    if (isReworkTicket && (!assignments || assignments.length === 0)) {
+    // 4.5) Load BOM from DB
+    let dbBom = [];
+    try {
+      const { data: bomData, error: bomError } = await supabase
+        .from('ticket_bom')
+        .select('material_name, quantity, unit')
+        .eq('ticket_no', ticketId)
+        .order('created_at', { ascending: true });
+      if (!bomError && Array.isArray(bomData)) {
+        dbBom = bomData;
+      }
+    } catch (e) {
+      console.warn('Load BOM error:', e?.message || e);
+    }
+
+    // (Rework roadmap fallback removed)
+
+      // 4.6) Load QC defect counts for each QC step
+      const defectCounts = {}; // Map: qc_task_uuid -> total defect quantity
       try {
-        // ดึง rework_order_id จาก flows
-        const reworkOrderId = flows[0]?.rework_order_id;
+        const { data: qcSessions, error: qcError } = await supabase
+          .from('qc_sessions')
+          .select('id, qc_task_uuid')
+          .eq('ticket_no', ticketId);
         
-        if (reworkOrderId) {
-          const { data: roadmapData, error: roadmapError } = await supabase
-            .from('rework_roadmap')
-            .select(`
-              rework_order_id,
-              station_id,
-              step_order,
-              assigned_technician_id,
-              station_name,
-              users(name)
-            `)
-            .eq('rework_order_id', reworkOrderId);
+        if (!qcError && Array.isArray(qcSessions) && qcSessions.length > 0) {
+          const sessionIds = qcSessions.map(s => s.id);
           
-          if (!roadmapError && Array.isArray(roadmapData)) {
-            // แปลง roadmap เป็นรูปแบบ assignments
-            assignments = roadmapData.map(roadmap => ({
-              ticket_no: ticketId, // ใช้ ticket_no ของ rework ticket
-              station_id: roadmap.station_id,
-              step_order: roadmap.step_order,
-              technician_id: roadmap.assigned_technician_id,
-              rework_order_id: reworkOrderId, // เพิ่มเพื่อใช้เป็น key
-              users: roadmap.users || { name: '' }
-            }));
+          // ดึง qc_rows ที่ pass = false เพื่อนับ defect
+          const { data: qcRows, error: rowsError } = await supabase
+            .from('qc_rows')
+            .select('session_id, actual_qty, pass')
+            .in('session_id', sessionIds)
+            .eq('pass', false);
+          
+          if (!rowsError && Array.isArray(qcRows)) {
+            // Group by session_id and sum defect quantities
+            const defectsBySession = {};
+            qcRows.forEach(row => {
+              const qty = Number(row.actual_qty) || 0;
+              defectsBySession[row.session_id] = (defectsBySession[row.session_id] || 0) + qty;
+            });
             
-            console.log('[DETAIL] Loaded rework roadmap assignments:', assignments);
+            // Map session_id -> qc_task_uuid
+            qcSessions.forEach(session => {
+              if (session.qc_task_uuid && defectsBySession[session.id]) {
+                defectCounts[session.qc_task_uuid] = (defectCounts[session.qc_task_uuid] || 0) + defectsBySession[session.id];
+              }
+            });
           }
         }
       } catch (e) {
-        console.warn('Error loading rework roadmap:', e);
+        console.warn('Load defect counts error:', e?.message || e);
       }
-    }
 
       // 5) Merge flows + assignments
       const merged = mergeFlowsIntoTicket(erpTicket, Array.isArray(flows) ? flows : [], assignments);
+      
+      // Add defect counts to merged ticket
+      merged.defectCounts = defectCounts;
       
       // Apply priority/quantity from Supabase if available
       if (dbTicket && dbTicket.priority) {
@@ -894,6 +1135,11 @@ export default function ProductionDetailPage() {
         merged.projectDoc = projectDoc;
       }
       
+      // Override BOM with DB result if available
+      if (Array.isArray(dbBom)) {
+        merged.bom = dbBom.map(b => ({ code: '-', name: b.material_name || '-', qty: Number(b.quantity) || 0, unit: b.unit || 'PCS', issued: 0 }));
+      }
+
       return merged;
     } catch (e) {
       console.error('Reload failed:', e);
@@ -952,7 +1198,6 @@ export default function ProductionDetailPage() {
             console.log('[DETAIL REALTIME] Reloaded roadmap:', refreshed.roadmap?.map(r => ({ step: r.step, status: r.status })));
             // Force re-render by creating new object reference
             setTicket({ ...refreshed, _refreshKey: Date.now() });
-            // Also refresh rework/batch data so rework count updates immediately
             await loadBatchData();
             console.log('[DETAIL REALTIME] ✅ UI updated successfully');
           } catch (e) {
@@ -1025,17 +1270,16 @@ export default function ProductionDetailPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'rework_orders',
+          table: 'qc_sessions',
           filter: `ticket_no=eq.${ticketId}`
         },
         async (payload) => {
-          console.log('[DETAIL REALTIME] 🔥 REWORK ORDER CHANGE DETECTED for ticket:', ticketId);
+          console.log('[DETAIL REALTIME] 🔥 QC SESSION CHANGE DETECTED for ticket:', ticketId);
           await new Promise(resolve => setTimeout(resolve, 300));
-          await loadBatchData();
           try {
             const refreshed = await reloadTicketData();
             setTicket({ ...refreshed, _refreshKey: Date.now() });
-          } catch (e) { console.warn('Reload after rework change failed:', e); }
+          } catch (e) { console.warn('Reload after QC session change failed:', e); }
         }
       )
       .on(
@@ -1043,21 +1287,29 @@ export default function ProductionDetailPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'rework_orders'
+          table: 'qc_rows'
         },
         async (payload) => {
-          const changedTicket = payload.new?.ticket_no || payload.old?.ticket_no;
-          if (changedTicket === ticketId) {
-            console.log('[DETAIL REALTIME] 🔥 FALLBACK rework_orders change for this ticket');
-            await new Promise(resolve => setTimeout(resolve, 300));
-            await loadBatchData();
+          // Check if this row belongs to a session for this ticket
+          if (payload.new?.session_id || payload.old?.session_id) {
+            const sessionId = payload.new?.session_id || payload.old?.session_id;
             try {
-              const refreshed = await reloadTicketData();
-              setTicket({ ...refreshed, _refreshKey: Date.now() });
-            } catch (e) { console.warn('Fallback reload after rework change failed:', e); }
+              const { data: session } = await supabase
+                .from('qc_sessions')
+                .select('ticket_no')
+                .eq('id', sessionId)
+                .single();
+              if (session && session.ticket_no === ticketId) {
+                console.log('[DETAIL REALTIME] 🔥 QC ROW CHANGE DETECTED for ticket:', ticketId);
+                await new Promise(resolve => setTimeout(resolve, 300));
+                const refreshed = await reloadTicketData();
+                setTicket({ ...refreshed, _refreshKey: Date.now() });
+              }
+            } catch (e) { console.warn('Check QC row session failed:', e); }
           }
         }
       )
+      // (Rework realtime listeners removed)
       .on(
         'postgres_changes',
         {
@@ -1224,26 +1476,30 @@ export default function ProductionDetailPage() {
     console.log('[MERGE] Merging flows:', flows.map(f => ({
       station: f.stations?.name_th,
       status: f.status,
-      step_order: f.step_order,
-      rework_order_id: f.rework_order_id
+      step_order: f.step_order
     })));
     
     const assignmentMap = {};
     (assignments || []).forEach(a => {
-      // สำหรับ rework tickets ให้ใช้ rework_order_id ถ้ามี
-      const key = a.rework_order_id 
-        ? `${a.rework_order_id}-${a.station_id}-${a.step_order || 0}`
-        : `${a.ticket_no}-${a.station_id}-${a.step_order || 0}`;
-      assignmentMap[key] = a.users?.name || '';
+      const key = `${a.ticket_no}-${a.station_id}-${a.step_order || 0}`;
+      const techName = a.users?.name || '';
+      // ถ้ามีช่างหลายคนในสถานีเดียวกัน ให้รวมชื่อด้วย comma
+      if (assignmentMap[key]) {
+        // เช็คว่าชื่อซ้ำหรือไม่ (case-insensitive)
+        const existingNames = assignmentMap[key].split(',').map(n => n.trim().toLowerCase());
+        const newNameLower = techName.trim().toLowerCase();
+        if (!existingNames.includes(newNameLower) && techName) {
+          assignmentMap[key] = `${assignmentMap[key]}, ${techName}`;
+        }
+      } else if (techName) {
+        assignmentMap[key] = techName;
+      }
     });
     
     console.log('[MERGE] Assignment map:', assignmentMap);
     
     const roadmap = flows.map(flow => {
-      // สำหรับ rework tickets ให้ใช้ rework_order_id ถ้ามี
-      const techKey = flow.rework_order_id 
-        ? `${flow.rework_order_id}-${flow.station_id}-${flow.step_order}`
-        : `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
+      const techKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
       return {
         step: flow.stations?.name_th || '',
         status: flow.status || 'pending',
@@ -1254,14 +1510,24 @@ export default function ProductionDetailPage() {
     
     console.log('[MERGE] Created roadmap:', roadmap);
     
-        const stations = flows.map(flow => {
-      // สำหรับ rework tickets ให้ใช้ rework_order_id ถ้ามี
-      const techKey = flow.rework_order_id 
-        ? `${flow.rework_order_id}-${flow.station_id}-${flow.step_order}`
-        : `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
+        // สร้าง map สำหรับ technician_id
+    const assignmentIdMap = {};
+    (assignments || []).forEach(a => {
+      const key = `${a.ticket_no}-${a.station_id}-${a.step_order || 0}`;
+      if (!assignmentIdMap[key]) {
+        assignmentIdMap[key] = [];
+      }
+      if (a.technician_id) {
+        assignmentIdMap[key].push(a.technician_id);
+      }
+    });
+    
+    const stations = flows.map(flow => {
+      const techKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
       return {
         name: flow.stations?.name_th || '',
         technician: assignmentMap[techKey] || '',
+        technicianIds: assignmentIdMap[techKey] || [], // เก็บ array ของ technician IDs
         priceType: flow.price_type || 'flat',
         price: Number(flow.price) || 0,
             status: flow.status || 'pending',
@@ -1272,19 +1538,14 @@ export default function ProductionDetailPage() {
     const currentFlow = flows.find(f => f.status === 'current');
     console.log('[MERGE] Current flow found:', currentFlow ? currentFlow.stations?.name_th : 'none');
     
-    // สำหรับ rework tickets ให้ใช้ rework_order_id ถ้ามี
     let assignee = '';
     if (currentFlow) {
-      const techKey = currentFlow.rework_order_id 
-        ? `${currentFlow.rework_order_id}-${currentFlow.station_id}-${currentFlow.step_order}`
-        : `${currentFlow.ticket_no}-${currentFlow.station_id}-${currentFlow.step_order}`;
+      const techKey = `${currentFlow.ticket_no}-${currentFlow.station_id}-${currentFlow.step_order}`;
       assignee = assignmentMap[techKey] || '';
     }
     if (!assignee && flows.length > 0) {
       const firstFlow = flows[0];
-      const techKey = firstFlow.rework_order_id 
-        ? `${firstFlow.rework_order_id}-${firstFlow.station_id}-${firstFlow.step_order}`
-        : `${firstFlow.ticket_no}-${firstFlow.station_id}-${firstFlow.step_order}`;
+      const techKey = `${firstFlow.ticket_no}-${firstFlow.station_id}-${firstFlow.step_order}`;
       assignee = assignmentMap[techKey] || '';
     }
     
@@ -1310,7 +1571,7 @@ export default function ProductionDetailPage() {
     }
     
     if (Array.isArray(roadmap) && roadmap.length > 0) {
-      const allCompleted = roadmap.every(step => step.status === 'completed' || step.status === 'rework');
+      const allCompleted = roadmap.every(step => step.status === 'completed');
       const hasCurrent = roadmap.some(step => step.status === 'current');
       
       console.log('[CALC] allCompleted:', allCompleted, 'hasCurrent:', hasCurrent);
@@ -1349,11 +1610,11 @@ export default function ProductionDetailPage() {
       const currentIndex = roadmap.findIndex((s) => s.status === "current");
       if (currentIndex === -1) return t;
       roadmap[currentIndex].status = "completed";
-      const allCompleted = roadmap.every((s) => s.status === "completed" || s.status === 'rework');
+      const allCompleted = roadmap.every((s) => s.status === "completed");
       if (allCompleted) {
         return { ...t, roadmap, status: "Finish", statusClass: "text-emerald-600" };
       }
-      const nextPendingIndex = roadmap.findIndex((s) => s.status !== "completed" && s.status !== 'rework');
+      const nextPendingIndex = roadmap.findIndex((s) => s.status !== "completed");
       const nextPendingStep = nextPendingIndex >= 0 ? roadmap[nextPendingIndex]?.step || "" : "";
       const waitingForQC = (nextPendingStep || "").toUpperCase().includes("QC");
       if (waitingForQC) {
@@ -1444,23 +1705,37 @@ export default function ProductionDetailPage() {
     console.log('[START] Starting handleStart for ticket:', id);
     setActionBusy(true);
 
-    // Update UI optimistically
+    // Guard: do NOT allow starting when first pending is QC (must start from QC page)
+    if (ticket && Array.isArray(ticket.roadmap)) {
+      const fp = ticket.roadmap.find((s) => s.status !== 'completed');
+      const isQC = (fp?.step || '').toUpperCase().includes('QC');
+      if (isQC) {
+        alert('ขั้นตอน QC ต้องเริ่มจากหน้า QC เท่านั้น');
+        setActionBusy(false);
+        return;
+      }
+    }
+
+    // Update UI optimistically (non-QC only)
     setTicket((t) => {
       if (!t || t.id !== id) {
         console.log('[START] Ticket mismatch or null, skipping UI update');
         return t;
       }
       const roadmap = t.roadmap.map((s) => ({ ...s }));
-      const hasCurrent = roadmap.some((s) => s.status === "current");
+      const hasCurrent = roadmap.some((s) => s.status === 'current');
       if (hasCurrent) {
         console.log('[START] Already has current step in UI');
         return t;
       }
-      const firstPending = roadmap.findIndex((s) => s.status !== "completed" && s.status !== 'rework');
+      const firstPending = roadmap.findIndex((s) => s.status !== 'completed');
       if (firstPending !== -1) {
+        // Double-check prevent QC from being set as current in UI
+        const isQC = (roadmap[firstPending]?.step || '').toUpperCase().includes('QC');
+        if (isQC) return t;
         console.log('[START] Setting step', firstPending, 'to current in UI');
-        roadmap[firstPending].status = "current";
-        return { ...t, roadmap, status: "In Progress", statusClass: "text-amber-600" };
+        roadmap[firstPending].status = 'current';
+        return { ...t, roadmap, status: 'In Progress', statusClass: 'text-amber-600' };
       }
       return t;
     });
@@ -1640,13 +1915,7 @@ export default function ProductionDetailPage() {
             me={myName}
             isAdmin={(user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'superadmin'}
             userId={user?.id || null}
-            onAfterMerge={async () => {
-              await loadBatchData();
-              const refreshed = await reloadTicketData();
-              setTicket({ ...refreshed, _refreshKey: Date.now() });
-            }}
             batches={batches}
-            reworkOrders={reworkOrders}
           />
         )}
       </div>

@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getAllProjectItems, createProjectItem } from '@/utils/projectItemsDb';
 import { getProjectById } from '@/utils/projectDb';
+import { createNewItemCodeNotification } from '@/utils/notificationManager';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * GET /api/projects/[id]/items
@@ -19,14 +21,18 @@ export async function GET(request, ctx) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: result.data,
       error: null
     });
+    // Log read
+    await logApiCall(request, 'read', 'project_items', id, { count: result.data?.length || 0 }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error fetching project items:', error);
+    await logError(error, { action: 'read', entityType: 'project_items' }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error', data: [] },
       { status: 500 }
@@ -95,14 +101,36 @@ export async function POST(request, ctx) {
       );
     }
 
-    return NextResponse.json({
+    // แจ้งเตือน admin เมื่อมี item code ใหม่
+    try {
+      await createNewItemCodeNotification(
+        projectId,
+        itemCode,
+        body.itemType
+      );
+    } catch (notificationError) {
+      console.warn('Failed to create item code notification:', notificationError);
+      // ไม่ throw error เพื่อไม่ให้การสร้าง item ล้มเหลว
+    }
+
+    const response = NextResponse.json({
       success: true,
       data: result.data,
       error: null
     });
+    // Log create item code
+    await logApiCall(request, 'create', 'item_code', result.data?.id || itemCode, {
+      project_id: projectId,
+      item_code: itemCode,
+      item_type: body.itemType,
+      item_product_code: body.itemProductCode,
+      item_unit: body.itemUnit
+    }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error creating project item:', error);
+    await logError(error, { action: 'create', entityType: 'item_code' }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error', data: null },
       { status: 500 }

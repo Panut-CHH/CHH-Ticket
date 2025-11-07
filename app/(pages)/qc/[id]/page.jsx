@@ -9,9 +9,8 @@ import RoleGuard from "@/components/RoleGuard";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/utils/supabaseClient";
-import { ArrowLeft } from "lucide-react";
-import BatchSplitModal from "@/components/BatchSplitModal";
-import ReworkRoadmapBuilder from "@/components/ReworkRoadmapBuilder";
+import { ArrowLeft, AlertTriangle } from "lucide-react";
+// Rework feature removed
 import QCHistoryLog from "@/components/QCHistoryLog.jsx";
 
 export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicketId = null }) {
@@ -61,14 +60,11 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   
   // Ticket data
   const [ticketData, setTicketData] = useState(null);
+  const [ticketNotFound, setTicketNotFound] = useState(false);
+  const [ticketLoading, setTicketLoading] = useState(true);
   
-  // Rework flow state
-  const [showBatchSplitModal, setShowBatchSplitModal] = useState(false);
-  const [showRoadmapBuilder, setShowRoadmapBuilder] = useState(false);
-  const [reworkData, setReworkData] = useState(null);
-  const [customRoadmap, setCustomRoadmap] = useState([]);
+  // Rework flow removed
   const [defaultRoadmap, setDefaultRoadmap] = useState([]);
-  const [activeQcTaskUuid, setActiveQcTaskUuid] = useState(null);
   const [qcCompleted, setQcCompleted] = useState(false);
 
   // Toast state
@@ -104,8 +100,15 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
   // Load ticket data and history
   useEffect(() => {
-    loadTicketData();
-    loadHistory();
+    // Only load if id is valid (not empty)
+    if (id && id.trim() !== '') {
+      loadTicketData();
+      loadHistory();
+    } else {
+      // If id is empty, mark as not found
+      setTicketLoading(false);
+      setTicketNotFound(true);
+    }
   }, [id]);
 
   // Presence channel for soft-lock teamwork guard
@@ -141,18 +144,47 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
   const loadTicketData = async () => {
     try {
+      setTicketLoading(true);
+      setTicketNotFound(false);
+      
       // DB-first: load ticket from database
       const { data: dbTicket, error: dbError } = await supabase
         .from('ticket')
         .select('*')
         .eq('no', id)
         .single();
-      if (!dbError && dbTicket) setTicketData(dbTicket);
+      
+      if (dbError) {
+        // Check if ticket not found (code PGRST116 or status 406)
+        if (dbError.code === 'PGRST116' || dbError.message?.includes('No rows')) {
+          console.warn('Ticket not found:', id);
+          setTicketNotFound(true);
+          setTicketData(null);
+          return;
+        }
+        throw dbError;
+      }
+      
+      if (dbTicket) {
+        setTicketData(dbTicket);
+        setTicketNotFound(false);
+      } else {
+        setTicketNotFound(true);
+        setTicketData(null);
+        return;
+      }
       
       // Load ticket_station_flow to create default roadmap
       await loadTicketStationFlow();
     } catch (e) {
       console.error('Load ticket data failed:', e);
+      // Check for 406 or other "not found" errors
+      if (e?.status === 406 || e?.code === 'PGRST116' || e?.message?.includes('No rows')) {
+        setTicketNotFound(true);
+        setTicketData(null);
+      }
+    } finally {
+      setTicketLoading(false);
     }
   };
   
@@ -166,6 +198,11 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       
       if (error) {
         console.error('Error loading ticket station flow:', error);
+        // Check for 406 or not found errors
+        if (error.status === 406 || error.code === 'PGRST116' || error.message?.includes('Not Acceptable')) {
+          setTicketNotFound(true);
+          setTicketData(null);
+        }
         return;
       }
       
@@ -178,7 +215,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
           const isQC = code === 'QC' || name.includes('QC') || name.includes('ตรวจ') || name.includes('คุณภาพ');
           return isQC && ['pending','current'].includes(f.status || 'pending');
         })[0] || null;
-      setActiveQcTaskUuid(activeQc?.qc_task_uuid || null);
+      // active QC task uuid no longer used
       // หากสถานี QC ของตั๋วนี้เป็นสถานะกำลังดำเนินการอยู่ (current)
       // ให้เปิดฟอร์มอัตโนมัติ โดยไม่ต้องกด "เริ่ม QC" ใหม่
       if (activeQc && String(activeQc.status || '') === 'current') {
@@ -198,6 +235,11 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       setDefaultRoadmap(roadmap);
     } catch (e) {
       console.error('Load ticket station flow failed:', e);
+      // Check for 406 or not found errors in catch block too
+      if (e?.status === 406 || e?.code === 'PGRST116' || e?.message?.includes('Not Acceptable') || e?.message?.includes('No rows')) {
+        setTicketNotFound(true);
+        setTicketData(null);
+      }
     }
   };
 
@@ -206,11 +248,23 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     let cancelled = false;
     (async () => {
       try {
-        const { data: flows } = await supabase
+        const { data: flows, error } = await supabase
           .from('ticket_station_flow')
           .select(`status, stations(code,name_th), step_order`)
           .eq('ticket_no', id)
           .order('step_order', { ascending: true });
+        
+        if (error) {
+          // Check for 406 or not found errors
+          if (error.status === 406 || error.code === 'PGRST116' || error.message?.includes('Not Acceptable')) {
+            if (!cancelled) {
+              setTicketNotFound(true);
+              setTicketData(null);
+            }
+          }
+          return;
+        }
+        
         const list = Array.isArray(flows) ? flows : [];
         const qcSteps = list.filter(f => {
           const code = String(f?.stations?.code || '').toUpperCase();
@@ -219,7 +273,15 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         });
         const isAllQcCompleted = qcSteps.length > 0 && qcSteps.every(s => (s.status || 'pending') === 'completed');
         if (!cancelled) setQcCompleted(isAllQcCompleted);
-      } catch {}
+      } catch (e) {
+        // Check for 406 or not found errors in catch block
+        if (e?.status === 406 || e?.code === 'PGRST116' || e?.message?.includes('Not Acceptable')) {
+          if (!cancelled) {
+            setTicketNotFound(true);
+            setTicketData(null);
+          }
+        }
+      }
     })();
     return () => { cancelled = true; };
   }, [id]);
@@ -376,17 +438,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     // คำนวณผลลัพธ์ QC
     const qcResults = calculateQCResults();
     
-    // ถ้ามีชิ้นงานไม่ผ่าน ให้แสดง BatchSplitModal
-    if (qcResults.failQuantity > 0) {
-      setReworkData({
-        passQuantity: qcResults.passQuantity,
-        failQuantity: qcResults.failQuantity,
-        totalQuantity: qcResults.totalQuantity,
-        passRate: qcResults.passRate
-      });
-      setShowBatchSplitModal(true);
-      return;
-    }
+    // Rework flow removed: always proceed to save QC session
 
     try {
       if (othersEditing) {
@@ -491,151 +543,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     }
   };
 
-  // จัดการการสร้าง Rework Order
-  const handleReworkOrder = async (reworkOrderData) => {
-    try {
-      if (othersEditing) {
-        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
-        return;
-      }
-      setSaving(true);
-      
-      const inspectorName = (user?.name || user?.email || "").trim();
-      const inspectedDate = new Date().toISOString().split('T')[0];
-
-      // สร้าง QC Session ก่อน
-      const qcPayload = {
-        formType: 'main_qc',
-        header: {
-          inspector: inspectorName,
-          inspector_id: user?.id || null,
-          inspectedDate,
-          remark: `QC Form for ticket ${id}`
-        },
-        qc_task_uuid: activeQcTaskUuid || null,
-        // ส่งจำนวนที่ผ่าน/ไม่ผ่านเพื่อให้ API อัปเดต ticket.quantity
-        passQuantity: Number(reworkOrderData?.passQuantity ?? 0),
-        failQuantity: Number(reworkOrderData?.failQuantity ?? 0),
-        categories: {
-          'วงกบ': checklistItems.frame.reduce((acc, item) => {
-            if (item.pass !== null) {
-              acc[item.name] = {
-                pass: item.pass,
-                qty: item.qty,
-                reason: item.reason
-              };
-            }
-            return acc;
-          }, {}),
-          'ประตู': checklistItems.door.reduce((acc, item) => {
-            if (item.pass !== null) {
-              acc[item.name] = {
-                pass: item.pass,
-                qty: item.qty,
-                reason: item.reason
-              };
-            }
-            return acc;
-          }, {}),
-          'สี': checklistItems.paint.reduce((acc, item) => {
-            if (item.pass !== null) {
-              acc[item.name] = {
-                pass: item.pass,
-                qty: item.qty,
-                reason: item.reason
-              };
-            }
-            return acc;
-          }, {}),
-          'เจาะอุปกรณ์': checklistItems.drilling.reduce((acc, item) => {
-            if (item.pass !== null) {
-              acc[item.name] = {
-                pass: item.pass,
-                qty: item.qty,
-                reason: item.reason
-              };
-            }
-            return acc;
-          }, {})
-        }
-      };
-
-      // บันทึก QC Session
-      const qcResp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(qcPayload)
-      });
-
-      if (!qcResp.ok) {
-        throw new Error('Failed to save QC session');
-      }
-
-      const qcResponseData = await qcResp.json();
-      console.log('QC Response:', qcResponseData);
-      
-      const qcSessionId = qcResponseData.data?.session?.id || qcResponseData.data?.id;
-      console.log('QC Session ID:', qcSessionId);
-      
-      if (!qcSessionId) {
-        console.error('QC Response Structure:', qcResponseData);
-        throw new Error('QC Session ID not found in response');
-      }
-
-      // สร้าง Rework Order
-      const reworkPayload = {
-        ticketNo: id,
-        qcSessionId: qcSessionId,
-        passQuantity: reworkOrderData.passQuantity || 0,
-        failQuantity: reworkOrderData.failQuantity || 0,
-        severity: reworkOrderData.severity || 'major',
-        failedAtStationId: null, // เลิกพึ่งพา station_id
-        failed_qc_task_uuid: activeQcTaskUuid || null,
-        reason: reworkOrderData.reason || '',
-        notes: reworkOrderData.notes || '',
-        roadmap: reworkOrderData.roadmap || null,
-        createdBy: user?.id || 'current-user-id'
-      };
-      
-      console.log('=== Rework Payload ===');
-      console.log('QC Session ID:', qcSessionId, 'Type:', typeof qcSessionId);
-      console.log('Created By:', user?.id, 'Type:', typeof user?.id);
-      console.log('Payload:', reworkPayload);
-
-      const reworkResp = await fetch('/api/rework/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reworkPayload)
-      });
-
-      console.log('Rework API Response Status:', reworkResp.status);
-
-      if (reworkResp.ok) {
-        const reworkResponseData = await reworkResp.json();
-        console.log('Rework Order created:', reworkResponseData);
-        
-        try { localStorage.removeItem(storageKey); } catch {}
-        
-        // กลับไปหน้า QC หลักอัตโนมัติหลังสร้าง Rework Order สำเร็จ
-        setShowBatchSplitModal(false);
-        setReworkData(null);
-        showToast(language === 'th' ? 'สร้าง Rework สำเร็จ' : 'Rework created', 'success');
-        router.replace('/qc');
-        return;
-      } else {
-        const error = await reworkResp.json();
-        console.error('Rework API Error:', error);
-        console.error('Response Status:', reworkResp.status);
-        console.error('Missing fields:', error.details);
-        throw new Error(`Failed to create rework order: ${error.error}`);
-      }
-    } catch (error) {
-      console.error('Error creating rework order:', error);
-      showToast(`เกิดข้อผิดพลาด: ${error.message}`, 'error', 4000);
-    } finally {
-      setSaving(false);
-    }
-  };
+  // Rework order creation removed
 
   // จัดการการบันทึกแบบผ่านทั้งหมด
   const handlePassAll = async () => {
@@ -948,6 +856,47 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                 </div>
               </div>
             )}
+            {/* Ticket Not Found Message */}
+            {ticketNotFound && (
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-8 mb-6 border border-red-200 dark:border-red-800 mt-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                    <AlertTriangle className="w-8 h-8 text-red-600 dark:text-red-400" />
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">
+                    {language === 'th' ? 'ไม่พบตั๋ว' : 'Ticket Not Found'}
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 mb-6">
+                    {language === 'th' 
+                      ? `ไม่พบตั๋วหมายเลข ${id} ในระบบ อาจถูกลบหรือไม่มีอยู่แล้ว` 
+                      : `Ticket number ${id} was not found in the system. It may have been deleted or does not exist.`}
+                  </p>
+                  <Link
+                    href="/qc"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    <ArrowLeft className="w-5 h-5" />
+                    {language === 'th' ? 'กลับไปหน้า QC' : 'Back to QC Page'}
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {/* Loading State */}
+            {ticketLoading && !ticketNotFound && (
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-8 mb-6">
+                <div className="text-center">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {language === 'th' ? 'กำลังโหลดข้อมูลตั๋ว...' : 'Loading ticket data...'}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Main Content - Only show if ticket found */}
+            {!ticketNotFound && !ticketLoading && (
+            <>
             {/* Header */}
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
               <div className="flex items-center gap-4 mb-4">
@@ -1110,84 +1059,13 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               </div>
             </div>
 
-            {/* History */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
-              <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-                {language === 'th' ? 'ประวัติการตรวจสอบ' : 'Inspection History'}
-              </h3>
-              
-              {loading ? (
-                <div className="text-center py-4">{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</div>
-              ) : history.length === 0 ? (
-                <div className="text-center py-4 text-gray-500 dark:text-gray-400">
-                  {language === 'th' ? 'ยังไม่มีประวัติการตรวจสอบ' : 'No inspection history yet'}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full border border-gray-300 dark:border-slate-600">
-                    <thead className="bg-gray-50 dark:bg-slate-700">
-                      <tr>
-                        <th className="px-3 py-2 border text-left text-sm font-medium">วันที่</th>
-                        <th className="px-3 py-2 border text-left text-sm font-medium">ผู้ตรวจ</th>
-                        <th className="px-3 py-2 border text-left text-sm font-medium">ประเภทฟอร์ม</th>
-                        <th className="px-3 py-2 border text-left text-sm font-medium">สถานี</th>
-                        <th className="px-3 py-2 border text-left text-sm font-medium">หมายเหตุ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {history.map(session => (
-                        <tr key={session.id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
-                          <td className="px-3 py-2 border text-sm">
-                            {session.inspected_date || new Date(session.created_at).toLocaleDateString('th-TH')}
-                          </td>
-                          <td className="px-3 py-2 border text-sm">{session.inspector || '-'}</td>
-                          <td className="px-3 py-2 border text-sm">
-                            {session.form_type === 'main_qc' ? 'ฟอร์มหลัก' : 
-                             session.form_type === 'cut_edge' ? 'ตัดขอบบาน' :
-                             session.form_type === 'shoot_frame' ? 'ยิงโครง' :
-                             session.form_type === 'press_glue' ? 'อัดกาว' : session.form_type}
-                          </td>
-                          <td className="px-3 py-2 border text-sm">{session.station || '-'}</td>
-                          <td className="px-3 py-2 border text-sm">{session.remark || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+            {/* History - redesigned component only (remove duplicate table) */}
+            <div className="mt-8">
+              <QCHistoryLog ticketNo={id} />
             </div>
+            </>
+            )}
           </div>
-        </div>
-
-        {/* Batch Split Modal */}
-        <BatchSplitModal
-          isOpen={showBatchSplitModal}
-          onClose={() => {
-            setShowBatchSplitModal(false);
-            setReworkData(null);
-          }}
-          onConfirm={handleReworkOrder}
-          passQuantity={reworkData?.passQuantity || 0}
-          failQuantity={reworkData?.failQuantity || 0}
-          defaultRoadmap={defaultRoadmap}
-          totalQuantity={reworkData?.totalQuantity || 0}
-          loading={saving}
-        />
-
-        {/* Rework Roadmap Builder Modal */}
-        <ReworkRoadmapBuilder
-          isOpen={showRoadmapBuilder}
-          onCancel={() => setShowRoadmapBuilder(false)}
-          onSave={(roadmap) => {
-            setCustomRoadmap(roadmap);
-            setShowRoadmapBuilder(false);
-          }}
-          initialRoadmap={customRoadmap}
-        />
-
-        {/* QC History Section */}
-        <div className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-700">
-          <QCHistoryLog ticketNo={id} />
         </div>
       </RoleGuard>
     </ProtectedRoute>

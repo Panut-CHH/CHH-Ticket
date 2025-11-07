@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * API Route: GET /api/project-code/[projectCodeNo]
@@ -26,7 +27,7 @@ export async function GET(request, ctx) {
     // Bearer Token สำหรับเรียก External API
     const BEARER_TOKEN = process.env.EVERGREEN_API_TOKEN || '$2a$12$P5ikNWsRcf9o/8/zfuvQ2.u2ZrjmReGa.q8ljT37GmcgT9.Wb7Qtm';
     
-    const response = await fetch(externalApiUrl, {
+    const extResponse = await fetch(externalApiUrl, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -36,9 +37,9 @@ export async function GET(request, ctx) {
       signal: AbortSignal.timeout(10000), // 10 seconds timeout
     });
 
-    const raw = await response.json().catch(() => null);
+    const raw = await extResponse.json().catch(() => null);
 
-    if (!response.ok) {
+    if (!extResponse.ok) {
       const errorMsg = raw?.error ? 
         (typeof raw.error === 'object' ? JSON.stringify(raw.error) : raw.error) :
         `Project Number ${projectCodeNo} not found in external system`;
@@ -49,21 +50,24 @@ export async function GET(request, ctx) {
           error: errorMsg,
           data: null 
         },
-        { status: response.status }
+        { status: extResponse.status }
       );
     }
 
     // Normalize external shape: external returns { success, data: { ... } }
     const normalizedData = raw?.data ?? raw;
 
-    return NextResponse.json({
+    const jsonResponse = NextResponse.json({
       success: true,
       data: normalizedData,
       error: null
     });
+    await logApiCall(request, 'read', 'project_code', projectCodeNo, { external: true }, 'success', null);
+    return jsonResponse;
 
   } catch (error) {
     console.error('Error fetching project code:', error);
+    await logError(error, { action: 'read', entityType: 'project_code', entityId: (await ctx.params)?.projectCodeNo }, request);
     
     if (error.name === 'AbortError') {
       return NextResponse.json(

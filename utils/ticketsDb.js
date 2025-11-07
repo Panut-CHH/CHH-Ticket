@@ -34,19 +34,7 @@ async function loadAssignmentMap() {
     });
   } catch {}
 
-  // rework_roadmap -> key: `${rework_order_id}-${station_id}-${step_order}` => technician name
-  try {
-    const { data: roadmap } = await client
-      .from('rework_roadmap')
-      .select(`rework_order_id, station_id, step_order, users(name)`);
-    (roadmap || []).forEach(r => {
-      const step = r.step_order || 0;
-      const tech = r?.users?.name || '';
-      if (!tech) return;
-      assignmentMap[`${r.rework_order_id}-${r.station_id}-${step}`] = tech;
-      assignmentMap[`${r.rework_order_id}-${r.station_id}`] = tech;
-    });
-  } catch {}
+  // Rework roadmap removed
 
   return assignmentMap;
 }
@@ -117,7 +105,7 @@ export async function loadActiveQcQueue() {
       let assignee = t.assignee;
       try {
         const steps = roadmap;
-        const firstActiveIdx = steps.findIndex(s => !['completed','rework'].includes((s.status || 'pending')));
+        const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
         if (firstActiveIdx >= 0) {
           const active = steps[firstActiveIdx];
           const isQC = String(active.step || '').toUpperCase().includes('QC');
@@ -139,7 +127,7 @@ export async function loadActiveQcQueue() {
   const qcCandidates = merged.filter(t => {
     const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
     if (steps.length === 0) return false;
-    const firstActiveIdx = steps.findIndex(s => !['completed','rework'].includes((s.status || 'pending')));
+    const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
     if (firstActiveIdx < 0) return false;
     const stepName = String(steps[firstActiveIdx]?.step || '').toUpperCase();
     const stepStatus = steps[firstActiveIdx]?.status || 'pending';
@@ -159,7 +147,7 @@ export async function loadActiveQcQueue() {
   // 7) Sort by arrival at QC
   const qcWithArrival = qcCandidates.map(t => {
     const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
-    const idx = steps.findIndex(s => !['completed','rework'].includes((s.status || 'pending')));
+    const idx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
     const active = idx >= 0 ? steps[idx] : null;
     const arrival = active?.updatedAt ? new Date(active.updatedAt).getTime() : null;
     return { ...t, _qcArrivalTs: arrival };

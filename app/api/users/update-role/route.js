@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabaseServer';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 export async function POST(request) {
   try {
@@ -39,14 +40,17 @@ export async function POST(request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ 
+    const response = NextResponse.json({ 
       success: true, 
       message: `User role updated to ${role}`,
       data 
     });
+    await logApiCall(request, 'update', 'user_role', user.id, { email, role }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error in update role API:', error);
+    await logError(error, { action: 'update', entityType: 'user_role' }, request);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

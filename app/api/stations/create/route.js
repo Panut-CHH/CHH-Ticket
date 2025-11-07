@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -104,15 +105,23 @@ export async function POST(request) {
 
     console.log('[API CREATE STATION] Successfully created:', newStation);
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: newStation,
       message: 'Station created successfully',
       existed: false
     });
+    await logApiCall(request, 'create', 'station', newStation?.id, { 
+      code, 
+      name_th: newStation.name_th,
+      name_en: newStation.name_en,
+      department: newStation.department
+    }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('[API CREATE STATION] Error:', error);
+    await logError(error, { action: 'create', entityType: 'station' }, request);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

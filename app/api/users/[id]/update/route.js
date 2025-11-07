@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 function getSupabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -61,13 +62,16 @@ export async function POST(request, { params }) {
       // ไม่ return error เพราะอาจจะเป็น user ที่ไม่มีใน auth.users (สร้างก่อนใช้ระบบใหม่)
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: 'User updated successfully'
     });
+    await logApiCall(request, 'update', 'user', userId, { email, role }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error in update user API:', error);
+    await logError(error, { action: 'update', entityType: 'user', entityId: (await params)?.id }, request);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 }

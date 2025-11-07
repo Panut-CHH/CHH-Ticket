@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
+import { logAuthEvent } from "@/utils/clientLogger";
 
 const AuthContext = createContext();
 
@@ -109,6 +110,15 @@ export const AuthProvider = ({ children }) => {
       
       if (event === 'SIGNED_OUT') {
         console.log('User signed out, clearing local data');
+        // Log logout via auth state change
+        const currentUser = user;
+        if (currentUser) {
+          logAuthEvent('logout', true, {
+            email: currentUser.email,
+            role: currentUser.role,
+            via: 'auth_state_change'
+          }).catch(err => console.warn('Failed to log logout event:', err));
+        }
         clearAuthData();
         return;
       }
@@ -200,10 +210,21 @@ export const AuthProvider = ({ children }) => {
   const login = async ({ email, password }) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
+      // Log failed login attempt
+      await logAuthEvent('login_failed', false, {
+        email,
+        errorMessage: error.message
+      });
       return { success: false, error: error.message };
     }
     const supaUser = data?.user;
-    if (!supaUser) return { success: false, error: "No user" };
+    if (!supaUser) {
+      await logAuthEvent('login_failed', false, {
+        email,
+        errorMessage: "No user returned"
+      });
+      return { success: false, error: "No user" };
+    }
     const profile = {
       id: supaUser.id,
       email: supaUser.email,
@@ -214,14 +235,37 @@ export const AuthProvider = ({ children }) => {
     setUser(profile);
     setIsAuthenticated(true);
     localStorage.setItem("userData", JSON.stringify(profile));
+    
+    // Log successful login
+    await logAuthEvent('login', true, {
+      email: profile.email,
+      role: profile.role
+    });
+    
     return { success: true };
   };
 
   const logout = async () => {
+    const currentUser = user; // Store before clearing
     try {
       await supabase.auth.signOut();
+      
+      // Log successful logout
+      if (currentUser) {
+        await logAuthEvent('logout', true, {
+          email: currentUser.email,
+          role: currentUser.role
+        });
+      }
     } catch (error) {
       console.warn('Error during logout:', error.message);
+      // Log logout error
+      if (currentUser) {
+        await logAuthEvent('logout', false, {
+          email: currentUser.email,
+          errorMessage: error.message
+        });
+      }
     } finally {
       // Ensure cleanup even if signOut fails
       clearAuthData();

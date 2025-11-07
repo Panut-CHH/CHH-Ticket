@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database, BarChart3 } from "lucide-react";
+import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -20,7 +20,6 @@ const navItems = [
   { href: "/production", label: "production", icon: <Factory className="w-4 h-4" /> },
   { href: "/qc", label: "qc", icon: <ClipboardCheck className="w-4 h-4" /> },
   { href: "/log", label: "log", icon: <History className="w-4 h-4" /> },
-  { href: "/reports", label: "reports", icon: <BarChart3 className="w-4 h-4" />, roles: ["Admin", "SuperAdmin", "Technician"] },
   { href: "/settings", label: "settings", icon: <Settings className="w-4 h-4" /> },
 ];
 
@@ -58,9 +57,11 @@ export default function PagesLayout({ children }) {
             <button className="xl:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => setOpen(true)}>
               <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-gray-800 dark:text-gray-200" />
             </button>
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-white shadow-md" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
-              <Ticket className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
+            <Link href="/" aria-label="Go to Home">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg flex items-center justify-center text-white shadow-md" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
+                <Ticket className="w-4 h-4 sm:w-5 sm:h-5" />
+              </div>
+            </Link>
             <span className="text-sm sm:text-base md:text-lg font-semibold text-gray-800 dark:text-gray-200 hidden xs:block">{t('systemTitle', language)}</span>
             <span className="text-sm font-semibold text-gray-800 dark:text-gray-200 xs:hidden">{t('systemTitle', language)}</span>
           </div>
@@ -199,15 +200,17 @@ export default function PagesLayout({ children }) {
                     <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('activityHistory', language)}</div>
                   </div>
                 </Link>
-                <Link href="/settings" onClick={() => setHomeMode(false)} className="pressable group text-left bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl px-4 sm:px-6 py-4 sm:py-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:border-emerald-400 transition-all duration-300 flex items-center gap-3 sm:gap-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
-                    <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100 mb-0.5">{t('settings', language)}</div>
-                    <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('systemSettings', language)}</div>
-                  </div>
-                </Link>
+                {hasPageAccess(user?.role, "/settings") && (
+                  <Link href="/settings" onClick={() => setHomeMode(false)} className="pressable group text-left bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl px-4 sm:px-6 py-4 sm:py-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:border-emerald-400 transition-all duration-300 flex items-center gap-3 sm:gap-4">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
+                      <Settings className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100 mb-0.5">{t('settings', language)}</div>
+                      <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('systemSettings', language)}</div>
+                    </div>
+                  </Link>
+                )}
               </div>
 
               {/* Stats */}
@@ -280,16 +283,7 @@ export default function PagesLayout({ children }) {
         </div>
       )}
 
-      {/* Back to home */}
-      {!homeMode && (
-        <Link
-          href="/"
-          className={`pressable fixed right-3 sm:right-5 md:right-6 z-30 inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-emerald-500 text-white shadow-lg hover:scale-105 transition-all duration-200 ${isImpersonating ? "top-24 sm:top-28" : "top-20 sm:top-24"}`}
-          title={t('backToHome', language)}
-        >
-          <Home className="w-4 h-4 sm:w-5 sm:h-5" />
-        </Link>
-      )}
+      {/* Back to home floating button removed as requested */}
     </div>
     </ProtectedRoute>
   );

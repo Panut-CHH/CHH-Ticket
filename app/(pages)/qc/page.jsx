@@ -124,9 +124,6 @@ export default function QCPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_assignments' }, async () => {
         setTimeout(() => { load(); }, 250);
       })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rework_orders' }, async () => {
-        setTimeout(() => { load(); }, 250);
-      })
       .subscribe();
 
     return () => {
@@ -139,9 +136,9 @@ export default function QCPage() {
       const matchesSearch = (String(t.id) + (t.title || "")).toLowerCase().includes(searchTerm.toLowerCase());
       return matchesSearch;
     }).map((t)=>{
-      // คำนวณเวลาเข้าถึง QC จาก "ขั้นแรกที่ยังไม่เสร็จ" ถ้าเป็น QC (treat rework = completed)
+      // คำนวณเวลาเข้าถึง QC จาก "ขั้นแรกที่ยังไม่เสร็จ" ถ้าเป็น QC
       const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
-      const firstActiveIdx = steps.findIndex(s => !['completed','rework'].includes((s.status || 'pending')));
+      const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
       const active = firstActiveIdx >= 0 ? steps[firstActiveIdx] : null;
       const arrival = active?.updatedAt ? new Date(active.updatedAt).getTime() : null;
       return { ...t, _qcArrivalTs: arrival };

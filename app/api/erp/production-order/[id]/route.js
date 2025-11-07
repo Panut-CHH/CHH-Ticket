@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { fetchProductionOrder } from '@/utils/erpApi';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * GET /api/erp/production-order/[id]
@@ -27,13 +28,16 @@ export async function GET(request, { params }) {
       );
     }
     
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: result.data
     });
+    await logApiCall(request, 'read', 'erp_production_order', rpdNo, { success: true }, 'success', null);
+    return response;
     
   } catch (error) {
     console.error('API Error:', error);
+    await logError(error, { action: 'read', entityType: 'erp_production_order', entityId: (await params)?.id }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

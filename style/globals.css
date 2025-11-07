@@ -703,6 +703,10 @@ svg.lucide {
   background: linear-gradient(90deg, #34d399, #10b981); /* emerald-400 -> emerald-600 */
 }
 
+.road-connector--rework {
+  background: linear-gradient(90deg, #f87171, #ef4444); /* red-400 -> red-600 */
+}
+
 .road-connector--active {
   /* force active connector base to blue (override completed green) */
   background: linear-gradient(90deg, #93c5fd, #3b82f6) !important; /* blue-300 -> blue-600 */

@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import ThemeToggle from "./ThemeToggle";
 import ImpersonateModal from "./ImpersonateModal";
 import { t } from "@/utils/translations";
+import { hasPageAccess } from "@/utils/rolePermissions";
 
 export default function UserProfile() {
   const { user, logout, isImpersonating, originalUser, exitImpersonate } = useAuth();
@@ -65,19 +66,23 @@ export default function UserProfile() {
                 </span>
                 <ThemeToggle />
               </div>
-              <hr className="my-2 border-gray-200 dark:border-gray-700" />
-              <button
-                onClick={() => {
-                  setShowDropdown(false);
-                  router.push("/settings");
-                }}
-                className="w-full flex items-center gap-2 sm:gap-3 p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors text-left"
-              >
-                <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
-                  {t('settings', language)}
-                </span>
-              </button>
+              {hasPageAccess(user?.role, "/settings") && (
+                <>
+                  <hr className="my-2 border-gray-200 dark:border-gray-700" />
+                  <button
+                    onClick={() => {
+                      setShowDropdown(false);
+                      router.push("/settings");
+                    }}
+                    className="w-full flex items-center gap-2 sm:gap-3 p-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors text-left"
+                  >
+                    <Settings className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                    <span className="text-xs sm:text-sm text-gray-700 dark:text-gray-300">
+                      {t('settings', language)}
+                    </span>
+                  </button>
+                </>
+              )}
               
               {/* Impersonate Button */}
               {canImpersonate && !isImpersonating && (

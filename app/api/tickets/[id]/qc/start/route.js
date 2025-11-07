@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/utils/supabaseServer";
+import { createQCReadyNotification } from "@/utils/notificationManager";
+import { logApiCall, logError } from "@/utils/activityLogger";
+import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
 
 export async function POST(request, context) {
   try {
@@ -65,10 +69,14 @@ export async function POST(request, context) {
         console.log('Cleared all current statuses before starting QC');
       }
       
-      // สลับ 2: ตั้ง QC station เป็น current
+      // สลับ 2: ตั้ง QC station เป็น current และบันทึก started_at
+      const startedAt = new Date().toISOString();
       const { error: updateError } = await admin
         .from("ticket_station_flow")
-        .update({ status: "current" })
+        .update({ 
+          status: "current",
+          started_at: startedAt
+        })
         .eq("id", qcStation.id);
       
       if (updateError) {
@@ -76,19 +84,64 @@ export async function POST(request, context) {
         return NextResponse.json({ error: updateError.message }, { status: 500 });
       }
       
-      console.log('QC station updated to current:', qcStation.id);
+      console.log('QC station updated to current with started_at:', qcStation.id, startedAt);
       
-      return NextResponse.json({ 
+      // แจ้งเตือน QC users เมื่อมี ticket พร้อมสำหรับ QC
+      const stationName = qcStation.stations?.name_th || qcStation.stations?.code || 'QC';
+      await createQCReadyNotification(ticketNo, stationName);
+      
+      // Get current user for log
+      let currentUser = null;
+      let userName = null;
+      try {
+        const cookieStore = cookies();
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          {
+            cookies: {
+              get(name) {
+                return cookieStore.get(name)?.value;
+              },
+            },
+          }
+        );
+        const { data: { session } } = await supabase.auth.getSession();
+        currentUser = session?.user ?? null;
+        
+        if (currentUser) {
+          const { data: userRecord } = await supabaseServer
+            .from('users')
+            .select('name, email')
+            .eq('id', currentUser.id)
+            .maybeSingle();
+          userName = userRecord?.name || userRecord?.email || currentUser.email || null;
+        }
+      } catch (e) {
+        console.warn('Failed to get current user for log:', e?.message);
+      }
+      
+      const response = NextResponse.json({ 
         success: true, 
         message: "QC started successfully",
         qcStationId: qcStation.id
       });
+      
+      // Log QC start
+      await logApiCall(request, 'qc_started', 'qc_workflow', ticketNo, {
+        station_id: qcStation.id,
+        station_name: stationName,
+        step_order: qcStation.step_order
+      }, 'success', null, currentUser ? { id: currentUser.id, email: currentUser.email, name: userName } : null);
+      
+      return response;
     } else {
       console.log('No QC station found for ticket:', ticketNo);
       return NextResponse.json({ error: "QC station not found" }, { status: 404 });
     }
   } catch (error) {
     console.error('QC Start API error:', error);
+    await logError(error, { action: 'qc_started', entityType: 'qc_workflow', entityId: (await context.params)?.id }, request);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

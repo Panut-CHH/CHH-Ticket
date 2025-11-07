@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -129,13 +130,20 @@ export async function GET(request, { params }) {
     }
   });
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Headers': 'Cache-Control'
-    }
-  });
+  try {
+    const response = new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Headers': 'Cache-Control'
+      }
+    });
+    await logApiCall(request, 'read', 'production_events', ticketNo, { sse: true }, 'success', null);
+    return response;
+  } catch (e) {
+    await logError(e, { action: 'read', entityType: 'production_events', entityId: ticketNo }, request);
+    throw e;
+  }
 }

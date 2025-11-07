@@ -38,6 +38,9 @@ export default function EditTicketPage() {
   const [showFilePreview, setShowFilePreview] = useState(false);
   const [loadingTicket, setLoadingTicket] = useState(true);
   const [errorTicket, setErrorTicket] = useState("");
+  // BOM state
+  const [bom, setBom] = useState([{ material_name: '', quantity: '', unit: 'PCS' }]);
+  const [loadingBom, setLoadingBom] = useState(false);
 
   useClientEffect(() => {
     let active = true;
@@ -143,6 +146,62 @@ export default function EditTicketPage() {
     return () => { active = false; };
   }, [ticketId]);
 
+  // Load BOM items for this ticket
+  useEffect(() => {
+    let active = true;
+    async function loadBom() {
+      if (!ticketId) return;
+      try {
+        setLoadingBom(true);
+        let authHeader = {};
+        try {
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          if (currentSession?.access_token) {
+            authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+          }
+        } catch {}
+        const resp = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/bom`, { headers: { ...authHeader } });
+        if (resp.ok) {
+          const json = await resp.json();
+          const rows = Array.isArray(json?.data) ? json.data : [];
+          if (active) {
+            if (rows.length > 0) {
+              // ถ้ามีข้อมูลใน database ให้ใช้ข้อมูลนั้น (มี priority สูงกว่า localStorage)
+              const dbBom = rows.map(r => ({ material_name: r.material_name || '', quantity: Number(r.quantity) || '', unit: r.unit || 'PCS' }));
+              setBom(dbBom);
+              // ลบข้อมูลจาก localStorage เพราะข้อมูลใน database มี priority สูงกว่า
+              try {
+                localStorage.removeItem(`ticket_${ticketId}_bom`);
+                console.log('[LOCALSTORAGE] Removed BOM from localStorage (using database data)');
+              } catch (e) {
+                console.warn('[LOCALSTORAGE] Failed to remove BOM from localStorage:', e);
+              }
+            } else {
+              // ไม่มีข้อมูลใน database - ใช้ข้อมูลจาก localStorage (ถ้ามี) หรือค่าเริ่มต้น
+              const savedBom = localStorage.getItem(`ticket_${ticketId}_bom`);
+              if (savedBom) {
+                try {
+                  const parsed = JSON.parse(savedBom);
+                  if (Array.isArray(parsed) && parsed.length > 0) {
+                    setBom(parsed);
+                    console.log('[LOCALSTORAGE] Using BOM from localStorage');
+                    return;
+                  }
+                } catch (e) {
+                  console.warn('[LOCALSTORAGE] Failed to parse saved BOM:', e);
+                }
+              }
+              setBom([{ material_name: '', quantity: '', unit: 'PCS' }]);
+            }
+          }
+        }
+      } catch {}
+      finally { if (active) setLoadingBom(false); }
+    }
+    loadBom();
+    return () => { active = false; };
+  }, [ticketId]);
+
   // โหลดข้อมูลโปรเจ็คที่เกี่ยวข้องกับ item_code (ใช้ระบบใหม่เหมือนหน้า production)
   const loadProjectData = async (itemCode) => {
     try {
@@ -186,6 +245,63 @@ export default function EditTicketPage() {
       console.error('Error loading project data:', err);
     }
   };
+
+  // โหลดข้อมูลจาก localStorage เมื่อ component mount (ก่อนโหลดจาก database)
+  // ใช้เฉพาะเมื่อยังไม่มีข้อมูลใน database
+  useEffect(() => {
+    if (!ticketId) return;
+    
+    // โหลด stations จาก localStorage เฉพาะตอน initial load (ก่อนโหลดจาก database)
+    // ข้อมูลจาก database จะมี priority สูงกว่าและจะ override ข้อมูลนี้
+    try {
+      const savedStations = localStorage.getItem(`ticket_${ticketId}_stations`);
+      if (savedStations) {
+        try {
+          const parsed = JSON.parse(savedStations);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            console.log('[LOCALSTORAGE] Loaded stations from localStorage (initial load):', parsed);
+            setStations(parsed);
+          }
+        } catch (e) {
+          console.warn('[LOCALSTORAGE] Failed to parse saved stations:', e);
+        }
+      }
+    } catch (err) {
+      console.warn('[LOCALSTORAGE] Error loading stations from localStorage:', err);
+    }
+  }, [ticketId]); // รันเฉพาะเมื่อ ticketId เปลี่ยน (initial load)
+
+  // บันทึก stations ลง localStorage เมื่อมีการเปลี่ยนแปลง
+  useEffect(() => {
+    if (!ticketId || stations.length === 0) return;
+    
+    try {
+      localStorage.setItem(`ticket_${ticketId}_stations`, JSON.stringify(stations));
+      console.log('[LOCALSTORAGE] Saved stations to localStorage');
+    } catch (err) {
+      console.warn('[LOCALSTORAGE] Error saving stations to localStorage:', err);
+    }
+  }, [stations, ticketId]);
+
+  // บันทึก BOM ลง localStorage เมื่อมีการเปลี่ยนแปลง
+  useEffect(() => {
+    if (!ticketId) return;
+    
+    try {
+      // บันทึกเฉพาะเมื่อมีข้อมูล (ไม่ใช่แค่ empty array)
+      const hasData = bom.some(item => 
+        (item.material_name && item.material_name.trim() !== '') || 
+        (item.quantity && item.quantity !== '')
+      );
+      
+      if (hasData || bom.length > 1) {
+        localStorage.setItem(`ticket_${ticketId}_bom`, JSON.stringify(bom));
+        console.log('[LOCALSTORAGE] Saved BOM to localStorage');
+      }
+    } catch (err) {
+      console.warn('[LOCALSTORAGE] Error saving BOM to localStorage:', err);
+    }
+  }, [bom, ticketId]);
 
   // ตั้งค่า priority และ customerName เริ่มต้นจากข้อมูลตั๋ว และโหลดข้อมูลจาก Supabase
   useEffect(() => {
@@ -325,21 +441,30 @@ export default function EditTicketPage() {
               technician: technicianNameByStationId[flow.station_id] || "",
               technicianId: technicianIdByStationId[flow.station_id] || "",
               priceType: flow.price_type || "flat",
-              price: flow.price || 0,
+              price: flow.price || '',
               completionTime: toLocalInput(flow.completed_at) || "",
             }));
             
-            console.log('Setting stations with data:', dbStations);
+            console.log('Setting stations with data from database:', dbStations);
+            // ถ้ามีข้อมูลใน database ให้ใช้ข้อมูลนั้น (มี priority สูงกว่า localStorage)
             setStations(dbStations);
+            // ลบข้อมูลจาก localStorage เพราะข้อมูลใน database มี priority สูงกว่า
+            try {
+              localStorage.removeItem(`ticket_${ticketId}_stations`);
+              console.log('[LOCALSTORAGE] Removed stations from localStorage (using database data)');
+            } catch (e) {
+              console.warn('[LOCALSTORAGE] Failed to remove stations from localStorage:', e);
+            }
             return;
           }
         } catch (flowErr) {
           console.log('Error loading station flows:', flowErr.message);
-          // ไม่มี station flows - ให้ใช้ค่าเริ่มต้น
+          // ไม่มี station flows - ให้ใช้ข้อมูลจาก localStorage (ถ้ามี)
         }
       }
 
       // ไม่มีข้อมูลทั้ง database ให้ตั้งค่าเริ่มต้นจาก ERP view
+      // ถ้ามีข้อมูลใน localStorage จะถูกโหลดใน useEffect แรกแล้ว
 
       // ถ้าไม่มีข้อมูลทั้ง database และ localStorage ให้ตั้งค่าเริ่มต้น
       const customerNameErp = ticketView?.customerName || "";
@@ -513,7 +638,7 @@ export default function EditTicketPage() {
         technician: "",
         technicianId: "",
         priceType: "flat",
-        price: 0,
+        price: '',
         completionTime: "",
       },
     ]);
@@ -592,7 +717,43 @@ export default function EditTicketPage() {
         return;
       }
 
-      // ยกเลิกการบันทึกลง localStorage เพื่อหลีกเลี่ยงค่าค้าง
+      // Save BOM (separate endpoint)
+      try {
+        let authHeader2 = {};
+        try {
+          const { data: { session: currentSession2 } } = await supabase.auth.getSession();
+          if (currentSession2?.access_token) {
+            authHeader2 = { Authorization: `Bearer ${currentSession2.access_token}` };
+          }
+        } catch {}
+        const cleanBom = (Array.isArray(bom) ? bom : [])
+          .filter(r => String(r.material_name || '').trim() !== '')
+          .map(r => ({ material_name: String(r.material_name).trim(), quantity: Number(r.quantity) || 0, unit: (r.unit && String(r.unit).trim()) || 'PCS' }));
+        const bomResp = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/bom/save`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader2 },
+          body: JSON.stringify({ bom: cleanBom })
+        });
+        const bomJson = await bomResp.json();
+        if (!bomResp.ok || !bomJson.success) {
+          console.error('[SAVE] Error saving BOM:', bomJson.error);
+          alert('บันทึกตั๋วสำเร็จ แต่บันทึก BOM ไม่สำเร็จ: ' + (bomJson.error || 'Unknown error'));
+          return;
+        }
+      } catch (e) {
+        console.error('[SAVE] Exception saving BOM:', e);
+        alert('บันทึกตั๋วสำเร็จ แต่บันทึก BOM ไม่สำเร็จ');
+        return;
+      }
+
+      // ลบข้อมูลจาก localStorage เมื่อบันทึกสำเร็จ (เพราะข้อมูลถูกบันทึกลง database แล้ว)
+      try {
+        localStorage.removeItem(`ticket_${ticketId}_stations`);
+        localStorage.removeItem(`ticket_${ticketId}_bom`);
+        console.log('[LOCALSTORAGE] Removed data from localStorage after successful save');
+      } catch (e) {
+        console.warn('[LOCALSTORAGE] Failed to remove data from localStorage:', e);
+      }
 
       console.log("[SAVE] Saved ticket to database successfully");
       alert('บันทึกข้อมูลสำเร็จ! ✅');
@@ -781,6 +942,9 @@ export default function EditTicketPage() {
           </div>
         </div>
 
+        {/* Section divider */}
+        <div className="mt-8 mb-4 border-t border-gray-200 dark:border-slate-700" />
+
         {/* Stations list */}
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100">สถานีงาน (ลากเรียงลำดับได้)</h3>
@@ -859,23 +1023,30 @@ export default function EditTicketPage() {
                   </div>
                 )}
 
-                <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">การคิดเงิน</label>
-                  <div className="relative">
-                    <select value={s.priceType} onChange={(e) => updateStation(index, { priceType: e.target.value })} className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer">
-                      <option value="flat">เหมาจ่าย</option>
-                      <option value="per_piece">ต่อชิ้น</option>
-                      <option value="per_hour">รายชั่วโมง</option>
-                    </select>
-                    <DollarSign className="w-4 h-4 absolute right-8 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
-                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                {s.name !== "QC" && (
+                  <div>
+                    <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">การคิดเงิน</label>
+                    <div className="relative">
+                      <select value={s.priceType} onChange={(e) => updateStation(index, { priceType: e.target.value })} className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer">
+                        <option value="flat">เหมาจ่าย</option>
+                        <option value="per_piece">ต่อชิ้น</option>
+                        <option value="per_hour">รายชั่วโมง</option>
+                      </select>
+                      <DollarSign className="w-4 h-4 absolute right-8 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                    </div>
                   </div>
-                </div>
+                )}
 
-                <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">ราคา</label>
-                  <input type="number" value={s.price} onChange={(e) => updateStation(index, { price: Number(e.target.value) })} className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2" />
-                </div>
+                {s.name !== "QC" && (
+                  <div>
+                    <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">ราคา</label>
+                    <input type="number" value={s.price} onChange={(e) => {
+                      const v = e.target.value === '' ? '' : Number(e.target.value);
+                      updateStation(index, { price: v });
+                    }} onWheel={(e) => e.target.blur()} className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2" />
+                  </div>
+                )}
 
                 <div>
                   <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">เวลาที่จะเสร็จ</label>
@@ -900,6 +1071,86 @@ export default function EditTicketPage() {
               </button>
             </div>
           ))}
+        </div>
+
+        {/* Section divider */}
+        <div className="mt-8 mb-4 border-t border-gray-200 dark:border-slate-700" />
+
+        {/* BOM Section (moved under stations) */}
+        <div className="mb-6">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">BOM วัตถุดิบ</h3>
+          <div className="space-y-2">
+            {loadingBom && (
+              <div className="text-sm text-gray-500 dark:text-gray-400">กำลังโหลด BOM...</div>
+            )}
+            {bom.map((row, idx) => (
+              <div key={idx} className="grid grid-cols-1 md:grid-cols-6 gap-3 items-center">
+                <div className="md:col-span-3">
+                  <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">ชื่อวัตถุดิบ</label>
+                  <input
+                    type="text"
+                    value={row.material_name}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setBom(prev => prev.map((r,i)=> i===idx ? { ...r, material_name: v } : r));
+                    }}
+                    placeholder="เช่น ไม้ยาง, แผ่น MDF"
+                    className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">จำนวน</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={row.quantity}
+                    onChange={(e)=>{
+                      const v = e.target.value === '' ? '' : Number(e.target.value);
+                      setBom(prev => prev.map((r,i)=> i===idx ? { ...r, quantity: v } : r));
+                    }}
+                    onWheel={(e) => e.target.blur()}
+                    className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="text-xs text-gray-500 dark:text-gray-400 mb-1 block">หน่วย</label>
+                  <div className="relative">
+                    <select
+                      value={row.unit}
+                      onChange={(e)=>{
+                        const v = e.target.value;
+                        setBom(prev => prev.map((r,i)=> i===idx ? { ...r, unit: v } : r));
+                      }}
+                      className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer"
+                    >
+                      <option value="PCS">PCS (ชิ้น)</option>
+                      <option value="KG">KG (กิโลกรัม)</option>
+                      <option value="M">M (เมตร)</option>
+                      <option value="M2">M2 (ตารางเมตร)</option>
+                      <option value="L">L (ลิตร)</option>
+                    </select>
+                    <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                  </div>
+                </div>
+                <div className="md:col-span-1 flex items-end">
+                  <button
+                    onClick={() => setBom(prev => prev.filter((_,i)=> i!==idx))}
+                    className="shrink-0 px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg text-sm inline-flex items-center gap-2"
+                  >
+                    <Trash2 className="w-4 h-4" /> ลบ
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3">
+            <button
+              onClick={() => setBom(prev => [...prev, { material_name: '', quantity: '', unit: 'PCS' }])}
+              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium inline-flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> เพิ่มรายการวัตถุดิบ
+            </button>
+          </div>
         </div>
 
         {/* Bottom save */}

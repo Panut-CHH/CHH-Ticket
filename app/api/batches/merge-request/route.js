@@ -66,18 +66,15 @@ export async function POST(request) {
 
     // 3. ส่ง Notification ไปหา Admin
     try {
-      const { error: notificationError } = await admin
-        .from('notifications')
-        .insert({
-          type: 'batch_merge_requested',
-          title: 'คำขอรวม Batch',
-          message: `มีคำขอรวม Batch สำหรับตั๋ว ${ticketNo} รออนุมัติ (${sourceBatchIds.length} batches)`,
-          ticket_no: ticketNo
-        });
-
-      if (notificationError) {
-        console.warn('Failed to create notification:', notificationError);
-      }
+      const { createApprovalRequiredNotification } = await import('@/utils/notificationManager');
+      await createApprovalRequiredNotification(
+        requestedBy,
+        'batch_merge_requested',
+        'คำขอรวม Batch',
+        `มีคำขอรวม Batch สำหรับตั๋ว ${ticketNo} รออนุมัติ (${sourceBatchIds.length} batches)`,
+        ticketNo,
+        { source_batch_ids: sourceBatchIds, target_station_id: targetStationId }
+      );
     } catch (notificationErr) {
       console.warn('Notification error:', notificationErr);
     }

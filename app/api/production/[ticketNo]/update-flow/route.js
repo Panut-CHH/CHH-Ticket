@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -76,51 +77,10 @@ export async function POST(request, { params }) {
       .single();
 
     if (!isAdmin && (assignmentError || !assignment)) {
-      console.log('[API] Assignment check failed in ticket_assignments, trying rework_roadmap fallback...');
-      // Fallback สำหรับตั๋ว Rework: ตรวจใน rework_roadmap
-      try {
-        const { data: targetFlow } = await supabaseAdmin
-          .from('ticket_station_flow')
-          .select('is_rework_ticket, rework_order_id')
-          .eq('ticket_no', ticketNo)
-          .eq('station_id', station_id)
-          .eq('step_order', step_order)
-          .single();
-
-        if (targetFlow?.is_rework_ticket && targetFlow?.rework_order_id) {
-          const { data: rwAssign } = await supabaseAdmin
-            .from('rework_roadmap')
-            .select('assigned_technician_id')
-            .eq('rework_order_id', targetFlow.rework_order_id)
-            .eq('station_id', station_id)
-            .eq('step_order', step_order)
-            .single();
-
-          if (isAdmin || (rwAssign && rwAssign.assigned_technician_id === user_id)) {
-            console.log('[API] Fallback rework_roadmap assignment matched. Proceeding.');
-          } else {
-            return NextResponse.json(
-              { success: false, error: 'You are not assigned to this station' },
-              { status: 403 }
-            );
-          }
-        } else {
-          if (!isAdmin) {
-            return NextResponse.json(
-              { success: false, error: 'You are not assigned to this station' },
-              { status: 403 }
-            );
-          }
-        }
-      } catch (e) {
-        console.warn('[API] Fallback rework assignment check error:', e?.message);
-        if (!isAdmin) {
           return NextResponse.json(
             { success: false, error: 'You are not assigned to this station' },
             { status: 403 }
           );
-        }
-      }
     }
 
     console.log('[API] Assignment check passed (admin bypass =', isAdmin, ') proceeding');
@@ -154,9 +114,14 @@ export async function POST(request, { params }) {
       // Update to current - ใช้ step_order เพื่อให้แต่ละ step แยกกัน
       console.log('[API] Updating flow to current:', { ticketNo, station_id, step_order });
       
+      const startedAt = new Date().toISOString();
+      
       const { data: updated, error: updateError } = await supabaseAdmin
         .from('ticket_station_flow')
-        .update({ status: 'current' })
+        .update({ 
+          status: 'current',
+          started_at: startedAt
+        })
         .eq('ticket_no', ticketNo)
         .eq('station_id', station_id)
         .eq('step_order', step_order)
@@ -170,13 +135,35 @@ export async function POST(request, { params }) {
 
       console.log('[API] Updated to current:', updated);
 
+      // Check if this is the first step (step_order = 1) and update ticket.started_at
+      if (step_order === 1) {
+        try {
+          const { data: ticketData } = await supabaseAdmin
+            .from('ticket')
+            .select('started_at')
+            .eq('no', ticketNo)
+            .single();
+          
+          // Only update if ticket.started_at is null (first time starting)
+          if (ticketData && !ticketData.started_at) {
+            await supabaseAdmin
+              .from('ticket')
+              .update({ started_at: startedAt })
+              .eq('no', ticketNo);
+            console.log('[API] Updated ticket.started_at for first step');
+          }
+        } catch (e) {
+          console.warn('[API] Failed to update ticket.started_at:', e?.message);
+        }
+      }
+
       // Create technician work session record
       console.log('[API] Creating work session with:', {
         ticket_no: ticketNo,
         station_id: station_id,
         step_order: step_order,
         technician_id: user_id,
-        started_at: new Date().toISOString()
+        started_at: startedAt
       });
 
       const { data: workSession, error: sessionError } = await supabaseAdmin
@@ -186,7 +173,7 @@ export async function POST(request, { params }) {
           station_id: station_id,
           step_order: step_order,
           technician_id: user_id,
-          started_at: new Date().toISOString()
+          started_at: startedAt
         })
         .select()
         .single();
@@ -199,12 +186,43 @@ export async function POST(request, { params }) {
         console.log('[API] Created work session:', workSession);
       }
 
-      return NextResponse.json({
+      // Get station name and user info for log
+      let stationName = null;
+      let userName = null;
+      let userEmail = null;
+      try {
+        const { data: stationData } = await supabaseAdmin
+          .from('stations')
+          .select('name_th, code')
+          .eq('id', station_id)
+          .single();
+        stationName = stationData?.name_th || stationData?.code || null;
+        
+        const { data: userData } = await supabaseAdmin
+          .from('users')
+          .select('name, email')
+          .eq('id', user_id)
+          .single();
+        userName = userData?.name || userData?.email || null;
+        userEmail = userData?.email || null;
+      } catch (e) {
+        console.warn('Failed to get station/user info for log:', e?.message);
+      }
+
+      const response = NextResponse.json({
         success: true,
         message: 'Step started successfully',
         data: updated,
         workSession: workSession
       });
+      await logApiCall(request, 'step_started', 'production_flow', ticketNo, {
+        station_id,
+        station_name: stationName,
+        step_order,
+        user_id,
+        user_name: userName
+      }, 'success', null, userEmail ? { id: user_id, email: userEmail, name: userName } : null);
+      return response;
 
     } else if (action === 'complete') {
       // Mark current step as completed - ใช้ step_order เพื่อให้แต่ละ step แยกกัน
@@ -236,6 +254,34 @@ export async function POST(request, { params }) {
 
       console.log('[API] Marked as completed:', completed);
 
+      // Check if this is the last step and all steps are completed
+      const { data: allFlows } = await supabaseAdmin
+        .from('ticket_station_flow')
+        .select('step_order, status')
+        .eq('ticket_no', ticketNo)
+        .order('step_order', { ascending: true });
+      
+      if (allFlows && allFlows.length > 0) {
+        const allCompleted = allFlows.every(f => f.status === 'completed');
+        const isLastStep = step_order === Math.max(...allFlows.map(f => f.step_order));
+        
+        if (allCompleted && isLastStep) {
+          // All steps completed - update ticket.finished_at
+          try {
+            await supabaseAdmin
+              .from('ticket')
+              .update({ 
+                status: 'Finished',
+                finished_at: completedAt
+              })
+              .eq('no', ticketNo);
+            console.log('[API] Updated ticket.finished_at - all steps completed');
+          } catch (e) {
+            console.warn('[API] Failed to update ticket.finished_at:', e?.message);
+          }
+        }
+      }
+
       // Update technician work session record with completion data
       const { data: workSession, error: sessionError } = await supabaseAdmin
         .from('technician_work_sessions')
@@ -244,7 +290,7 @@ export async function POST(request, { params }) {
         .eq('station_id', station_id)
         .eq('step_order', step_order)
         .eq('technician_id', user_id)
-        .eq('completed_at', null) // Only update incomplete sessions
+        .is('completed_at', null) // Only update incomplete sessions
         .single();
 
       if (workSession && !sessionError) {
@@ -252,7 +298,8 @@ export async function POST(request, { params }) {
         const startTime = new Date(workSession.started_at);
         const endTime = new Date(completedAt);
         const durationMs = endTime.getTime() - startTime.getTime();
-        const durationMinutes = Math.round(durationMs / (1000 * 60 * 100)) / 100; // Round to 2 decimal places
+        // Convert ms -> minutes and round to 2 decimals
+        const durationMinutes = Math.round(((durationMs / 60000)) * 100) / 100;
 
         // Update the work session with completion data
         const { error: updateSessionError } = await supabaseAdmin
@@ -265,7 +312,7 @@ export async function POST(request, { params }) {
           .eq('station_id', station_id)
           .eq('step_order', step_order)
           .eq('technician_id', user_id)
-          .eq('completed_at', null);
+          .is('completed_at', null);
 
         if (updateSessionError) {
           console.error('[API] Work session update error:', updateSessionError);
@@ -281,15 +328,47 @@ export async function POST(request, { params }) {
       // ไม่ auto-start ขั้นตอนถัดไป - ให้ช่างกด Start เอง
       // เพื่อให้มีเวลาพักหรือเตรียมตัวก่อนเริ่มงานใหม่
 
-      return NextResponse.json({
+      // Get station name and user name for log
+      let stationName = null;
+      let userName = null;
+      let userData = null;
+      try {
+        const { data: stationData } = await supabaseAdmin
+          .from('stations')
+          .select('name_th, code')
+          .eq('id', station_id)
+          .single();
+        stationName = stationData?.name_th || stationData?.code || null;
+        
+        const { data: userDataResult } = await supabaseAdmin
+          .from('users')
+          .select('name, email')
+          .eq('id', user_id)
+          .single();
+        userData = userDataResult;
+        userName = userData?.name || userData?.email || null;
+      } catch (e) {
+        console.warn('Failed to get station/user info for log:', e?.message);
+      }
+
+      const response = NextResponse.json({
         success: true,
         message: 'Step completed successfully',
         data: completed
       });
+      await logApiCall(request, 'step_completed', 'production_flow', ticketNo, {
+        station_id,
+        station_name: stationName,
+        step_order,
+        user_id,
+        user_name: userName
+      }, 'success', null, userData ? { id: user_id, email: userData?.email, name: userName } : null);
+      return response;
     }
 
   } catch (error) {
     console.error('[API] Error updating flow:', error);
+    await logError(error, { action: 'update', entityType: 'production_flow', entityId: (await params)?.ticketNo }, request);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

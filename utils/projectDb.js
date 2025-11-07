@@ -4,6 +4,7 @@
  */
 
 import { supabase } from './supabaseClient';
+import { logActivity } from './activityLogger';
 
 /**
  * โครงสร้างตาราง projects ใน Supabase
@@ -106,6 +107,44 @@ export async function createProject(projectData) {
       return { success: false, error: error.message, data: null };
     }
 
+    // บันทึก log การสร้างโปรเจ็ค
+    try {
+      await logActivity({
+        action: 'created',
+        entityType: 'project',
+        entityId: data.id,
+        details: {
+          project_number: data.project_number,
+          project_name: data.project_name,
+          item_code: data.item_code,
+          file_name: data.file_name
+        },
+        status: 'success',
+        userEmail: projectData.userEmail || projectData.uploadedBy,
+        userName: projectData.userName || null,
+        userId: projectData.userId || null
+      });
+    } catch (logError) {
+      console.warn('Failed to log project creation:', logError);
+      // ไม่ throw error เพื่อไม่ให้การสร้าง project ล้มเหลว
+    }
+
+    // แจ้งเตือน admin เมื่อมี project ใหม่ (ผ่าน API)
+    try {
+      await fetch('/api/notifications/create-project', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          projectNumber: data.project_number || null,
+          projectName: data.project_name || null,
+          itemCode: data.item_code || null
+        })
+      }).catch(() => {}); // Silent fail - notification is optional
+    } catch (notificationError) {
+      console.warn('Failed to create project notification:', notificationError);
+      // ไม่ throw error เพื่อไม่ให้การสร้าง project ล้มเหลว
+    }
+
     return { success: true, data: data, error: null };
   } catch (error) {
     console.error('Error creating project:', error);
@@ -157,42 +196,7 @@ export async function deleteProject(projectId) {
 
     const ticketNumbers = tickets?.map(t => t.no) || [];
 
-    if (ticketNumbers.length > 0) {
-      // 2. ดึง rework_order_ids
-      const { data: reworkOrders, error: reworkOrderError } = await supabase
-        .from('rework_orders')
-        .select('id')
-        .in('ticket_no', ticketNumbers);
-
-      if (reworkOrderError) {
-        console.warn('Error fetching rework_orders:', reworkOrderError);
-      }
-
-      const reworkOrderIds = reworkOrders?.map(ro => ro.id) || [];
-
-      if (reworkOrderIds.length > 0) {
-        // 3. ลบ rework_roadmap
-        const { error: roadmapError } = await supabase
-          .from('rework_roadmap')
-          .delete()
-          .in('rework_order_id', reworkOrderIds);
-
-        if (roadmapError) {
-          console.warn('Error deleting rework_roadmap:', roadmapError);
-        }
-
-        // 4. อัปเดต ticket_station_flow ให้ rework_order_id เป็น null
-        const { error: flowError } = await supabase
-          .from('ticket_station_flow')
-          .update({ rework_order_id: null })
-          .in('ticket_no', ticketNumbers)
-          .not('rework_order_id', 'is', null);
-
-        if (flowError) {
-          console.warn('Error updating ticket_station_flow:', flowError);
-        }
-      }
-    }
+    // Rework feature removed: no additional cleanup required
 
     // 5. ลบโปรเจ็ค
     const { error } = await supabase

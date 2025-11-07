@@ -119,4 +119,5 @@ temp/
 *.sw?
 .cursor/
 *.md
+*.sql
 .superdesign/

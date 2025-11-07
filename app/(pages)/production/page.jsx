@@ -25,11 +25,15 @@ export default function ProductionPage() {
   const [loadingTickets, setLoadingTickets] = useState(false);
   const [loadError, setLoadError] = useState("");
   
-  // Batch and rework data
+  // Batch data
   const [batches, setBatches] = useState([]);
-  const [reworkOrders, setReworkOrders] = useState([]);
+  // Global gate: hide tickets when no stations exist yet
+  const [hasAnyStations, setHasAnyStations] = useState(true);
+  
+  // Tab state for completed/incomplete tickets
+  const [activeTab, setActiveTab] = useState('incomplete'); // 'completed' or 'incomplete'
 
-  // Function to load batches and rework orders
+  // Function to load batches
   const loadBatchData = async () => {
     try {
       // Load batches
@@ -44,19 +48,6 @@ export default function ProductionPage() {
       
       if (batchError) throw batchError;
       setBatches(batchData || []);
-
-      // Load rework orders
-      const { data: reworkData, error: reworkError } = await supabase
-        .from('rework_orders')
-        .select(`
-          *,
-          users!rework_orders_created_by_fkey(name),
-          stations(name_th, code)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (reworkError) throw reworkError;
-      setReworkOrders(reworkData || []);
     } catch (error) {
       console.error('Error loading batch data:', error);
     }
@@ -68,6 +59,21 @@ export default function ProductionPage() {
       setLoadingTickets(true);
       setLoadError("");
 
+      // Gate: if no stations configured, do not show tickets
+      try {
+        const { count, error: stationCountError } = await supabase
+          .from('stations')
+          .select('id', { count: 'exact', head: true });
+        if (!stationCountError) {
+          const hasStations = (typeof count === 'number' ? count : 0) > 0;
+          setHasAnyStations(hasStations);
+          if (!hasStations) {
+            setTickets([]);
+            return; // Stop loading tickets until stations are created
+          }
+        }
+      } catch {}
+
       // 1) Load tickets from DB (base info)
       const { data: ticketData, error: ticketError } = await supabase
         .from('ticket')
@@ -75,7 +81,7 @@ export default function ProductionPage() {
         .order('created_at', { ascending: false });
       if (ticketError) throw ticketError;
 
-      // ดึงทั้งตั๋วหลักและ rework tickets
+      // ดึงตั๋วทั้งหมด
       const allTicketNumbers = (ticketData || [])
         .map(t => t?.no)
         .filter(v => typeof v === 'string' && v.trim().length > 0 && v !== 'N/A');
@@ -169,46 +175,6 @@ export default function ProductionPage() {
         }
       } catch {}
 
-      // ดึงข้อมูล rework_roadmap เพื่อหา technician สำหรับ rework tickets
-      let reworkRoadmaps = [];
-      let reworkOrderMap = {}; // Map rework_order_id -> ticket_no
-      
-      try {
-        // ดึง rework_orders ก่อน
-        const { data: reworkOrdersData, error: reworkOrdersError } = await supabase
-          .from('rework_orders')
-          .select('id, ticket_no');
-        
-        if (!reworkOrdersError && Array.isArray(reworkOrdersData)) {
-          reworkOrdersData.forEach(ro => {
-            reworkOrderMap[ro.id] = ro.ticket_no;
-          });
-        }
-
-        // ดึง rework_roadmap
-        const { data: roadmapData, error: roadmapError } = await supabase
-          .from('rework_roadmap')
-          .select(`
-            rework_order_id,
-            station_id,
-            step_order,
-            assigned_technician_id,
-            station_name,
-            users(name)
-          `);
-        
-        if (!roadmapError && Array.isArray(roadmapData)) {
-          // เพิ่ม ticket_no เข้าไปในข้อมูล
-          reworkRoadmaps = roadmapData.map(roadmap => ({
-            ...roadmap,
-            ticket_no: reworkOrderMap[roadmap.rework_order_id]
-          }));
-        }
-      } catch (e) {
-        console.warn('Error loading rework_roadmap:', e);
-      }
-
-      // console.log('[PRODUCTION] Loaded rework roadmaps:', reworkRoadmaps?.length);
       // console.log('[PRODUCTION] Loaded assignments:', assignments?.length);
 
       // Build assignment map for quick lookup (handle multiple technicians per station)
@@ -229,21 +195,7 @@ export default function ProductionPage() {
         }
       });
 
-      // เพิ่มข้อมูลจาก rework_roadmap สำหรับ rework tickets
-      // ใช้ rework_order_id แทน ticket_no เพราะ rework_roadmap ไม่มี ticket_no ของ rework ticket
-      reworkRoadmaps.forEach(roadmap => {
-        const reworkOrderId = roadmap.rework_order_id;
-        const stationId = roadmap.station_id;
-        const stepOrder = roadmap.step_order;
-        const techName = roadmap.users?.name || '';
-        
-        if (reworkOrderId && stationId && techName) {
-          // ใช้ key pattern เดียวกับ ticket_station_flow สำหรับ rework tickets
-          // format: rework_order_id-station_id-step_order
-          const key = `${reworkOrderId}-${stationId}-${stepOrder || 0}`;
-          assignmentMap[key] = techName;
-        }
-      });
+      // (Rework roadmap augmentation removed)
 
       console.log('[PRODUCTION] Assignment map:', assignmentMap);
 
@@ -300,8 +252,9 @@ export default function ProductionPage() {
         };
       });
       
-      // รวมเฉพาะ merged (ครอบคลุมทั้งตั๋วหลักและ -RW อยู่แล้ว) เพื่อหลีกเลี่ยง key ซ้ำ
-      setTickets(merged);
+      // รวมเฉพาะ merged และซ่อนตั๋วที่ยังไม่มีสถานี/flow เลย
+      const visible = merged.filter(mt => Array.isArray(mt.roadmap) && mt.roadmap.length > 0);
+      setTickets(visible);
     } catch (e) {
       setLoadError(e?.message || 'Failed to load tickets');
     } finally {
@@ -369,19 +322,6 @@ export default function ProductionPage() {
         {
           event: '*',
           schema: 'public',
-          table: 'rework_orders'
-        },
-        async (payload) => {
-          console.log('[PRODUCTION REALTIME] Rework order change:', payload);
-          await new Promise(resolve => setTimeout(resolve, 300));
-          loadBatchData();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
           table: 'ticket'
         },
         async () => {
@@ -431,31 +371,19 @@ export default function ProductionPage() {
 
   const myTickets = useMemo(() => {
     if (!myName) return [];
+    let filtered = [];
     if (isAdmin) {
       // Admins see all tickets
-      return tickets;
-    }
-    const filtered = tickets.filter((t) => {
-      // ถ้าเป็น rework ticket ให้เช็ค technician จาก stations
-      if (t.isRework || (t.id && t.id.includes('-RW'))) {
+      filtered = tickets;
+    } else {
+      filtered = tickets.filter((t) => {
+        // เช็ค assignee หรือ technician
+        const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
+        if (assigneeLower.includes(myNameLower)) return true;
         const stations = Array.isArray(t.stations) ? t.stations : [];
-        const hasAssigned = stations.some((s) => {
-          const techName = ((s.technician || "").toString()).toLowerCase();
-          return techName.includes(myNameLower) && techName !== '-' && techName !== 'ยังไม่ได้มอบหมาย' && techName !== 'not assigned';
-        });
-        if (hasAssigned) {
-          console.log('[PRODUCTION] Including rework ticket (assigned):', t.id);
-          return true;
-        }
-        return false;
-      }
-      
-      // สำหรับตั๋วปกติ เช็ค assignee หรือ technician
-      const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
-      if (assigneeLower.includes(myNameLower)) return true;
-      const stations = Array.isArray(t.stations) ? t.stations : [];
-      return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
-    });
+        return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
+      });
+    }
     
     console.log('[PRODUCTION] My name:', myName);
     console.log('[PRODUCTION] Total tickets:', tickets.length);
@@ -463,6 +391,16 @@ export default function ProductionPage() {
     
     return filtered;
   }, [myName, myNameLower, tickets, isAdmin]);
+
+  // Filter tickets by tab (completed vs incomplete)
+  const filteredTickets = useMemo(() => {
+    if (activeTab === 'completed') {
+      return myTickets.filter((t) => (t.status || "") === "Finish");
+    } else {
+      // incomplete: Pending, Released, In Progress
+      return myTickets.filter((t) => (t.status || "") !== "Finish");
+    }
+  }, [myTickets, activeTab]);
 
   const sumTicketAmount = (ticket) => {
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
@@ -479,7 +417,7 @@ export default function ProductionPage() {
       .reduce((s, t) => s + sumTicketAmount(t), 0);
     const pendingAmount = totalAmount - doneAmount;
     
-    // Batch and rework statistics
+    // Batch statistics
     const myBatches = batches.filter(batch => {
       const batchTicket = tickets.find(t => t.id === batch.ticket_no);
       if (!batchTicket) return false;
@@ -489,15 +427,6 @@ export default function ProductionPage() {
       return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
     });
     
-    const reworkCount = reworkOrders.filter(rework => {
-      const reworkTicket = tickets.find(t => t.id === rework.ticket_no);
-      if (!reworkTicket) return false;
-      const assigneeLower = ((reworkTicket.assignee || "").toString()).toLowerCase();
-      if (assigneeLower.includes(myNameLower)) return true;
-      const stations = Array.isArray(reworkTicket.stations) ? reworkTicket.stations : [];
-      return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
-    }).length;
-    
     return { 
       total, 
       done, 
@@ -505,10 +434,9 @@ export default function ProductionPage() {
       totalAmount, 
       doneAmount, 
       pendingAmount,
-      batchCount: myBatches.length,
-      reworkCount
+      batchCount: myBatches.length
     };
-  }, [myTickets, batches, reworkOrders, myNameLower, tickets]);
+  }, [myTickets, batches, myNameLower, tickets]);
 
   return (
     <ProtectedRoute>
@@ -567,26 +495,51 @@ export default function ProductionPage() {
                   <div className="text-lg sm:text-xl font-semibold text-amber-700">{stats.pendingAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
                 </div>
               </div>
-              
-              {/* Batch and Rework Statistics */}
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'Batches ที่รับผิดชอบ' : 'Active Batches'}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="text-lg sm:text-xl font-semibold text-blue-600">{stats.batchCount}</div>
-                  <div className="w-6 h-6 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-blue-600">B</span>
+            </div>
+
+            {/* Tab Navigation */}
+            <div className="mt-6 sm:mt-8">
+              <div className="flex gap-2 sm:gap-3 border-b border-gray-200 dark:border-slate-700">
+                <button
+                  onClick={() => setActiveTab('incomplete')}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium transition-all duration-200 border-b-2 ${
+                    activeTab === 'incomplete'
+                      ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Clock3 className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <span>{language === 'th' ? 'ตั๋วที่ยังไม่เสร็จ' : 'Incomplete Tickets'}</span>
+                    <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${
+                      activeTab === 'incomplete'
+                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}>
+                      {myTickets.filter((t) => (t.status || "") !== "Finish").length}
+                    </span>
                   </div>
-                </div>
-              </div>
-              
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'Rework Orders' : 'Rework Orders'}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="text-lg sm:text-xl font-semibold text-orange-600">{stats.reworkCount}</div>
-                  <div className="w-6 h-6 bg-orange-100 dark:bg-orange-900/20 rounded-full flex items-center justify-center">
-                    <span className="text-xs font-bold text-orange-600">R</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('completed')}
+                  className={`px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium transition-all duration-200 border-b-2 ${
+                    activeTab === 'completed'
+                      ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 dark:border-emerald-400'
+                      : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
+                    <span>{language === 'th' ? 'ตั๋วที่เสร็จแล้ว' : 'Completed Tickets'}</span>
+                    <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${
+                      activeTab === 'completed'
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                    }`}>
+                      {myTickets.filter((t) => (t.status || "") === "Finish").length}
+                    </span>
                   </div>
-                </div>
+                </button>
               </div>
             </div>
 
@@ -601,21 +554,32 @@ export default function ProductionPage() {
                   {loadError}
                 </div>
               )}
-              {myTickets.length === 0 && !loadingTickets && (
-                <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-800 dark:text-yellow-300 text-sm sm:text-base">{language === 'th' ? 'ยังไม่มีตั๋วที่มอบหมายให้คุณ' : 'No tickets assigned to you yet'}</div>
+              {filteredTickets.length === 0 && !loadingTickets && (
+                <>
+                  {!hasAnyStations ? (
+                    <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-800 dark:text-yellow-300 text-sm sm:text-base">
+                      {language === 'th' ? 'ยังไม่ได้เพิ่มสถานีใด ๆ กรุณาเพิ่มสถานีในเมนูตั้งค่าก่อน จึงจะแสดงตั๋วในหน้า Production' : 'No stations configured yet. Please add stations in Settings to see tickets.'}
+                    </div>
+                  ) : (
+                    <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-800 dark:text-yellow-300 text-sm sm:text-base">
+                      {language === 'th' 
+                        ? (activeTab === 'completed' 
+                          ? 'ยังไม่มีตั๋วที่เสร็จแล้ว' 
+                          : 'ยังไม่มีตั๋วที่ยังไม่เสร็จ')
+                        : (activeTab === 'completed'
+                          ? 'No completed tickets yet'
+                          : 'No incomplete tickets yet')}
+                    </div>
+                  )}
+                </>
               )}
 
-              {myTickets.map((ticket) => {
+              {filteredTickets.map((ticket) => {
                 const total = sumTicketAmount(ticket);
                 const cleanedId = (ticket.id || "").replace(/^#/, "");
                 
-                // ตรวจสอบว่าเป็นตั๋ว Rework หรือไม่
-                const isReworkTicket = (ticket.id || '').includes('-RW');
-                const parentTicketNo = ticket.source_no || '';
-                
                 // Get batches for this ticket
                 const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
-                const ticketReworkOrders = reworkOrders.filter(rework => rework.ticket_no === ticket.id);
                 
                 return (
                   <div key={ticket.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
@@ -623,13 +587,6 @@ export default function ProductionPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                           <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{ticket.id}</div>
-                          
-                          {/* Rework Badge */}
-                          {isReworkTicket && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400 flex items-center gap-1">
-                              <span>🔄</span> Rework
-                            </span>
-                          )}
                           
                           {ticket.route && <span className={`text-xs px-2 py-1 rounded-full ${ticket.routeClass}`}>{ticket.route}</span>}
                           <span className={`text-xs px-2 py-1 rounded-full ${ticket.priorityClass}`}>{ticket.priority}</span>
@@ -642,20 +599,11 @@ export default function ProductionPage() {
                             </span>
                           )}
                           
-                          {ticketReworkOrders.length > 0 && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400">
-                              {ticketReworkOrders.length} {language === 'th' ? 'Rework' : 'Rework'}
-                            </span>
-                          )}
+                          
                         </div>
                         <div className="text-gray-700 dark:text-gray-300 mt-1 truncate text-sm sm:text-base">{ticket.title}</div>
                         
-                        {/* Link to Parent Ticket for Rework */}
-                        {isReworkTicket && parentTicketNo && (
-                          <div className="mt-1 text-xs text-gray-600 dark:text-gray-400">
-                            🔗 {language === 'th' ? 'ตั๋วหลัก:' : 'Parent Ticket:'} {parentTicketNo}
-                          </div>
-                        )}
+                        
                         <div className="mt-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">{t('ticketValue', language)}: <span className="font-medium text-gray-900 dark:text-gray-100">{total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</span></div>
                         
                         {/* Batch Details */}

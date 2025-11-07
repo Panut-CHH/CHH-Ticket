@@ -1,6 +1,6 @@
 import { supabaseServer } from "@/utils/supabaseServer";
 import { createWorkOrderFromQC } from "@/utils/workOrderManager";
-import { createNotification } from "@/utils/notificationManager";
+import { createNotification, createQCReadyNotification, createTicketCompletedNotification } from "@/utils/notificationManager";
 
 export async function completeQCStation(ticketNo) {
   console.log('=== completeQCStation Debug ===');
@@ -35,9 +35,13 @@ export async function completeQCStation(ticketNo) {
       console.log('QC station:', qcStation);
       
       // Mark QC station as completed
+      const completedAt = new Date().toISOString();
       const { error: updateError } = await admin
         .from("ticket_station_flow")
-        .update({ status: "completed" })
+        .update({ 
+          status: "completed",
+          completed_at: completedAt
+        })
         .eq("id", qcStation.id);
       
       if (updateError) {
@@ -66,11 +70,28 @@ export async function completeQCStation(ticketNo) {
         console.log('QC is the last station - ticket is now complete');
         // All stations completed - ticket status will be "Finish" automatically
         
-        // อัปเดต ticket status เป็น Finish
+        const finishedAt = new Date().toISOString();
+        
+        // อัปเดต ticket status เป็น Finish และบันทึก finished_at
         await admin
           .from("ticket")
-          .update({ status: "Finished" })
+          .update({ 
+            status: "Finished",
+            finished_at: finishedAt
+          })
           .eq("no", ticketNo);
+        
+        // อัปเดต completed_at ใน ticket_station_flow สำหรับ QC step
+        await admin
+          .from("ticket_station_flow")
+          .update({ completed_at: finishedAt })
+          .eq("ticket_no", ticketNo)
+          .eq("id", qcStation.id);
+        
+        console.log('Updated ticket.finished_at and QC flow.completed_at');
+        
+        // แจ้งเตือน admin เมื่อ ticket เสร็จสิ้น
+        await createTicketCompletedNotification(ticketNo);
       } else {
         console.log('QC completed - next station remains pending');
         // Next station stays pending - technician will click start themselves
@@ -145,11 +166,24 @@ export async function flagForRework(ticketNo, qcSessionId, failedRows) {
       
       if (isLastStation) {
         console.log('QC is the last station - ticket is now complete');
-        // อัปเดต ticket status เป็น Finish
+        const finishedAt = new Date().toISOString();
+        // อัปเดต ticket status เป็น Finish และบันทึก finished_at
         await admin
           .from("ticket")
-          .update({ status: "Finished" })
+          .update({ 
+            status: "Finished",
+            finished_at: finishedAt
+          })
           .eq("no", ticketNo);
+        
+        // อัปเดต completed_at ใน ticket_station_flow สำหรับ QC step
+        await admin
+          .from("ticket_station_flow")
+          .update({ completed_at: finishedAt })
+          .eq("ticket_no", ticketNo)
+          .eq("id", qcStation.id);
+        
+        console.log('Updated ticket.finished_at and QC flow.completed_at (rework)');
       } else {
         console.log('QC completed with rework - next station remains pending');
         // Next station stays pending - technician will click start themselves

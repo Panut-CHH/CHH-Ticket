@@ -361,7 +361,11 @@ export default function UIProject() {
         itemCode: generatedItemCode || null,
         itemType: uploadForm.itemType || null,
         itemProductCode: uploadForm.itemProductCode || null,
-        itemUnit: uploadForm.itemUnit || null
+        itemUnit: uploadForm.itemUnit || null,
+        // User info for logging
+        userId: user?.id || null,
+        userEmail: user?.email || null,
+        userName: user?.name || null
       };
 
       // บันทึกลงฐานข้อมูล
@@ -483,15 +487,7 @@ export default function UIProject() {
               <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('manageProjects', language)}</h1>
               <p className="text-gray-600 dark:text-gray-400">{t('uploadBlueprintDesc', language)}</p>
             </div>
-            <div className="ml-auto">
-              <button
-                onClick={() => router.push('/dashboard')}
-                className="inline-flex items-center gap-2 px-3 py-2 text-sm rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/10 transition-colors"
-                title={language === 'th' ? 'เปิดแดชบอร์ด' : 'Open Dashboard'}
-              >
-                📊 <span className="hidden sm:inline">{language === 'th' ? 'แดชบอร์ด' : 'Dashboard'}</span>
-              </button>
-            </div>
+            {/* Removed Dashboard button */}
           </div>
 
           {/* ERP Connection Status */}
@@ -809,9 +805,10 @@ export default function UIProject() {
                   type="text"
                   placeholder="D01"
                   value={uploadForm.itemProductCode}
-                  onChange={(e) => setUploadForm(prev => ({ ...prev, itemProductCode: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  onChange={(e) => setUploadForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase"
                   disabled={isUploading}
+                  style={{ textTransform: 'uppercase' }}
                 />
               </div>
 

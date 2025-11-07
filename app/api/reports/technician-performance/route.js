@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -138,7 +139,7 @@ export async function GET(request) {
       ticketGroups: ticketTotalsByTechnician.length
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
         sessions: sessions || [],
@@ -148,9 +149,15 @@ export async function GET(request) {
         ticketTotalsByTechnician
       }
     });
+    await logApiCall(request, 'read', 'report_technician_performance', null, {
+      sessionCount: sessions?.length || 0,
+      technicianCount: Object.keys(technicianSummary).length
+    }, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('[API] Error in technician performance:', error);
+    await logError(error, { action: 'read', entityType: 'report_technician_performance' }, request);
     return NextResponse.json(
       { success: false, error: error.message || 'Internal server error' },
       { status: 500 }

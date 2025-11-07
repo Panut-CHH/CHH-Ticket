@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseServer } from '@/utils/supabaseServer';
+import { logApiCall, logError } from '@/utils/activityLogger';
+import { createNewTicketNotification } from '@/utils/notificationManager';
 
 /**
  * POST /api/tickets
@@ -69,10 +71,46 @@ export async function POST(request) {
 
     if (error) {
       console.error('Error creating ticket:', error);
+      await logError(error, {
+        action: 'create',
+        entityType: 'ticket',
+        entityId: no
+      }, request);
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 500 }
       );
+    }
+
+    // Log successful ticket creation
+    await logApiCall(request, 'create', 'ticket', ticket?.no || no, {
+      ticket_no: ticket?.no || no,
+      project_id: finalProjectId,
+      priority,
+      status
+    }, 'success', null);
+
+    // แจ้งเตือน admin เมื่อมี ticket ใหม่
+    try {
+      // ดึงข้อมูล project ถ้ามี
+      let projectName = null;
+      if (finalProjectId) {
+        const { data: projectData } = await supabaseServer
+          .from('projects')
+          .select('project_name, item_code')
+          .eq('id', finalProjectId)
+          .single();
+        projectName = projectData?.project_name || projectData?.item_code || null;
+      }
+
+      await createNewTicketNotification(
+        ticket?.no || no,
+        projectName,
+        source_no ? 'ERP Import' : 'Manual'
+      );
+    } catch (notificationError) {
+      console.warn('Failed to create ticket notification:', notificationError);
+      // ไม่ throw error เพื่อไม่ให้การสร้าง ticket ล้มเหลว
     }
 
     return NextResponse.json({
@@ -83,6 +121,10 @@ export async function POST(request) {
 
   } catch (error) {
     console.error('API Error:', error);
+    await logError(error, {
+      action: 'create',
+      entityType: 'ticket'
+    }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
@@ -111,11 +153,20 @@ export async function GET(request) {
 
     if (error) {
       console.error('Error fetching tickets:', error);
+      await logError(error, {
+        action: 'read',
+        entityType: 'ticket'
+      }, request);
       return NextResponse.json(
         { success: false, error: error.message },
         { status: 500 }
       );
     }
+
+    // Log successful read
+    await logApiCall(request, 'read', 'ticket', null, {
+      count: tickets?.length || 0
+    }, 'success', null);
 
     return NextResponse.json({
       success: true,
@@ -125,6 +176,10 @@ export async function GET(request) {
 
   } catch (error) {
     console.error('API Error:', error);
+    await logError(error, {
+      action: 'read',
+      entityType: 'ticket'
+    }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }

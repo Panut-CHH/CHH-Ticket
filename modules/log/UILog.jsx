@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
-import { Search, Filter, ArrowUpDown, Calendar, User, Clock, History, CheckCircle, XCircle, TrendingUp, Timer, Activity } from "lucide-react";
+import React, { useMemo, useState, useEffect } from "react";
+import { Search, Filter, ArrowUpDown, Calendar, User, Clock, History, CheckCircle, XCircle, TrendingUp, Timer, Activity, AlertCircle } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
-import { mockTickets } from "../ticket/mockTickets";
+import { supabase } from "@/utils/supabaseClient";
+import { useAuth } from "@/contexts/AuthContext";
 
 function formatDateTime(timestamp) {
   try {
@@ -21,130 +22,408 @@ function formatDateTime(timestamp) {
 }
 
 const EVENT_LABEL = {
-  created: "สร้างตั๋ว",
+  created: "สร้าง",
+  create: "สร้าง",
+  update: "แก้ไข",
+  delete: "ลบ",
+  read: "อ่านข้อมูล",
   assigned: "มอบหมายงาน",
   step_started: "เริ่มขั้นตอน",
   step_completed: "เสร็จสิ้นขั้นตอน",
+  qc_started: "เริ่ม QC",
+  qc_completed: "เสร็จสิ้น QC",
   completed: "งานเสร็จสิ้น",
+  login: "เข้าสู่ระบบ",
+  logout: "ออกจากระบบ",
+  login_failed: "เข้าสู่ระบบล้มเหลว",
 };
 
 const EVENT_LABEL_EN = {
-  created: "Create Ticket",
+  created: "Create",
+  create: "Create",
+  update: "Update",
+  delete: "Delete",
+  read: "Read",
   assigned: "Assign Task",
   step_started: "Start Step",
   step_completed: "Complete Step",
+  qc_started: "Start QC",
+  qc_completed: "Complete QC",
   completed: "Work Completed",
+  login: "Login",
+  logout: "Logout",
+  login_failed: "Login Failed",
+};
+
+// Helper function to get action label with entity context
+const getActionLabel = (action, entityType, language) => {
+  const baseLabel = language === 'th' 
+    ? (EVENT_LABEL[action] || action)
+    : (EVENT_LABEL_EN[action] || action);
+  
+  if (action === 'created' || action === 'create') {
+    const entityLabels = {
+      'project': language === 'th' ? 'สร้างโปรเจ็ค' : 'Create Project',
+      'item_code': language === 'th' ? 'สร้าง Item Code' : 'Create Item Code',
+      'station': language === 'th' ? 'เพิ่มสถานี' : 'Add Station',
+      'ticket_bom': language === 'th' ? 'เพิ่มวัสดุ' : 'Add Material',
+      'ticket': language === 'th' ? 'สร้างตั๋ว' : 'Create Ticket',
+    };
+    return entityLabels[entityType] || baseLabel;
+  }
+  
+  return baseLabel;
 };
 
 export default function UILog() {
   const { language } = useLanguage();
+  const { user } = useAuth();
   const [q, setQ] = useState("");
   const [eventType, setEventType] = useState("");
   const [assignee, setAssignee] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [sortAsc, setSortAsc] = useState(false);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  // Hide noisy system reads by default
+  const [showSystemReads, setShowSystemReads] = useState(false);
 
-  // Build log entries derived from tickets and their roadmap/status
-  const { logs, assignees } = useMemo(() => {
-    const list = [];
-    const allAssignees = new Set();
+  // Fetch logs from database
+  useEffect(() => {
+    const fetchLogs = async () => {
+      try {
+        setLoading(true);
+        setError(null);
 
-    const now = Date.now();
-    const day = 24 * 60 * 60 * 1000;
+        // Fetch logs
+        const { data: logData, error: fetchError } = await supabase
+          .from('activity_logs')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(1000); // Limit to recent 1000 logs
 
-    mockTickets.forEach((t, idx) => {
-      if (t.assignee) allAssignees.add(t.assignee);
+        if (fetchError) throw fetchError;
 
-      const ticketBase = now - (idx + 1) * day; // spread tickets back in time
-      // Created
-      list.push({
-        id: `${t.id}-created`,
-        ticketId: t.id,
-        title: t.title,
-        who: "System",
-        type: "created",
-        detail: `สร้างตั๋ว ${t.id}`,
-        at: ticketBase - 2 * 60 * 60 * 1000,
-      });
-
-      // Assigned (if any)
-      if (t.assignee && t.assignee !== "ยังไม่ได้มอบหมาย") {
-        list.push({
-          id: `${t.id}-assigned`,
-          ticketId: t.id,
-          title: t.title,
-          who: t.assignee,
-          type: "assigned",
-          detail: `มอบหมายงานให้ ${t.assignee}`,
-          at: ticketBase - 60 * 60 * 1000,
+        // Filter out System logs first
+        const filteredLogs = (logData || []).filter(log => {
+          const who = log.user_name || log.user_email;
+          return who && who.toLowerCase() !== 'system';
         });
-      }
 
-      // Roadmap steps
-      if (Array.isArray(t.roadmap)) {
-        t.roadmap.forEach((step, sIdx) => {
-          const base = ticketBase + sIdx * (60 * 60 * 1000);
-          if (step.status === "completed") {
-            list.push({
-              id: `${t.id}-step-${sIdx}-done`,
-              ticketId: t.id,
-              title: t.title,
-              who: step.technician || t.assignee || "System",
-              type: "step_completed",
-              detail: `ขั้นตอน "${step.step}" เสร็จสิ้น`,
-              at: base,
-            });
-          } else if (step.status === "current") {
-            list.push({
-              id: `${t.id}-step-${sIdx}-start`,
-              ticketId: t.id,
-              title: t.title,
-              who: step.technician || t.assignee || "System",
-              type: "step_started",
-              detail: `เริ่มขั้นตอน "${step.step}"`,
-              at: base,
-            });
+        // Fetch user names separately
+        const userEmails = [...new Set(filteredLogs.map(log => log.user_email).filter(Boolean))];
+        let userMap = {};
+        
+        if (userEmails.length > 0) {
+          const { data: usersData } = await supabase
+            .from('users')
+            .select('email, name')
+            .in('email', userEmails);
+          
+          if (usersData) {
+            userMap = usersData.reduce((acc, user) => {
+              acc[user.email] = user.name || user.email; // Use name if available, fallback to email
+              return acc;
+            }, {});
           }
+        }
+        
+        // Transform logs with user names
+        const transformedLogs = filteredLogs.map((log) => {
+          const userEmail = log.user_email;
+          // Priority: user_name > userMap[name] > userEmail
+          const userName = log.user_name || (userEmail ? userMap[userEmail] : null) || userEmail || 'Unknown';
+          
+          return {
+            id: log.id,
+            ticketId: log.ticket_no || log.entity_id || '-',
+            title: (() => {
+              if (log.entity_type === 'ticket') return `Ticket ${log.ticket_no || log.entity_id}`;
+              if (log.entity_type === 'project') {
+                const projectName = log.details?.project_name || log.details?.item_code || log.entity_id;
+                return `Project ${projectName}`;
+              }
+              if (log.entity_type === 'item_code') {
+                const itemCode = log.details?.item_code || log.entity_id;
+                return `Item Code ${itemCode}`;
+              }
+              if (log.entity_type === 'station') {
+                const stationName = log.details?.name_th || log.details?.code || log.entity_id;
+                return `Station ${stationName}`;
+              }
+              if (log.entity_type === 'ticket_bom') {
+                return `BOM ${log.ticket_no || log.entity_id}`;
+              }
+              if (log.entity_type === 'production_flow') {
+                const stationName = log.details?.station_name || '';
+                return `Production ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+              }
+              if (log.entity_type === 'qc_workflow') {
+                const stationName = log.details?.station_name || '';
+                return `QC ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+              }
+              if (log.entity_type === 'user') return `User ${log.entity_id}`;
+              if (log.entity_type === 'auth') return 'Authentication';
+              return log.entity_type || 'Unknown';
+            })(),
+            who: userName,
+            type: log.action,
+            detail: (() => {
+              if (log.details?.message) return log.details.message;
+              if (log.details?.ticket_no) return `Ticket ${log.details.ticket_no}`;
+              if (log.error_message) return log.error_message;
+              
+              // Generate descriptive message based on entity type and action
+              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'project') {
+                const projectName = log.details?.project_name || log.details?.item_code || '';
+                return language === 'th' 
+                  ? `สร้างโปรเจ็ค${projectName ? `: ${projectName}` : ''}`
+                  : `Create project${projectName ? `: ${projectName}` : ''}`;
+              }
+              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'item_code') {
+                const itemCode = log.details?.item_code || '';
+                return language === 'th' 
+                  ? `สร้าง Item Code${itemCode ? `: ${itemCode}` : ''}`
+                  : `Create Item Code${itemCode ? `: ${itemCode}` : ''}`;
+              }
+              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'station') {
+                const stationName = log.details?.name_th || log.details?.code || '';
+                return language === 'th' 
+                  ? `เพิ่มสถานี${stationName ? `: ${stationName}` : ''}`
+                  : `Add station${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (log.action === 'update' && log.entity_type === 'ticket_bom') {
+                return language === 'th' 
+                  ? `เพิ่ม/แก้ไขวัสดุ (${log.details?.count || 0} รายการ)`
+                  : `Add/Update materials (${log.details?.count || 0} items)`;
+              }
+              if (log.action === 'step_started' && log.entity_type === 'production_flow') {
+                const stationName = log.details?.station_name || '';
+                return language === 'th' 
+                  ? `เริ่มขั้นตอน${stationName ? `: ${stationName}` : ''}`
+                  : `Start step${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (log.action === 'step_completed' && log.entity_type === 'production_flow') {
+                const stationName = log.details?.station_name || '';
+                return language === 'th' 
+                  ? `เสร็จสิ้นขั้นตอน${stationName ? `: ${stationName}` : ''}`
+                  : `Complete step${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (log.action === 'qc_started' && log.entity_type === 'qc_workflow') {
+                const stationName = log.details?.station_name || '';
+                return language === 'th' 
+                  ? `เริ่ม QC${stationName ? `: ${stationName}` : ''}`
+                  : `Start QC${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (log.action === 'qc_completed' && log.entity_type === 'qc_workflow') {
+                const stationName = log.details?.station_name || '';
+                const passRate = log.details?.pass_rate;
+                const passRateText = passRate !== undefined ? ` (${passRate}%)` : '';
+                return language === 'th' 
+                  ? `เสร็จสิ้น QC${stationName ? `: ${stationName}` : ''}${passRateText}`
+                  : `Complete QC${stationName ? `: ${stationName}` : ''}${passRateText}`;
+              }
+              
+              return getActionLabel(log.action, log.entity_type, language);
+            })(),
+            at: new Date(log.created_at).getTime(),
+            status: log.status,
+            errorMessage: log.error_message,
+            entityType: log.entity_type,
+            details: log.details,
+          };
         });
-      }
 
-      // Completed ticket
-      if (t.status === "เสร็จสิ้น") {
-        list.push({
-          id: `${t.id}-completed`,
-          ticketId: t.id,
-          title: t.title,
-          who: t.assignee || "System",
-          type: "completed",
-          detail: `ตั๋ว ${t.id} เสร็จสิ้น`,
-          at: ticketBase + 6 * 60 * 60 * 1000,
-        });
+        setLogs(transformedLogs);
+      } catch (err) {
+        console.error('Error fetching logs:', err);
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLogs();
+
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('activity_logs_changes')
+      .on('postgres_changes', 
+        { event: 'INSERT', schema: 'public', table: 'activity_logs' },
+        async (payload) => {
+          const newLog = payload.new;
+          
+          // Filter out System logs
+          const who = newLog.user_name || newLog.user_email;
+          if (!who || who.toLowerCase() === 'system') {
+            return; // Skip System logs
+          }
+          
+          // Fetch user name if we have email
+          let userName = newLog.user_name;
+          if (!userName && newLog.user_email) {
+            const { data: userData } = await supabase
+              .from('users')
+              .select('name, email')
+              .eq('email', newLog.user_email)
+              .single();
+            
+            if (userData) {
+              userName = userData.name || userData.email;
+            } else {
+              userName = newLog.user_email;
+            }
+          } else if (!userName) {
+            userName = 'Unknown';
+          }
+          
+          const transformedLog = {
+            id: newLog.id,
+            ticketId: newLog.ticket_no || newLog.entity_id || '-',
+            title: (() => {
+              if (newLog.entity_type === 'ticket') return `Ticket ${newLog.ticket_no || newLog.entity_id}`;
+              if (newLog.entity_type === 'project') {
+                const projectName = newLog.details?.project_name || newLog.details?.item_code || newLog.entity_id;
+                return `Project ${projectName}`;
+              }
+              if (newLog.entity_type === 'item_code') {
+                const itemCode = newLog.details?.item_code || newLog.entity_id;
+                return `Item Code ${itemCode}`;
+              }
+              if (newLog.entity_type === 'station') {
+                const stationName = newLog.details?.name_th || newLog.details?.code || newLog.entity_id;
+                return `Station ${stationName}`;
+              }
+              if (newLog.entity_type === 'ticket_bom') {
+                return `BOM ${newLog.ticket_no || newLog.entity_id}`;
+              }
+              if (newLog.entity_type === 'production_flow') {
+                const stationName = newLog.details?.station_name || '';
+                return `Production ${newLog.ticket_no || newLog.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+              }
+              if (newLog.entity_type === 'qc_workflow') {
+                const stationName = newLog.details?.station_name || '';
+                return `QC ${newLog.ticket_no || newLog.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+              }
+              if (newLog.entity_type === 'user') return `User ${newLog.entity_id}`;
+              if (newLog.entity_type === 'auth') return 'Authentication';
+              return newLog.entity_type || 'Unknown';
+            })(),
+            who: userName,
+            type: newLog.action,
+            detail: (() => {
+              if (newLog.details?.message) return newLog.details.message;
+              if (newLog.details?.ticket_no) return `Ticket ${newLog.details.ticket_no}`;
+              if (newLog.error_message) return newLog.error_message;
+              
+              // Generate descriptive message based on entity type and action
+              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'project') {
+                const projectName = newLog.details?.project_name || newLog.details?.item_code || '';
+                return language === 'th' 
+                  ? `สร้างโปรเจ็ค${projectName ? `: ${projectName}` : ''}`
+                  : `Create project${projectName ? `: ${projectName}` : ''}`;
+              }
+              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'item_code') {
+                const itemCode = newLog.details?.item_code || '';
+                return language === 'th' 
+                  ? `สร้าง Item Code${itemCode ? `: ${itemCode}` : ''}`
+                  : `Create Item Code${itemCode ? `: ${itemCode}` : ''}`;
+              }
+              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'station') {
+                const stationName = newLog.details?.name_th || newLog.details?.code || '';
+                return language === 'th' 
+                  ? `เพิ่มสถานี${stationName ? `: ${stationName}` : ''}`
+                  : `Add station${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (newLog.action === 'update' && newLog.entity_type === 'ticket_bom') {
+                return language === 'th' 
+                  ? `เพิ่ม/แก้ไขวัสดุ (${newLog.details?.count || 0} รายการ)`
+                  : `Add/Update materials (${newLog.details?.count || 0} items)`;
+              }
+              if (newLog.action === 'step_started' && newLog.entity_type === 'production_flow') {
+                const stationName = newLog.details?.station_name || '';
+                return language === 'th' 
+                  ? `เริ่มขั้นตอน${stationName ? `: ${stationName}` : ''}`
+                  : `Start step${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (newLog.action === 'step_completed' && newLog.entity_type === 'production_flow') {
+                const stationName = newLog.details?.station_name || '';
+                return language === 'th' 
+                  ? `เสร็จสิ้นขั้นตอน${stationName ? `: ${stationName}` : ''}`
+                  : `Complete step${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (newLog.action === 'qc_started' && newLog.entity_type === 'qc_workflow') {
+                const stationName = newLog.details?.station_name || '';
+                return language === 'th' 
+                  ? `เริ่ม QC${stationName ? `: ${stationName}` : ''}`
+                  : `Start QC${stationName ? `: ${stationName}` : ''}`;
+              }
+              if (newLog.action === 'qc_completed' && newLog.entity_type === 'qc_workflow') {
+                const stationName = newLog.details?.station_name || '';
+                const passRate = newLog.details?.pass_rate;
+                const passRateText = passRate !== undefined ? ` (${passRate}%)` : '';
+                return language === 'th' 
+                  ? `เสร็จสิ้น QC${stationName ? `: ${stationName}` : ''}${passRateText}`
+                  : `Complete QC${stationName ? `: ${stationName}` : ''}${passRateText}`;
+              }
+              
+              return getActionLabel(newLog.action, newLog.entity_type, language);
+            })(),
+            at: new Date(newLog.created_at).getTime(),
+            status: newLog.status,
+            errorMessage: newLog.error_message,
+            entityType: newLog.entity_type,
+            details: newLog.details,
+          };
+          setLogs(prev => [transformedLog, ...prev].slice(0, 1000));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [language]);
+
+  // Extract unique assignees from logs (already filtered, no System)
+  const assignees = useMemo(() => {
+    const assigneeSet = new Set();
+    logs.forEach(log => {
+      if (log.who) {
+        assigneeSet.add(log.who);
       }
     });
-
-    // Sort newest first by default
-    list.sort((a, b) => b.at - a.at);
-    return { logs: list, assignees: Array.from(allAssignees) };
-  }, []);
+    return Array.from(assigneeSet).sort();
+  }, [logs]);
 
   const filtered = useMemo(() => {
     const qnorm = q.trim().toLowerCase();
-    const from = dateFrom ? new Date(dateFrom).getTime() : -Infinity;
-    const to = dateTo ? new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1 : Infinity;
+    const from = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : -Infinity;
+    const to = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : Infinity;
 
     let rows = logs.filter((log) => {
-      const hay = `${log.ticketId} ${log.title} ${log.detail} ${log.who}`.toLowerCase();
+      const hay = `${log.ticketId} ${log.title} ${log.detail} ${log.who} ${log.entityType || ''}`.toLowerCase();
       const matchQ = qnorm ? hay.includes(qnorm) : true;
       const matchType = eventType ? log.type === eventType : true;
       const matchAssignee = assignee ? log.who === assignee : true;
       const matchDate = log.at >= from && log.at <= to;
-      return matchQ && matchType && matchAssignee && matchDate;
+      // Suppress noisy system 'read' logs unless explicitly enabled (already filtered System, but keep for ERP reads)
+      const isNoisySystemRead =
+        !showSystemReads &&
+        log.type === 'read' &&
+        (
+          (log.entityType || '').includes('erp') ||
+          (log.entityType || '').includes('production_events')
+        );
+
+      return matchQ && matchType && matchAssignee && matchDate && !isNoisySystemRead;
     });
 
     rows = rows.sort((a, b) => (sortAsc ? a.at - b.at : b.at - a.at));
     return rows;
-  }, [logs, q, eventType, assignee, dateFrom, dateTo, sortAsc]);
+  }, [logs, q, eventType, assignee, dateFrom, dateTo, sortAsc, showSystemReads]);
 
   const chips = useMemo(() => {
     const list = [];
@@ -161,19 +440,20 @@ export default function UILog() {
 
   const clearAll = () => { setQ(""); setEventType(""); setAssignee(""); setDateFrom(""); setDateTo(""); };
 
-  // สรุปสถิติเวลาการทำงาน
+  // สรุปสถิติจาก logs
   const timeStats = useMemo(() => {
-    const finishedTickets = mockTickets.filter(t => t.status === "Finished" || t.status === "Completed");
-    const inProgressTickets = mockTickets.filter(t => t.status === "In Progress");
+    const totalLogs = logs.length;
+    const successLogs = logs.filter(l => l.status === 'success').length;
+    const errorLogs = logs.filter(l => l.status === 'error').length;
+    const warningLogs = logs.filter(l => l.status === 'warning').length;
     
     return {
-      totalTickets: mockTickets.length,
-      finished: finishedTickets.length,
-      inProgress: inProgressTickets.length,
-      avgCompletionTime: finishedTickets.length > 0 ? 24.5 : 0, // Mock: เฉลี่ย 24.5 ชม
-      totalWorkHours: finishedTickets.length * 24.5 + inProgressTickets.length * 12 // Mock calculation
+      totalLogs,
+      successLogs,
+      errorLogs,
+      warningLogs,
     };
-  }, []);
+  }, [logs]);
 
   return (
     <div className="min-h-screen px-3 py-5 md:px-5 md:py-7 animate-fadeInUp overflow-x-hidden">
@@ -201,8 +481,8 @@ export default function UILog() {
                   <Activity className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.totalTickets}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'ตั๋วทั้งหมด' : 'Total Tickets'}</div>
+                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.totalLogs}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'Log ทั้งหมด' : 'Total Logs'}</div>
                 </div>
               </div>
             </div>
@@ -212,8 +492,8 @@ export default function UILog() {
                   <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.finished}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'เสร็จสิ้น' : 'Finished'}</div>
+                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.successLogs}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'สำเร็จ' : 'Success'}</div>
                 </div>
               </div>
             </div>
@@ -223,8 +503,8 @@ export default function UILog() {
                   <Timer className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.avgCompletionTime.toFixed(1)}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'ชม. เฉลี่ย/ตั๋ว' : 'Avg Hrs/Ticket'}</div>
+                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.errorLogs}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'ข้อผิดพลาด' : 'Errors'}</div>
                 </div>
               </div>
             </div>
@@ -234,8 +514,8 @@ export default function UILog() {
                   <TrendingUp className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                 </div>
                 <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.totalWorkHours.toFixed(0)}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'รวมชั่วโมง' : 'Total Hours'}</div>
+                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{timeStats.warningLogs}</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">{language === 'th' ? 'คำเตือน' : 'Warnings'}</div>
                 </div>
               </div>
             </div>
@@ -275,11 +555,11 @@ export default function UILog() {
               <div className="relative">
                 <select value={eventType} onChange={(e) => setEventType(e.target.value)} className="w-full appearance-none px-3 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500">
                   <option value="">{language === 'th' ? 'ทั้งหมด' : 'All'}</option>
-                  <option value="created">{language === 'th' ? EVENT_LABEL.created : EVENT_LABEL_EN.created}</option>
-                  <option value="assigned">{language === 'th' ? EVENT_LABEL.assigned : EVENT_LABEL_EN.assigned}</option>
-                  <option value="step_started">{language === 'th' ? EVENT_LABEL.step_started : EVENT_LABEL_EN.step_started}</option>
-                  <option value="step_completed">{language === 'th' ? EVENT_LABEL.step_completed : EVENT_LABEL_EN.step_completed}</option>
-                  <option value="completed">{language === 'th' ? EVENT_LABEL.completed : EVENT_LABEL_EN.completed}</option>
+                  {Object.keys(EVENT_LABEL).map(action => (
+                    <option key={action} value={action}>
+                      {language === 'th' ? EVENT_LABEL[action] : EVENT_LABEL_EN[action]}
+                    </option>
+                  ))}
                 </select>
                 <div className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">▾</div>
               </div>
@@ -333,6 +613,14 @@ export default function UILog() {
                 </button>
               </div>
             </div>
+            {/* Toggle noisy system reads */}
+            <div className="lg:col-span-2">
+              <div className="flex items-center gap-2 mb-1 text-xs text-slate-500 dark:text-slate-400"><History className="w-4 h-4" />{language === 'th' ? 'แสดง Log ระบบ (อ่านข้อมูล)' : 'Show system read logs'}</div>
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                <input type="checkbox" checked={showSystemReads} onChange={(e) => setShowSystemReads(e.target.checked)} />
+                <span>{language === 'th' ? (showSystemReads ? 'แสดง' : 'ซ่อน (แนะนำ)') : (showSystemReads ? 'Show' : 'Hide (recommended)')}</span>
+              </label>
+            </div>
           </div>
 
           {/* Active chips */}
@@ -358,7 +646,17 @@ export default function UILog() {
             <div className="col-span-2">{t('time', language)}</div>
           </div>
           <ul className="divide-y divide-gray-100 dark:divide-slate-700">
-            {filtered.map((log) => (
+            {loading && (
+              <li className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-800">
+                {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
+              </li>
+            )}
+            {error && (
+              <li className="px-5 py-8 text-center text-sm text-red-500 dark:text-red-400 bg-white dark:bg-slate-800">
+                {language === 'th' ? 'เกิดข้อผิดพลาด: ' : 'Error: '}{error}
+              </li>
+            )}
+            {!loading && !error && filtered.map((log) => (
               <li key={log.id} className="px-5 py-4 bg-white dark:bg-slate-800">
                 <div className="grid grid-cols-1 md:grid-cols-12 md:items-center gap-2">
                   <div className="md:col-span-2">
@@ -370,23 +668,40 @@ export default function UILog() {
 
                   <div className="md:col-span-3">
                     <div className="flex items-center gap-2 text-sm">
-                      {log.type === "completed" ? (
+                      {log.status === "error" ? (
+                        <AlertCircle className="w-4 h-4 text-red-600" />
+                      ) : log.status === "warning" ? (
+                        <XCircle className="w-4 h-4 text-amber-600" />
+                      ) : log.type === "completed" || log.type === "login" ? (
                         <CheckCircle className="w-4 h-4 text-emerald-600" />
-                      ) : log.type === "step_completed" ? (
+                      ) : log.type === "step_completed" || log.type === "qc_completed" ? (
                         <CheckCircle className="w-4 h-4 text-emerald-500" />
-                      ) : log.type === "step_started" ? (
+                      ) : log.type === "step_started" || log.type === "qc_started" ? (
                         <History className="w-4 h-4 text-amber-600" />
-                      ) : log.type === "assigned" ? (
+                      ) : log.type === "assigned" || log.type === "update" ? (
                         <User className="w-4 h-4 text-blue-600" />
                       ) : (
                         <History className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                       )}
-                      <span>{language === 'th' ? EVENT_LABEL[log.type] : EVENT_LABEL_EN[log.type]}</span>
+                      <span>{getActionLabel(log.type, log.entityType, language)}</span>
+                      {log.status === "error" && (
+                        <span className="text-xs text-red-600">({language === 'th' ? 'ผิดพลาด' : 'Error'})</span>
+                      )}
+                      {log.status === "warning" && (
+                        <span className="text-xs text-amber-600">({language === 'th' ? 'คำเตือน' : 'Warning'})</span>
+                      )}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 hidden md:block">{log.title}</div>
                   </div>
 
-                  <div className="md:col-span-3 text-sm text-gray-700 dark:text-gray-300">{log.detail}</div>
+                  <div className="md:col-span-3 text-sm text-gray-700 dark:text-gray-300">
+                    {log.detail}
+                    {log.errorMessage && (
+                      <div className="text-xs text-red-600 dark:text-red-400 mt-1">
+                        {log.errorMessage}
+                      </div>
+                    )}
+                  </div>
 
                   <div className="md:col-span-2">
                     <div className="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">

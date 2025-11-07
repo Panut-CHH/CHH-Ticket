@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Search, Filter, Edit, User, Clock, Loader, FileText, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -31,6 +31,12 @@ export default function UITicket() {
   const [itemCodes, setItemCodes] = useState([]);
   const [groupedByItem, setGroupedByItem] = useState([]);
   const [expandedItems, setExpandedItems] = useState(new Set());
+  // Filters
+  const [showFilter, setShowFilter] = useState(false);
+  const [selectedStatuses, setSelectedStatuses] = useState(new Set());
+  const [selectedPriorities, setSelectedPriorities] = useState(new Set());
+  const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
+  const [selectedItemCodes, setSelectedItemCodes] = useState(new Set());
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
@@ -142,9 +148,11 @@ export default function UITicket() {
                 console.log('🔍 Debug ticket data to save:', ticketData);
               }
               
+              // ใช้ upsert แทน insert เพื่อป้องกัน duplicate key error
+              // onConflict: 'no' หมายความว่าถ้า no ซ้ำกันให้ update แทน
               const { data: savedTicket, error: saveError } = await supabase
                 .from('ticket')
-                .insert(ticketData)
+                .upsert(ticketData, { onConflict: 'no' })
                 .select()
                 .single();
               
@@ -152,11 +160,72 @@ export default function UITicket() {
                 newTickets.push(savedTicket);
                 dbTicketMap.set(rpdNo, savedTicket);
                 console.log(`✅ Auto-saved new ticket: ${rpdNo}`);
+                
+                // แจ้งเตือน admin เมื่อมี ticket ใหม่จาก ERP import
+                // เช็คว่าเป็น ticket ใหม่จริงๆ (ไม่ใช่แค่ update)
+                try {
+                  const { data: existingTicket } = await supabase
+                    .from('ticket')
+                    .select('created_at')
+                    .eq('no', rpdNo)
+                    .single();
+                  
+                  // ถ้า created_at ใกล้เคียงกับเวลาปัจจุบันมาก (ภายใน 5 วินาที) แสดงว่าเป็น ticket ใหม่
+                  const isNewTicket = existingTicket && 
+                    new Date() - new Date(existingTicket.created_at) < 5000;
+                  
+                  if (isNewTicket) {
+                    const projectName = projectMap.get(itemCode)?.project_name || null;
+                    await fetch('/api/notifications/create-ticket', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        ticketNo: rpdNo,
+                        projectName,
+                        source: 'ERP Import'
+                      })
+                    }).catch(() => {}); // Silent fail - notification is optional
+                  }
+                } catch (notifError) {
+                  // Silent fail - notification is optional
+                }
+              } else if (saveError?.code === '23505') {
+                // Duplicate key error - ticket มีอยู่แล้ว ใช้ข้อมูลที่มีอยู่
+                console.log(`ℹ️ Ticket ${rpdNo} already exists (duplicate key), fetching existing...`);
+                const { data: existingTicket } = await supabase
+                  .from('ticket')
+                  .select('*')
+                  .eq('no', rpdNo)
+                  .single();
+                
+                if (existingTicket) {
+                  dbTicketMap.set(rpdNo, existingTicket);
+                  console.log(`✅ Found existing ticket: ${rpdNo}`);
+                }
               } else {
                 console.error(`❌ Failed to save ticket ${rpdNo}:`, saveError);
               }
             } catch (saveError) {
-              console.error(`Error saving ticket ${rpdNo}:`, saveError);
+              // จัดการ duplicate key error ที่อาจเกิดขึ้นใน catch block
+              if (saveError?.code === '23505') {
+                console.log(`ℹ️ Ticket ${rpdNo} already exists (caught in catch), fetching existing...`);
+                try {
+                  const { data: existingTicket } = await supabase
+                    .from('ticket')
+                    .select('*')
+                    .eq('no', rpdNo)
+                    .single();
+                  
+                  if (existingTicket) {
+                    dbTicketMap.set(rpdNo, existingTicket);
+                    console.log(`✅ Found existing ticket: ${rpdNo}`);
+                  }
+                } catch (fetchError) {
+                  console.error(`Error fetching existing ticket ${rpdNo}:`, fetchError);
+                }
+              } else {
+                console.error(`Error saving ticket ${rpdNo}:`, saveError);
+              }
             }
           } else {
             console.log(`ℹ️ Ticket ${rpdNo} already exists in DB`);
@@ -183,7 +252,6 @@ export default function UITicket() {
               
               // Flags
               isNew: isNew,
-              hasStationFlow: !!dbTicket?.id,
               inDatabase: !!dbTicket
             };
           });
@@ -322,6 +390,7 @@ export default function UITicket() {
   // State สำหรับข้อมูลจาก Supabase
   const [dbTickets, setDbTickets] = useState([]);
   const [dbStationFlows, setDbStationFlows] = useState([]);
+  const [dbBoms, setDbBoms] = useState([]); // BOM data
 
   // โหลดข้อมูล tickets และ station flows จาก Supabase
   useEffect(() => {
@@ -463,19 +532,28 @@ export default function UITicket() {
 
           // Merge assignments with flows
           const flowsWithAssignments = flows?.map(flow => {
-            const key = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
-            const assignment = assignments.find(a => 
-              a.ticket_no === flow.ticket_no && 
-              a.station_id === flow.station_id && 
-              a.step_order === flow.step_order
-            );
+            // ใช้ trim() เพื่อให้แน่ใจว่าไม่มี space หรือ format ต่างกัน
+            const flowTicketNo = String(flow.ticket_no || '').trim();
+            const flowStationId = String(flow.station_id || '').trim();
+            const flowStepOrder = Number(flow.step_order) || 0;
+            
+            const assignment = assignments.find(a => {
+              const aTicketNo = String(a.ticket_no || '').trim();
+              const aStationId = String(a.station_id || '').trim();
+              const aStepOrder = Number(a.step_order) || 0;
+              
+              return aTicketNo === flowTicketNo && 
+                     aStationId === flowStationId && 
+                     aStepOrder === flowStepOrder;
+            });
             
             return {
               ...flow,
-              ticket_assignments: assignment ? [{
+              ticket_assignments: assignment && assignment.technician_id ? [{
                 technician_id: assignment.technician_id,
                 users: {
-                  name: assignmentMap[key] || ''
+                  id: assignment.users?.id || assignment.technician_id,
+                  name: assignment.users?.name || assignmentMap[`${flowTicketNo}-${flowStationId}-${flowStepOrder}`] || ''
                 }
               }] : []
             };
@@ -497,13 +575,196 @@ export default function UITicket() {
     return () => { active = false; };
   }, [refreshTrigger]);
 
+  // State สำหรับเก็บข้อมูล BOM และ Assignment ที่เช็คแล้ว (key = ticket_no)
+  const [ticketBomStatus, setTicketBomStatus] = useState(new Map());
+  const [ticketAssignmentStatus, setTicketAssignmentStatus] = useState(new Map());
+
+  // โหลด BOM status สำหรับแต่ละ ticket โดยตรง
+  const checkTicketBom = useCallback(async (ticketNo) => {
+    if (!ticketNo) return false;
+    try {
+      const { data, error } = await supabase
+        .from('ticket_bom')
+        .select('ticket_no')
+        .eq('ticket_no', ticketNo)
+        .limit(1);
+      
+      if (error) {
+        console.warn(`[BOM CHECK] Error checking BOM for ${ticketNo}:`, error);
+        return false;
+      }
+      
+      const hasBom = data && data.length > 0;
+      setTicketBomStatus(prev => {
+        const newMap = new Map(prev);
+        newMap.set(ticketNo, hasBom);
+        return newMap;
+      });
+      return hasBom;
+    } catch (e) {
+      console.warn(`[BOM CHECK] Exception checking BOM for ${ticketNo}:`, e);
+      return false;
+    }
+  }, []);
+
+  // โหลด Assignment status สำหรับแต่ละ ticket โดยตรง
+  const checkTicketAssignment = useCallback(async (ticketNo) => {
+    if (!ticketNo) return false;
+    try {
+      // เช็คว่ามี ticket_station_flow สำหรับ ticket นี้หรือไม่
+      const { data: flows, error: flowError } = await supabase
+        .from('ticket_station_flow')
+        .select('id, ticket_no, station_id, step_order')
+        .eq('ticket_no', ticketNo)
+        .limit(1);
+      
+      if (flowError) {
+        console.warn(`[ASSIGNMENT CHECK] Error checking flows for ${ticketNo}:`, flowError);
+        return false;
+      }
+      
+      if (!flows || flows.length === 0) {
+        // ไม่มี station flow = ไม่ต้องเช็ค assignment
+        setTicketAssignmentStatus(prev => {
+          const newMap = new Map(prev);
+          newMap.set(ticketNo, false);
+          return newMap;
+        });
+        return false;
+      }
+      
+      // ถ้ามี station flow แล้ว เช็คว่ามี assignment หรือไม่
+      const { data: assignments, error: assignError } = await supabase
+        .from('ticket_assignments')
+        .select('technician_id')
+        .eq('ticket_no', ticketNo)
+        .not('technician_id', 'is', null)
+        .limit(1);
+      
+      if (assignError) {
+        console.warn(`[ASSIGNMENT CHECK] Error checking assignments for ${ticketNo}:`, assignError);
+        return false;
+      }
+      
+      const hasAssignment = assignments && assignments.length > 0 && assignments.some(a => a.technician_id);
+      setTicketAssignmentStatus(prev => {
+        const newMap = new Map(prev);
+        newMap.set(ticketNo, hasAssignment);
+        return newMap;
+      });
+      return hasAssignment;
+    } catch (e) {
+      console.warn(`[ASSIGNMENT CHECK] Exception checking assignment for ${ticketNo}:`, e);
+      return false;
+    }
+  }, []);
+
+  // โหลด BOM data จาก Supabase (เก็บไว้สำหรับใช้ในกรณีอื่น)
+  useEffect(() => {
+    let active = true;
+    const loadBoms = async () => {
+      try {
+        const { data: boms, error } = await supabase
+          .from('ticket_bom')
+          .select('ticket_no')
+          .order('created_at', { ascending: false });
+
+        if (error) {
+          console.warn('Error loading BOMs:', error);
+          if (active) setDbBoms([]);
+          return;
+        }
+
+        if (active) {
+          // สร้าง Set ของ ticket_no ที่มี BOM
+          const ticketsWithBom = new Set((boms || []).map(b => b.ticket_no));
+          setDbBoms(Array.from(ticketsWithBom));
+          console.log(`Loaded BOM data for ${ticketsWithBom.size} tickets`);
+        }
+      } catch (e) {
+        console.error('Failed to load BOMs:', e);
+        if (active) setDbBoms([]);
+      }
+    };
+
+    loadBoms();
+    return () => { active = false; };
+  }, [refreshTrigger]);
+
   // รวมข้อมูลจาก Supabase และ localStorage ซ้อนทับบน ERP tickets
   const tickets = useMemo(() => {
     return erpTickets.map((t) => {
       const merged = { ...t };
+      const ticketNo = String(t.id || t.rpd).replace('#','').trim();
       
       // ดึงข้อมูลจาก Supabase ก่อน
-      const dbTicket = dbTickets.find(db => db.no === String(t.id || t.rpd).replace('#',''));
+      const dbTicket = dbTickets.find(db => String(db.no || '').trim() === ticketNo);
+      
+      // เช็คว่ามี BOM หรือไม่ - ใช้ข้อมูลจาก ticketBomStatus หรือเช็คจาก dbBoms เป็น fallback
+      const bomStatus = ticketBomStatus.get(ticketNo);
+      const hasBom = bomStatus !== undefined 
+        ? bomStatus 
+        : dbBoms.some(bomNo => String(bomNo || '').trim() === ticketNo);
+      merged.hasBom = hasBom;
+      
+      // เช็คว่า ticket อยู่ใน database หรือไม่
+      merged.inDatabase = !!dbTicket;
+      
+      // หา station flows ที่เกี่ยวข้องกับ ticket นี้ (เช็คทุกกรณี ไม่ใช่แค่เมื่อมี dbTicket)
+      // ใช้ trim() เพื่อให้แน่ใจว่าไม่มี space หรือ format ต่างกัน
+      const ticketFlows = Array.isArray(dbStationFlows) 
+        ? dbStationFlows.filter(flow => String(flow.ticket_no || '').trim() === ticketNo)
+        : [];
+      
+      // เช็คว่ามี station flow หรือไม่
+      merged.hasStationFlow = ticketFlows.length > 0;
+      
+      // เช็คว่ามี assignment หรือไม่ - ใช้ข้อมูลจาก ticketAssignmentStatus หรือเช็คจาก ticketFlows เป็น fallback
+      const assignmentStatus = ticketAssignmentStatus.get(ticketNo);
+      let hasAssignment = false;
+      
+      if (assignmentStatus !== undefined) {
+        hasAssignment = assignmentStatus;
+      } else {
+        // Fallback: เช็คจาก ticketFlows
+        hasAssignment = ticketFlows.length > 0 && ticketFlows.some(flow => {
+          if (flow.ticket_assignments && Array.isArray(flow.ticket_assignments) && flow.ticket_assignments.length > 0) {
+            const assignment = flow.ticket_assignments[0];
+            return assignment.technician_id || assignment.users?.name || assignment.users?.id;
+          }
+          return false;
+        });
+      }
+      
+      merged.hasAssignment = hasAssignment;
+      
+      // Debug log สำหรับ ticket RPD2510-199
+      if (ticketNo === 'RPD2510-199') {
+        console.log('[TICKET DEBUG] RPD2510-199:', {
+          ticketNo,
+          hasBom,
+          inDatabase: !!dbTicket,
+          hasStationFlow: ticketFlows.length > 0,
+          hasAssignment,
+          ticketFlowsCount: ticketFlows.length,
+          status: merged.status || dbTicket?.status || 'Pending'
+        });
+      }
+      
+      // Debug log สำหรับ ticket ที่มีปัญหา
+      if (ticketFlows.length > 0 && !hasAssignment) {
+        console.log(`[ASSIGNMENT DEBUG] Ticket ${ticketNo}:`, {
+          hasStationFlow: ticketFlows.length > 0,
+          hasAssignment,
+          ticketFlowsCount: ticketFlows.length,
+          assignments: ticketFlows.map(f => ({
+            step: f.step_order,
+            hasAssignments: !!f.ticket_assignments,
+            assignmentsLength: f.ticket_assignments?.length || 0,
+            technicianName: f.ticket_assignments?.[0]?.users?.name || null
+          }))
+        });
+      }
       
       if (dbTicket) {
         // ใช้ข้อมูลจาก database
@@ -521,41 +782,38 @@ export default function UITicket() {
             merged.priorityClass = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
           }
         }
+      }
+      
+      if (ticketFlows.length > 0) {
+        // สร้าง roadmap จาก station flows
+        merged.roadmap = ticketFlows.map((flow) => ({
+          step: flow.stations?.name_th || "",
+          status: flow.status || "pending",
+          technician: flow.ticket_assignments?.[0]?.users?.name || ""
+        }));
         
-        // หา station flows ที่เกี่ยวข้องกับ ticket นี้
-        const ticketFlows = Array.isArray(dbStationFlows) 
-          ? dbStationFlows.filter(flow => flow.ticket_no === String(t.id || t.rpd).replace('#',''))
-          : [];
-        
-        if (ticketFlows.length > 0) {
-          // สร้าง roadmap จาก station flows
-          merged.roadmap = ticketFlows.map((flow) => ({
-            step: flow.stations?.name_th || "",
-            status: flow.status || "pending",
-            technician: flow.ticket_assignments?.[0]?.users?.name || ""
-          }));
-          
-          // คำนวณสถานะตามการ assign และความคืบหน้า
-          const stations = ticketFlows.map(flow => ({
-            name: flow.stations?.name_th || "",
-            technician: flow.ticket_assignments?.[0]?.users?.name || "",
-            status: flow.status || "pending"
-          }));
-          // กำหนด assignee ให้โชว์บนการ์ด: แสดงเฉพาะช่างของสถานีปัจจุบัน
-          const currentFlow = ticketFlows.find(f => f.status === 'current');
-          let primaryAssignee = currentFlow?.ticket_assignments?.[0]?.users?.name || '';
-          if (!primaryAssignee) {
-            // หากยังไม่เริ่มงาน (ไม่มี current) ให้แสดงช่างของสถานีแรกตามลำดับ
-            const firstFlow = ticketFlows[0];
-            primaryAssignee = firstFlow?.ticket_assignments?.[0]?.users?.name || '';
-          }
-          merged.assignee = primaryAssignee || '-';
-          merged.status = calculateTicketStatus(stations, merged.roadmap);
-          merged.statusClass = getStatusClass(merged.status);
-        } else {
-          // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
-          console.log(`No station flows found for ticket ${t.id}, using ERP roadmap`);
-          // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
+        // คำนวณสถานะตามการ assign และความคืบหน้า
+        const stations = ticketFlows.map(flow => ({
+          name: flow.stations?.name_th || "",
+          technician: flow.ticket_assignments?.[0]?.users?.name || "",
+          status: flow.status || "pending"
+        }));
+        // กำหนด assignee ให้โชว์บนการ์ด: แสดงเฉพาะช่างของสถานีปัจจุบัน
+        const currentFlow = ticketFlows.find(f => f.status === 'current');
+        let primaryAssignee = currentFlow?.ticket_assignments?.[0]?.users?.name || '';
+        if (!primaryAssignee) {
+          // หากยังไม่เริ่มงาน (ไม่มี current) ให้แสดงช่างของสถานีแรกตามลำดับ
+          const firstFlow = ticketFlows[0];
+          primaryAssignee = firstFlow?.ticket_assignments?.[0]?.users?.name || '';
+        }
+        merged.assignee = primaryAssignee || '-';
+        merged.status = calculateTicketStatus(stations, merged.roadmap);
+        merged.statusClass = getStatusClass(merged.status);
+      } else {
+        // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
+        console.log(`No station flows found for ticket ${t.id}, using ERP roadmap`);
+        // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
+        if (!merged.status || merged.status === "Pending") {
           merged.status = "Pending";
           merged.statusClass = "text-blue-600";
         }
@@ -563,7 +821,37 @@ export default function UITicket() {
       
       return merged;
     });
-  }, [erpTickets, dbTickets, dbStationFlows]);
+  }, [erpTickets, dbTickets, dbStationFlows, dbBoms, ticketBomStatus, ticketAssignmentStatus]);
+
+  // Trigger การเช็ค BOM และ Assignment สำหรับทุก ticket เมื่อ tickets เปลี่ยน
+  useEffect(() => {
+    if (tickets.length === 0) return;
+    
+    // สร้าง Set ของ ticket_no ที่ต้องเช็ค
+    const ticketNos = tickets
+      .map(t => String(t.id || t.rpd).replace('#','').trim())
+      .filter(Boolean);
+    
+    // เช็ค BOM และ Assignment สำหรับทุก ticket
+    ticketNos.forEach(ticketNo => {
+      // เช็ค BOM ถ้ายังไม่เช็ค
+      const bomChecked = ticketBomStatus.has(ticketNo);
+      if (!bomChecked) {
+        checkTicketBom(ticketNo);
+      }
+      
+      // เช็ค Assignment ถ้ายังไม่เช็ค
+      const assignmentChecked = ticketAssignmentStatus.has(ticketNo);
+      if (!assignmentChecked) {
+        // เช็คเฉพาะเมื่อมี station flow
+        const ticket = tickets.find(t => String(t.id || t.rpd).replace('#','').trim() === ticketNo);
+        if (ticket?.hasStationFlow) {
+          checkTicketAssignment(ticketNo);
+        }
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tickets.length, erpTickets.length, refreshTrigger, checkTicketBom, checkTicketAssignment]);
 
   // ฟังก์ชันคำนวณสถานะตั๋ว
   function calculateTicketStatus(stations, roadmap) {
@@ -650,7 +938,7 @@ export default function UITicket() {
     }
     const itemCode = rec?.Source_No || rec?.Item_No || rec?.itemCode || rec?.Item_Code || rec?.Source_Item || "";
     const description = rec?.Description || rec?.description || "";
-    const description2 = rec?.Description_2 || rec?.description2 || "";
+    const description2 = (rec?.Description_2 || rec?.description2 || "").replace(/[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '');
     const erpProjectCode = rec?.Shortcut_Dimension_2_Code || rec?.Project_Code || rec?.projectCode || rec?.Project || "";
     const shortcutDimension1 = rec?.Shortcut_Dimension_1_Code || "";
     const startingDateTime = rec?.Starting_Date_Time || rec?.Start_Date || "";
@@ -716,6 +1004,28 @@ export default function UITicket() {
     return 3;
   };
 
+  // Filter predicate
+  const filterPredicate = (t) => {
+    // Status filter
+    if (selectedStatuses.size > 0 && !selectedStatuses.has(t.status)) return false;
+    // Priority filter
+    if (selectedPriorities.size > 0 && !selectedPriorities.has(t.priority)) return false;
+    // Due date filter
+    if (hasDueDateOnly && !t.dueDate) return false;
+    // Item code filter
+    if (selectedItemCodes.size > 0 && !selectedItemCodes.has(t.itemCode)) return false;
+    return true;
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedStatuses.size > 0) count += 1;
+    if (selectedPriorities.size > 0) count += 1;
+    if (hasDueDateOnly) count += 1;
+    if (selectedItemCodes.size > 0) count += 1;
+    return count;
+  }, [selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
+
   const matchSearch = (t) => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
@@ -736,22 +1046,12 @@ export default function UITicket() {
     return t.status === "Pending";
   };
 
-  const { openTickets, inProductionTickets, notIssuedTickets, priorityDeliveryTickets } = useMemo(() => {
-    const filtered = tickets.filter(matchSearch);
+  const { openTickets, closedTickets } = useMemo(() => {
+    const filtered = tickets.filter(matchSearch).filter(filterPredicate);
     const opens = filtered.filter((t) => t.status !== "Finish");
-    const inProd = filtered.filter((t) => t.status === "In Progress");
-    const notIssued = filtered.filter(isNotIssued);
-    const priorityDelivery = filtered
-      .filter((t) => !!t.dueDate)
-      .slice()
-      .sort((a, b) => {
-        const ad = new Date(a.dueDate).getTime();
-        const bd = new Date(b.dueDate).getTime();
-        if (ad !== bd) return ad - bd;
-        return priorityRank(a.priority) - priorityRank(b.priority);
-      });
-    return { openTickets: opens, inProductionTickets: inProd, notIssuedTickets: notIssued, priorityDeliveryTickets: priorityDelivery };
-  }, [tickets, searchTerm]);
+    const closed = filtered.filter((t) => t.status === "Finish");
+    return { openTickets: opens, closedTickets: closed };
+  }, [tickets, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
 
   // Merge station flows เข้ากับ tickets ใน groupedByItem
   const groupedByItemWithFlows = useMemo(() => {
@@ -822,12 +1122,14 @@ export default function UITicket() {
             merged.assignee = primaryAssignee || '-';
             merged.status = calculateTicketStatus(stations, merged.roadmap);
             merged.statusClass = getStatusClass(merged.status);
+            merged.hasStationFlow = true;
           } else {
             // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
             console.log(`No station flows found for ticket ${ticket.id}, using ERP roadmap`);
             // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
             merged.status = "Pending";
             merged.statusClass = "text-blue-600";
+            merged.hasStationFlow = false;
           }
         }
         
@@ -836,30 +1138,33 @@ export default function UITicket() {
     }));
   }, [groupedByItem, dbTickets, dbStationFlows]);
 
-  // คำนวณจำนวนตั๋วจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
+  // คำนวณจำนวนตั๋วที่เปิดจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
   const groupedTicketsCount = useMemo(() => {
     if (!groupedByItemWithFlows.length) return 0;
     return groupedByItemWithFlows.reduce((total, group) => {
-      const filteredItems = group.items.filter(ticket => {
-        if (!searchTerm) return true;
-        const q = searchTerm.toLowerCase();
-        return (
-          (ticket.id || "").toLowerCase().includes(q) ||
-          (ticket.title || "").toLowerCase().includes(q) ||
-          (ticket.rpd || "").toLowerCase().includes(q) ||
-          (ticket.itemCode || "").toLowerCase().includes(q) ||
-          (ticket.description || "").toLowerCase().includes(q)
-        );
-      });
+      const filteredItems = group.items
+        .filter(ticket => ticket.status !== "Finish") // กรองเฉพาะตั๋วที่เปิด
+        .filter(ticket => {
+          if (!searchTerm) return true;
+          const q = searchTerm.toLowerCase();
+          return (
+            (ticket.id || "").toLowerCase().includes(q) ||
+            (ticket.title || "").toLowerCase().includes(q) ||
+            (ticket.rpd || "").toLowerCase().includes(q) ||
+            (ticket.itemCode || "").toLowerCase().includes(q) ||
+            (ticket.description || "").toLowerCase().includes(q)
+          );
+        })
+        .filter(filterPredicate);
       return total + filteredItems.length;
     }, 0);
-  }, [groupedByItemWithFlows, searchTerm]);
+  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
 
-  // คำนวณตั๋วที่กำลังผลิตจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
-  const inProductionTicketsFromGrouped = useMemo(() => {
+  // คำนวณตั๋วที่ปิดจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
+  const closedTicketsFromGrouped = useMemo(() => {
     if (!groupedByItemWithFlows.length) return [];
     const allTickets = groupedByItemWithFlows.flatMap(group => group.items);
-    const filtered = allTickets.filter(ticket => ticket.status === "In Progress");
+    const filtered = allTickets.filter(ticket => ticket.status === "Finish").filter(filterPredicate);
     return filtered.filter(ticket => {
       if (!searchTerm) return true;
       const q = searchTerm.toLowerCase();
@@ -871,51 +1176,7 @@ export default function UITicket() {
         (ticket.description || "").toLowerCase().includes(q)
       );
     });
-  }, [groupedByItemWithFlows, searchTerm]);
-
-  // คำนวณตั๋วที่ยังไม่ได้จ่ายจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
-  const notIssuedTicketsFromGrouped = useMemo(() => {
-    if (!groupedByItemWithFlows.length) return [];
-    const allTickets = groupedByItemWithFlows.flatMap(group => group.items);
-    const filtered = allTickets.filter(ticket => isNotIssued(ticket));
-    return filtered.filter(ticket => {
-      if (!searchTerm) return true;
-      const q = searchTerm.toLowerCase();
-      return (
-        (ticket.id || "").toLowerCase().includes(q) ||
-        (ticket.title || "").toLowerCase().includes(q) ||
-        (ticket.rpd || "").toLowerCase().includes(q) ||
-        (ticket.itemCode || "").toLowerCase().includes(q) ||
-        (ticket.description || "").toLowerCase().includes(q)
-      );
-    });
-  }, [groupedByItemWithFlows, searchTerm]);
-
-  // คำนวณตั๋วที่มีวันกำหนดส่งจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
-  const priorityDeliveryTicketsFromGrouped = useMemo(() => {
-    if (!groupedByItemWithFlows.length) return [];
-    const allTickets = groupedByItemWithFlows.flatMap(group => group.items);
-    const filtered = allTickets
-      .filter(ticket => !!ticket.dueDate)
-      .slice()
-      .sort((a, b) => {
-        const ad = new Date(a.dueDate).getTime();
-        const bd = new Date(b.dueDate).getTime();
-        if (ad !== bd) return ad - bd;
-        return priorityRank(a.priority) - priorityRank(b.priority);
-      });
-    return filtered.filter(ticket => {
-      if (!searchTerm) return true;
-      const q = searchTerm.toLowerCase();
-      return (
-        (ticket.id || "").toLowerCase().includes(q) ||
-        (ticket.title || "").toLowerCase().includes(q) ||
-        (ticket.rpd || "").toLowerCase().includes(q) ||
-        (ticket.itemCode || "").toLowerCase().includes(q) ||
-        (ticket.description || "").toLowerCase().includes(q)
-      );
-    });
-  }, [groupedByItemWithFlows, searchTerm]);
+  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
 
   // กำหนด tabs
   const tabs = [
@@ -928,35 +1189,18 @@ export default function UITicket() {
       emptySubMessage: language === 'th' ? 'กรุณาอัปโหลดแบบแปลนในหน้า Project ก่อน' : 'Please upload blueprints in Project page first'
     },
     {
-      id: "production",
-      label: language === 'th' ? 'ตั๋วที่กำลังผลิต' : 'Tickets in Production',
-      count: inProductionTicketsFromGrouped.length > 0 ? inProductionTicketsFromGrouped.length : inProductionTickets.length,
-      data: inProductionTicketsFromGrouped.length > 0 ? inProductionTicketsFromGrouped : inProductionTickets,
-      emptyMessage: language === 'th' ? 'ไม่มีตั๋วที่กำลังผลิต' : 'No tickets in production',
-      emptySubMessage: language === 'th' ? 'กรุณาอัปโหลดแบบแปลนในหน้า Project ก่อน' : 'Please upload blueprints in Project page first'
-    },
-    {
-      id: "notIssued",
-      label: language === 'th' ? 'ตั๋วที่ยังไม่ได้จ่าย' : 'Tickets Not Issued',
-      count: notIssuedTicketsFromGrouped.length > 0 ? notIssuedTicketsFromGrouped.length : notIssuedTickets.length,
-      data: notIssuedTicketsFromGrouped.length > 0 ? notIssuedTicketsFromGrouped : notIssuedTickets,
-      emptyMessage: language === 'th' ? 'ไม่มีตั๋วที่รอดำเนินการ' : 'No pending tickets',
-      emptySubMessage: language === 'th' ? 'กรุณาอัปโหลดแบบแปลนในหน้า Project ก่อน' : 'Please upload blueprints in Project page first'
-    },
-    {
-      id: "priority",
-      label: language === 'th' ? 'งานที่ต้องส่ง (Priority)' : 'Priority Delivery Work',
-      count: priorityDeliveryTicketsFromGrouped.length > 0 ? priorityDeliveryTicketsFromGrouped.length : priorityDeliveryTickets.length,
-      data: priorityDeliveryTicketsFromGrouped.length > 0 ? priorityDeliveryTicketsFromGrouped : priorityDeliveryTickets,
-      emptyMessage: language === 'th' ? 'ยังไม่มีงานที่มีวันกำหนดส่ง' : 'No work with due dates yet',
-      emptySubMessage: language === 'th' ? 'กรุณาอัปโหลดแบบแปลนในหน้า Project ก่อน' : 'Please upload blueprints in Project page first'
+      id: "closed",
+      label: language === 'th' ? 'ตั๋วทั้งหมดที่ปิด' : 'All Closed Tickets',
+      count: closedTicketsFromGrouped.length > 0 ? closedTicketsFromGrouped.length : closedTickets.length,
+      data: closedTicketsFromGrouped.length > 0 ? closedTicketsFromGrouped : closedTickets,
+      emptyMessage: language === 'th' ? 'ไม่พบตั๋วที่ปิด' : 'No closed tickets found',
+      emptySubMessage: language === 'th' ? 'ยังไม่มีตั๋วที่ปิด' : 'No closed tickets yet'
     }
   ];
 
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
-  function TicketCard({ ticket, onEdit }) {
-    const notIssued = isNotIssued(ticket);
+  function TicketCard({ ticket, onEdit, ticketBomStatus, ticketAssignmentStatus }) {
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
@@ -1003,12 +1247,69 @@ export default function UITicket() {
                   <Clock className="w-3 h-3" />
                   <span>{t('dueDate', language)}: {formatDate(ticket.dueDate)}</span>
                 </span>
-                {notIssued && (
-                  <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400">
-                    <AlertCircle className="w-3 h-3" />
-                    <span>{t('rawMaterialsNotPaid', language)}</span>
-                  </span>
-                )}
+                {/* Warning: ยังไม่ได้จ่ายวัตถุดิบ (ไม่มี BOM) */}
+                {(() => {
+                  const ticketNo = String(ticket.id || ticket.rpd).replace('#','').trim();
+                  // ใช้ข้อมูลจาก ticketBomStatus โดยตรง (มี priority สูงกว่า ticket.hasBom)
+                  const bomStatus = ticketBomStatus.get(ticketNo);
+                  const actualHasBom = bomStatus !== undefined ? bomStatus : (ticket.hasBom || false);
+                  
+                  return !actualHasBom ? (
+                    <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>{language === 'th' ? 'ยังไม่ได้จ่ายวัตถุดิบ' : 'Raw materials not paid'}</span>
+                    </span>
+                  ) : null;
+                })()}
+                {/* Warning: ยังไม่ได้มอบหมายงานให้ช่าง */}
+                {(() => {
+                  const ticketNo = String(ticket.id || ticket.rpd).replace('#','').trim();
+                  const hasStationFlow = ticket.hasStationFlow || false;
+                  // ใช้ข้อมูลจาก ticketAssignmentStatus โดยตรง (มี priority สูงกว่า ticket.hasAssignment)
+                  const assignmentStatus = ticketAssignmentStatus.get(ticketNo);
+                  const actualHasAssignment = assignmentStatus !== undefined 
+                    ? assignmentStatus 
+                    : (ticket.hasAssignment || false);
+                  const inDatabase = ticket.inDatabase || false;
+                  const status = ticket.status || 'Pending';
+                  
+                  // เงื่อนไขการแสดง warning:
+                  // แสดง warning เฉพาะเมื่อ:
+                  // 1. มี station flow แต่ยังไม่มี assignment (ไม่ว่าสถานะจะเป็นอะไร)
+                  // 2. ยังไม่มี station flow แต่มี ticket ใน DB และ status เป็น Pending
+                  // ไม่แสดง warning เมื่อ:
+                  // - มี assignment แล้ว (ไม่ว่าจะมี station flow หรือไม่)
+                  // - Status เป็น Released, In Progress, หรือ Finish (เพราะแสดงว่ามีการทำงานแล้ว)
+                  const shouldShow = 
+                    (hasStationFlow && !actualHasAssignment) || 
+                    (!hasStationFlow && inDatabase && status === 'Pending' && !actualHasAssignment);
+                  
+                  // Debug log สำหรับ ticket RPD2510-199
+                  if (ticketNo === 'RPD2510-199') {
+                    console.log('[ASSIGNMENT WARNING DEBUG]', {
+                      ticketNo,
+                      hasStationFlow,
+                      actualHasAssignment,
+                      assignmentStatus,
+                      ticketHasAssignment: ticket.hasAssignment,
+                      inDatabase,
+                      status,
+                      shouldShow,
+                      ticketObject: {
+                        hasStationFlow: ticket.hasStationFlow,
+                        hasAssignment: ticket.hasAssignment,
+                        inDatabase: ticket.inDatabase
+                      }
+                    });
+                  }
+                  
+                  return shouldShow ? (
+                    <span className="inline-flex items-center gap-1 text-orange-600 dark:text-orange-400">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>{language === 'th' ? 'ยังไม่ได้มอบหมายงานให้ช่าง' : 'Not assigned to technician yet'}</span>
+                    </span>
+                  ) : null;
+                })()}
                </div>
              </div>
 
@@ -1094,8 +1395,14 @@ export default function UITicket() {
                         const hasCurrent = currentIndex >= 0;
                         // Active when completed → current, OR when no current and the next is the first pending (show direction to next)
                         const connectsToCurrent = isCompleted && (next?.status === 'current' || (!hasCurrent && firstPendingIndex === stepIndex + 1));
+                        
+                        // Determine connector class
+                        let connectorClass = 'road-connector';
+                        if (isCompleted) connectorClass += ' road-connector--completed';
+                        if (connectsToCurrent) connectorClass += ' road-connector--active';
+                        
                         return (
-                          <div className={`w-8 sm:w-10 md:w-10 lg:w-10 xl:w-16 mx-1 sm:mx-2 lg:mx-2 xl:mx-3 road-connector ${isCompleted ? 'road-connector--completed' : ''} ${connectsToCurrent ? 'road-connector--active' : ''}`}>
+                          <div className={`w-8 sm:w-10 md:w-10 lg:w-10 xl:w-16 mx-1 sm:mx-2 lg:mx-2 xl:mx-3 ${connectorClass}`}>
                             {connectsToCurrent && (
                               <>
                                 <div className="road-connector__fill" />
@@ -1233,12 +1540,109 @@ export default function UITicket() {
           </div>
           
           {/* Filter Button */}
-          <button className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base text-gray-900 dark:text-gray-100">
+          <button onClick={() => setShowFilter(v => !v)} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base text-gray-900 dark:text-gray-100">
             <Filter className="w-4 h-4 sm:w-5 sm:h-5" />
             <span>{t('filter', language)}</span>
-            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">3</span>
+            {activeFilterCount > 0 && (
+              <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">{activeFilterCount}</span>
+            )}
           </button>
         </div>
+        {showFilter && (
+          <div className="mt-3 p-3 sm:p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg animate-fadeInDown">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Status filter */}
+              <div>
+                <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'สถานะ' : 'Status'}</div>
+                {['Pending','Released','In Progress','Finish'].map(st => (
+                  <label key={st} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedStatuses.has(st)}
+                      onChange={(e) => {
+                        setSelectedStatuses(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(st); else next.delete(st);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span>{st}</span>
+                  </label>
+                ))}
+              </div>
+              {/* Priority filter */}
+              <div>
+                <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</div>
+                {['High Priority','Medium Priority','Low Priority','ยังไม่ได้กำหนด Priority'].map(pr => (
+                  <label key={pr} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedPriorities.has(pr)}
+                      onChange={(e) => {
+                        setSelectedPriorities(prev => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(pr); else next.delete(pr);
+                          return next;
+                        });
+                      }}
+                    />
+                    <span>{pr}</span>
+                  </label>
+                ))}
+              </div>
+              {/* Due date filter */}
+              <div>
+                <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'วันกำหนดส่ง' : 'Due Date'}</div>
+                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                  <input type="checkbox" checked={hasDueDateOnly} onChange={(e) => setHasDueDateOnly(e.target.checked)} />
+                  <span>{language === 'th' ? 'แสดงเฉพาะที่มีวันกำหนดส่ง' : 'Only with due date'}</span>
+                </label>
+              </div>
+              {/* Item code filter */}
+              <div>
+                <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">Item Code</div>
+                <div className="max-h-32 overflow-auto pr-1 border border-gray-100 dark:border-slate-700 rounded">
+                  {[...new Set(groupedByItemWithFlows.map(g => g.itemCode))].sort().map(code => (
+                    <label key={code} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 px-2 py-1">
+                      <input
+                        type="checkbox"
+                        checked={selectedItemCodes.has(code)}
+                        onChange={(e) => {
+                          setSelectedItemCodes(prev => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.add(code); else next.delete(code);
+                            return next;
+                          });
+                        }}
+                      />
+                      <span className="font-mono">{code}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+                onClick={() => setShowFilter(false)}
+              >
+                {language === 'th' ? 'ใช้ตัวกรอง' : 'Apply'}
+              </button>
+              <button
+                className="px-3 py-2 text-sm bg-gray-100 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 rounded"
+                onClick={() => {
+                  setSelectedStatuses(new Set());
+                  setSelectedPriorities(new Set());
+                  setHasDueDateOnly(false);
+                  setSelectedItemCodes(new Set());
+                }}
+              >
+                {language === 'th' ? 'ล้างค่า' : 'Clear'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       
       {/* Tabs Navigation */}
@@ -1290,9 +1694,18 @@ export default function UITicket() {
                 <div className="space-y-4">
                   {groupedByItemWithFlows
                     .filter(g => {
+                      // กรองตามสถานะตั๋วก่อน
+                      const relevantTickets = activeTab === "open"
+                        ? g.items.filter(ticket => ticket.status !== "Finish")
+                        : g.items.filter(ticket => ticket.status === "Finish");
+                      
+                      // ถ้าไม่มีตั๋วที่เกี่ยวข้อง ไม่ต้องแสดง Item Code นี้
+                      if (relevantTickets.length === 0) return false;
+                      
+                      // กรองตาม search term
                       if (!searchTerm) return true;
                       const q = searchTerm.toLowerCase();
-                      const inItems = g.items.some(ticket => 
+                      const inItems = relevantTickets.some(ticket => 
                         (ticket.id || '').toLowerCase().includes(q) ||
                         (ticket.title || '').toLowerCase().includes(q) ||
                         (ticket.rpd || '').toLowerCase().includes(q) ||
@@ -1321,7 +1734,12 @@ export default function UITicket() {
                                 <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 font-mono">{g.itemCode}</h3>
                               </div>
                               <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
-                                {g.rpdCount} {language === 'th' ? 'ตั๋ว' : 'tickets'}
+                                {(() => {
+                                  const relevantCount = activeTab === "open"
+                                    ? g.items.filter(ticket => ticket.status !== "Finish").length
+                                    : g.items.filter(ticket => ticket.status === "Finish").length;
+                                  return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                })()}
                               </span>
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400">
@@ -1330,22 +1748,122 @@ export default function UITicket() {
                           </div>
                           
                           {/* Collapsible content */}
-                          {isExpanded && (
-                            <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700">
-                              <div className="space-y-3 pt-3">
-                                {g.items.map((ticket, ticketIndex) => (
-                                  <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
-                                    <TicketCard ticket={ticket} onEdit={handleEdit} />
-                                  </div>
-                                ))}
-                                {g.items.length === 0 && (
-                                  <div className="py-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                                    {language === 'th' ? 'ไม่พบ RPD ที่เกี่ยวข้อง' : 'No related RPDs'}
-                                  </div>
-                                )}
+                          {isExpanded && (() => {
+                            // กรองเฉพาะตั๋วที่เปิดเมื่อ activeTab === "open"
+                            const displayItems = activeTab === "open" 
+                              ? g.items.filter(ticket => ticket.status !== "Finish")
+                              : g.items;
+                            
+                            return (
+                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700">
+                                <div className="space-y-3 pt-3">
+                                  {displayItems.map((ticket, ticketIndex) => (
+                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
+                                      <TicketCard ticket={ticket} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                                    </div>
+                                  ))}
+                                  {displayItems.length === 0 && (
+                                    <div className="py-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                                      {language === 'th' ? 'ไม่พบ RPD ที่เกี่ยวข้อง' : 'No related RPDs'}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
+                            );
+                          })()}
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+            
+            {/* แสดงผลแบบกลุ่มตาม Item Code สำหรับแท็บ "ปิด" */}
+            {activeTab === "closed" && groupedByItemWithFlows.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                  {language === 'th' ? 'จัดกลุ่มตาม Item Code' : 'Grouped by Item Code'}
+                </h2>
+                <div className="space-y-4">
+                  {groupedByItemWithFlows
+                    .filter(g => {
+                      // กรองตามสถานะตั๋วก่อน
+                      const relevantTickets = activeTab === "open"
+                        ? g.items.filter(ticket => ticket.status !== "Finish")
+                        : g.items.filter(ticket => ticket.status === "Finish");
+                      
+                      // ถ้าไม่มีตั๋วที่เกี่ยวข้อง ไม่ต้องแสดง Item Code นี้
+                      if (relevantTickets.length === 0) return false;
+                      
+                      // กรองตาม search term
+                      if (!searchTerm) return true;
+                      const q = searchTerm.toLowerCase();
+                      const inItems = relevantTickets.some(ticket => 
+                        (ticket.id || '').toLowerCase().includes(q) ||
+                        (ticket.title || '').toLowerCase().includes(q) ||
+                        (ticket.rpd || '').toLowerCase().includes(q) ||
+                        (ticket.itemCode || '').toLowerCase().includes(q) ||
+                        (ticket.description || '').toLowerCase().includes(q)
+                      );
+                      return (g.itemCode || '').toLowerCase().includes(q) || inItems;
+                    })
+                    .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
+                    .map((g, i) => {
+                      const isExpanded = expandedItems.has(g.itemCode);
+                      return (
+                        <div key={g.itemCode} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
+                          {/* Header with collapse/expand button */}
+                          <div 
+                            className="flex items-center justify-between p-4 sm:p-5 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
+                            onClick={() => toggleItemExpansion(g.itemCode)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center gap-2">
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                                )}
+                                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 font-mono">{g.itemCode}</h3>
+                              </div>
+                              <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                {(() => {
+                                  const relevantCount = activeTab === "open"
+                                    ? g.items.filter(ticket => ticket.status !== "Finish").length
+                                    : g.items.filter(ticket => ticket.status === "Finish").length;
+                                  return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                })()}
+                              </span>
                             </div>
-                          )}
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {isExpanded ? (language === 'th' ? 'คลิกเพื่อย่อ' : 'Click to collapse') : (language === 'th' ? 'คลิกเพื่อขยาย' : 'Click to expand')}
+                            </div>
+                          </div>
+                          
+                          {/* Collapsible content */}
+                          {isExpanded && (() => {
+                            // กรองเฉพาะตั๋วที่ปิดเมื่อ activeTab === "closed"
+                            const displayItems = activeTab === "open" 
+                              ? g.items.filter(ticket => ticket.status !== "Finish")
+                              : g.items.filter(ticket => ticket.status === "Finish");
+                            
+                            return (
+                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700">
+                                <div className="space-y-3 pt-3">
+                                  {displayItems.map((ticket, ticketIndex) => (
+                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
+                                      <TicketCard ticket={ticket} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                                    </div>
+                                  ))}
+                                  {displayItems.length === 0 && (
+                                    <div className="py-4 text-center text-xs text-gray-500 bg-gray-50 dark:bg-slate-700 rounded-lg">
+                                      {language === 'th' ? 'ไม่พบ RPD ที่เกี่ยวข้อง' : 'No related RPDs'}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}
@@ -1356,7 +1874,7 @@ export default function UITicket() {
             {/* แสดงผลตั๋วปกติ - แสดงเฉพาะเมื่อไม่มีข้อมูลจาก Item Code */}
             {activeTab === "open" && groupedTicketsCount === 0 && currentTab.data.map((t, i) => (
               <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
-                <TicketCard ticket={t} onEdit={handleEdit} />
+                <TicketCard ticket={t} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
               </div>
             ))}
             
@@ -1369,19 +1887,37 @@ export default function UITicket() {
               </div>
             )}
             
-            {/* แสดงผลตั๋วปกติสำหรับแท็บอื่นๆ */}
-            {activeTab !== "open" && currentTab.data.map((t, i) => (
-              <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
-                <TicketCard ticket={t} onEdit={handleEdit} />
-              </div>
-            ))}
-            {activeTab !== "open" && currentTab.data.length === 0 && (
-              <div className="text-center py-8">
-                <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{currentTab.emptyMessage}</p>
-                <p className="text-xs text-gray-400">{currentTab.emptySubMessage}</p>
-              </div>
-            )}
+            {/* แสดงผลตั๋วปกติสำหรับแท็บอื่นๆ - แสดงเฉพาะเมื่อไม่มี Item Code grouping */}
+            {activeTab !== "open" && (() => {
+              // สำหรับแท็บ "ปิด" ให้แสดงตั๋วแบบปกติเฉพาะเมื่อไม่มี Item Code grouping
+              if (activeTab === "closed") {
+                const hasGroupedClosedTickets = groupedByItemWithFlows.some(g => {
+                  const closedTickets = g.items.filter(ticket => ticket.status === "Finish");
+                  return closedTickets.length > 0;
+                });
+                
+                if (hasGroupedClosedTickets) {
+                  return null; // ไม่แสดงตั๋วแบบปกติเพราะมี Item Code grouping แล้ว
+                }
+              }
+              
+              // แสดงตั๋วแบบปกติเมื่อไม่มี Item Code grouping
+              if (currentTab.data.length === 0) {
+                return (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{currentTab.emptyMessage}</p>
+                    <p className="text-xs text-gray-400">{currentTab.emptySubMessage}</p>
+                  </div>
+                );
+              }
+              
+              return currentTab.data.map((t, i) => (
+                <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
+                  <TicketCard ticket={t} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                </div>
+              ));
+            })()}
           </div>
         ) : null}
       </div>

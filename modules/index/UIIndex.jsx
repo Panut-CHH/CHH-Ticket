@@ -4,6 +4,7 @@ import React from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@heroui/react";
 import { LogIn, User, Shield, Home, Ticket, Settings, ClipboardCheck, Factory, History, FolderOpen } from "lucide-react";
 import UserProfile from "@/components/UserProfile";
@@ -41,10 +42,12 @@ export default function UIIndex() {
         <header className="bg-white dark:bg-slate-800 shadow-sm sticky top-0 z-30">
           <div className="max-w-7xl mx-auto flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-2">
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-md"
-                   style={{background: "linear-gradient(135deg,#22d3a0,#1cb890)"}}>
-                <Home className="w-5 h-5" />
-              </div>
+              <Link href="/" aria-label="Go to Home" className="inline-flex">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-md"
+                     style={{background: "linear-gradient(135deg,#22d3a0,#1cb890)"}}>
+                  <Home className="w-5 h-5" />
+                </div>
+              </Link>
               <span className="text-xl font-semibold text-gray-800 dark:text-gray-200">{t('systemTitle', language)}</span>
             </div>
             <div className="flex items-center gap-3">

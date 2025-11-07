@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { deleteProjectItem } from '@/utils/projectItemsDb';
 import { supabase } from '@/utils/supabaseClient';
+import { logApiCall, logError } from '@/utils/activityLogger';
 
 /**
  * DELETE /api/projects/items/[itemId]
@@ -42,13 +43,17 @@ export async function DELETE(request, ctx) {
       );
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       error: null
     });
+    // Log delete item code
+    await logApiCall(request, 'delete', 'item_code', itemId, {}, 'success', null);
+    return response;
 
   } catch (error) {
     console.error('Error deleting project item:', error);
+    await logError(error, { action: 'delete', entityType: 'item_code', entityId: (await ctx.params)?.itemId }, request);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
       { status: 500 }
