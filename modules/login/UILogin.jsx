@@ -62,7 +62,8 @@ export default function UILogin() {
     const newErrors = {};
 
     const sanitizedEmail = sanitizeInput(formData.email);
-    const sanitizedPassword = sanitizeInput(formData.password);
+    // Don't sanitize password, just check if it exists
+    const password = formData.password;
 
     if (!sanitizedEmail) {
       newErrors.email = t('required', language) + " " + t('email', language).toLowerCase();
@@ -70,10 +71,10 @@ export default function UILogin() {
       newErrors.email = t('invalidEmail', language);
     }
 
-    if (!sanitizedPassword) {
+    if (!password || password.trim().length === 0) {
       newErrors.password = t('required', language) + " " + t('password', language).toLowerCase();
     } else {
-      const strength = checkPasswordStrength(sanitizedPassword);
+      const strength = checkPasswordStrength(password);
       if (!strength.minLength) {
         newErrors.password = t('password', language) + " " + t('required', language).toLowerCase() + " 6 " + t('characters', language);
       }
@@ -107,20 +108,40 @@ export default function UILogin() {
     try {
       recordLoginAttempt(formData.email);
 
+      // Sanitize email but NOT password (passwords can contain special characters)
       const sanitizedEmail = sanitizeInput(formData.email);
-      const sanitizedPassword = sanitizeInput(formData.password);
+      // Only trim password (remove leading/trailing spaces) but don't sanitize
+      const password = formData.password.trim();
 
-      const result = await login({ email: sanitizedEmail, password: sanitizedPassword });
+      console.log('Login attempt:', { email: sanitizedEmail, passwordLength: password.length });
+
+      const result = await login({ email: sanitizedEmail, password: password });
+
+      console.log('Login result:', result);
 
       if (result && result.success) {
         clearRateLimit(formData.email);
         router.push("/");
       } else {
-        throw new Error(result?.error || t('loginFailed', language));
+        // Show the actual error message from Supabase
+        const errorMessage = result?.error || t('loginFailed', language);
+        console.error('Login failed:', errorMessage);
+        throw new Error(errorMessage);
       }
     } catch (error) {
+      console.error('Login error:', error);
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
+
+      // Get the actual error message
+      let errorMessage = error.message || t('invalidCredentials', language);
+      
+      // Translate common Supabase error messages
+      if (errorMessage.includes('Invalid login credentials') || errorMessage.includes('Email not confirmed')) {
+        errorMessage = t('invalidCredentials', language);
+      } else if (errorMessage.includes('Email rate limit exceeded')) {
+        errorMessage = t('tooManyAttempts', language);
+      }
 
       if (newAttempts >= 5) {
         const lockEndTime = Date.now() + 5 * 60 * 1000;
@@ -129,7 +150,7 @@ export default function UILogin() {
         localStorage.setItem("loginLockEndTime", lockEndTime.toString());
         setErrors({ general: t('accountLocked', language) });
       } else {
-        setErrors({ general: t('invalidCredentials', language) + ` (${newAttempts}/5)` });
+        setErrors({ general: errorMessage + ` (${newAttempts}/5)` });
       }
     } finally {
       setIsLoading(false);

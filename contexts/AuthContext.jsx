@@ -208,41 +208,66 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const login = async ({ email, password }) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      // Log failed login attempt
-      await logAuthEvent('login_failed', false, {
-        email,
-        errorMessage: error.message
-      });
-      return { success: false, error: error.message };
+    try {
+      console.log('AuthContext: Attempting login for:', email);
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      
+      if (error) {
+        console.error('AuthContext: Login error:', error);
+        // Log failed login attempt
+        await logAuthEvent('login_failed', false, {
+          email,
+          errorMessage: error.message
+        }).catch(err => console.warn('Failed to log auth event:', err));
+        
+        // Provide user-friendly error messages
+        let userFriendlyError = error.message;
+        if (error.message.includes('Invalid login credentials')) {
+          userFriendlyError = 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+        } else if (error.message.includes('Email not confirmed')) {
+          userFriendlyError = 'กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ';
+        } else if (error.message.includes('Too many requests')) {
+          userFriendlyError = 'พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่';
+        }
+        
+        return { success: false, error: userFriendlyError };
+      }
+      
+      const supaUser = data?.user;
+      if (!supaUser) {
+        console.error('AuthContext: No user returned from login');
+        await logAuthEvent('login_failed', false, {
+          email,
+          errorMessage: "No user returned"
+        }).catch(err => console.warn('Failed to log auth event:', err));
+        return { success: false, error: "ไม่พบข้อมูลผู้ใช้" };
+      }
+      
+      console.log('AuthContext: Login successful, user:', supaUser.email);
+      
+      const profile = {
+        id: supaUser.id,
+        email: supaUser.email,
+        name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
+        role: supaUser.user_metadata?.role || "user",
+        avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
+      };
+      
+      setUser(profile);
+      setIsAuthenticated(true);
+      localStorage.setItem("userData", JSON.stringify(profile));
+      
+      // Log successful login
+      await logAuthEvent('login', true, {
+        email: profile.email,
+        role: profile.role
+      }).catch(err => console.warn('Failed to log auth event:', err));
+      
+      return { success: true };
+    } catch (err) {
+      console.error('AuthContext: Unexpected login error:', err);
+      return { success: false, error: err.message || 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ' };
     }
-    const supaUser = data?.user;
-    if (!supaUser) {
-      await logAuthEvent('login_failed', false, {
-        email,
-        errorMessage: "No user returned"
-      });
-      return { success: false, error: "No user" };
-    }
-    const profile = {
-      id: supaUser.id,
-      email: supaUser.email,
-      name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
-      role: supaUser.user_metadata?.role || "user",
-      avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
-    };
-    setUser(profile);
-    setIsAuthenticated(true);
-    localStorage.setItem("userData", JSON.stringify(profile));
-    
-    // Log successful login
-    await logAuthEvent('login', true, {
-      email: profile.email,
-      role: profile.role
-    });
-    
-    return { success: true };
   };
 
   const logout = async () => {
