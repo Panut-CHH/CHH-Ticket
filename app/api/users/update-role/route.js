@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/utils/supabaseServer';
+import { supabaseServer } from '@/utils/supabaseServer';
 import { logApiCall, logError } from '@/utils/activityLogger';
 
 export async function POST(request) {
@@ -11,7 +11,7 @@ export async function POST(request) {
     }
 
     // First, get the user by email
-    const { data: users, error: fetchError } = await supabase.auth.admin.listUsers();
+    const { data: users, error: fetchError } = await supabaseServer.auth.admin.listUsers();
     
     if (fetchError) {
       console.error('Error fetching users:', fetchError);
@@ -25,7 +25,7 @@ export async function POST(request) {
     }
 
     // Update user metadata with role
-    const { data, error } = await supabase.auth.admin.updateUserById(
+    const { data, error } = await supabaseServer.auth.admin.updateUserById(
       user.id,
       {
         user_metadata: { 
