@@ -93,6 +93,14 @@ export default function DebugUserRole() {
             </button>
             
             <button
+              onClick={() => updateUserRole('CNC')}
+              disabled={isUpdating}
+              className="w-full bg-cyan-600 text-white py-2 px-4 rounded hover:bg-cyan-700 disabled:opacity-50"
+            >
+              {isUpdating ? 'Updating...' : 'Set as CNC'}
+            </button>
+            
+            <button
               onClick={() => updateUserRole('QC')}
               disabled={isUpdating}
               className="w-full bg-yellow-600 text-white py-2 px-4 rounded hover:bg-yellow-700 disabled:opacity-50"

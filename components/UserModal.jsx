@@ -233,6 +233,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                 <option value="Admin">Admin</option>
                 <option value="QC">QC</option>
                 <option value="Technician">Technician</option>
+                <option value="CNC">CNC</option>
                 <option value="Drawing">Drawing</option>
               </select>
             </div>

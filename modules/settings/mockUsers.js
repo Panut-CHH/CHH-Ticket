@@ -52,6 +52,16 @@ export const mockUsers = [
   },
   {
     id: 6,
+    name: "ชนาธิป ควบคุมเครื่อง",
+    email: "chanathip@factory.com",
+    role: "CNC",
+    status: "active",
+    avatar: null,
+    createdAt: "2024-04-18",
+    lastLogin: "2024-09-29"
+  },
+  {
+    id: 7,
     name: "วิภา ผู้จัดการ",
     email: "wipa@factory.com",
     role: "Admin",
@@ -61,7 +71,7 @@ export const mockUsers = [
     lastLogin: "2024-08-15"
   },
   {
-    id: 7,
+    id: 8,
     name: "ประเสริฐ คุณภาพ",
     email: "prasert@factory.com",
     role: "QC",
@@ -71,7 +81,7 @@ export const mockUsers = [
     lastLogin: "2024-09-29"
   },
   {
-    id: 8,
+    id: 9,
     name: "สุดา ช่างเทคนิค",
     email: "suda@factory.com",
     role: "Technician",
@@ -81,7 +91,7 @@ export const mockUsers = [
     lastLogin: "2024-09-30"
   },
   {
-    id: 9,
+    id: 10,
     name: "จิราพร เขียนแบบ",
     email: "jiraporn@factory.com",
     role: "Drawing",
@@ -91,7 +101,7 @@ export const mockUsers = [
     lastLogin: "2024-09-30"
   },
   {
-    id: 10,
+    id: 11,
     name: "วิศาล ออกแบบ",
     email: "wisarn@factory.com",
     role: "Drawing",
@@ -102,13 +112,14 @@ export const mockUsers = [
   }
 ];
 
-export const roles = ["SuperAdmin", "Admin", "QC", "Technician", "Drawing"];
+export const roles = ["SuperAdmin", "Admin", "QC", "Technician", "CNC", "Drawing"];
 
 export const roleColors = {
   SuperAdmin: "bg-purple-100 text-purple-700 border-purple-200",
   Admin: "bg-blue-100 text-blue-700 border-blue-200",
   QC: "bg-amber-100 text-amber-700 border-amber-200",
   Technician: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  CNC: "bg-cyan-100 text-cyan-700 border-cyan-200",
   Drawing: "bg-orange-100 text-orange-700 border-orange-200"
 };
 

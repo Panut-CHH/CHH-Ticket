@@ -4,6 +4,10 @@ export const ROLE_PERMISSIONS = {
     pages: ['project', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
+  CNC: {
+    pages: ['dashboard', 'production', 'settings'],
+    settingsTabs: ['profile', 'security']
+  },
   Technician: {
     pages: ['production', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
@@ -43,6 +47,9 @@ export const hasPageAccess = (userRole, pagePath) => {
       break;
     case 'drawing':
       normalizedRole = 'Drawing';
+      break;
+    case 'cnc':
+      normalizedRole = 'CNC';
       break;
     case 'technician':
       normalizedRole = 'Technician';
@@ -90,6 +97,9 @@ export const hasSettingsTabAccess = (userRole, tabKey) => {
     case 'drawing':
       normalizedRole = 'Drawing';
       break;
+    case 'cnc':
+      normalizedRole = 'CNC';
+      break;
     case 'technician':
       normalizedRole = 'Technician';
       break;
@@ -124,6 +134,9 @@ export const getAllowedPages = (userRole) => {
       break;
     case 'drawing':
       normalizedRole = 'Drawing';
+      break;
+    case 'cnc':
+      normalizedRole = 'CNC';
       break;
     case 'technician':
       normalizedRole = 'Technician';
