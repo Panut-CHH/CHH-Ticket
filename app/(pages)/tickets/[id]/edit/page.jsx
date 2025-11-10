@@ -110,6 +110,82 @@ export default function EditTicketPage() {
         }
         
         if (!ticket) {
+          // Fallback: ลองดึงจาก ERP โดยใช้ RPD No. แล้ว map ผ่าน project_items/projects
+          try {
+            let authHeader = {};
+            try {
+              const { data: { session: currentSession } } = await supabase.auth.getSession();
+              if (currentSession?.access_token) {
+                authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+              }
+            } catch {}
+            
+            const resp = await fetch('/api/erp/production-orders/batch', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeader },
+              body: JSON.stringify({ rpdNumbers: [ticketId] })
+            });
+            
+            if (resp.ok) {
+              const json = await resp.json();
+              const first = Array.isArray(json?.data) ? json.data[0] : null;
+              const erpRecord = first?.data || null;
+              
+              const rpdNo = ticketId;
+              const sourceNo = erpRecord?.Source_No || erpRecord?.Item_No || erpRecord?.itemCode || null;
+              const description = erpRecord?.Description || null;
+              const qty = Number(erpRecord?.Quantity || 0);
+              const due = erpRecord?.Due_Date || erpRecord?.Delivery_Date || erpRecord?.Ending_Date || null;
+              
+              if (sourceNo) {
+                // หา project จาก projects.item_code
+                let project = null;
+                const { data: projectDirect } = await supabase
+                  .from('projects')
+                  .select('id, item_code, project_number, project_name')
+                  .eq('item_code', sourceNo)
+                  .maybeSingle();
+                
+                if (projectDirect) {
+                  project = projectDirect;
+                } else {
+                  // หา project ผ่าน project_items
+                  const { data: projectItem } = await supabase
+                    .from('project_items')
+                    .select('project_id')
+                    .eq('item_code', sourceNo)
+                    .maybeSingle();
+                  
+                  if (projectItem?.project_id) {
+                    const { data: projById } = await supabase
+                      .from('projects')
+                      .select('id, item_code, project_number, project_name')
+                      .eq('id', projectItem.project_id)
+                      .maybeSingle();
+                    if (projById) project = projById;
+                  }
+                }
+                
+                if (project) {
+                  ticket = {
+                    no: rpdNo,
+                    project_id: project.id,
+                    source_no: sourceNo,
+                    description: description,
+                    quantity: qty,
+                    status: 'Pending',
+                    priority: 'Medium',
+                    customer_name: '',
+                    due_date: due,
+                    projects: project
+                  };
+                }
+              }
+            }
+          } catch {}
+        }
+        
+        if (!ticket) {
           throw new Error(`Ticket or project not found: ${ticketId}`);
         }
         
@@ -126,7 +202,8 @@ export default function EditTicketPage() {
             dueDate: ticket.due_date || "",
             description: ticket.description || "",
             description2: ticket.description_2 || "",
-            customerName: ticket.customer_name || "",
+            // ชื่อลูกค้าให้ดึงจากชื่อโปรเจ็คเสมอ
+            customerName: ticket?.projects?.project_name || "",
             priority: ticket.priority || "Medium",
             status: ticket.status || "Pending"
           });
@@ -330,7 +407,8 @@ export default function EditTicketPage() {
           : ticketData.priority === "Low" ? "Low Priority" 
           : "Medium Priority";
         setPriority(dbPriority);
-        setCustomerName(ticketData.customer_name || "");
+        // ตั้งชื่อลูกค้าจากชื่อโปรเจ็ค (ผ่าน ticketView ที่มี projectName อยู่แล้ว)
+        setCustomerName(ticketView?.projectName || ticketData.customer_name || "");
 
         // โหลด station flows แยกต่างหาก
         try {
@@ -933,11 +1011,12 @@ export default function EditTicketPage() {
               <input
                 type="text"
                 value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                placeholder="ระบุชื่อลูกค้าหรือบริษัท"
-                className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2"
+                readOnly
+                disabled
+                placeholder="ดึงจากชื่อโปรเจ็คอัตโนมัติ"
+                className="w-full bg-gray-100 dark:bg-slate-800/60 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-gray-600 dark:text-gray-300"
               />
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ชื่อลูกค้าสามารถแก้ไขได้</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ดึงจากชื่อโปรเจ็คโดยอัตโนมัติ</p>
             </div>
           </div>
         </div>

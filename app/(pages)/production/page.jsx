@@ -7,7 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, Filter as FilterIcon, ArrowUpDown } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 
 export default function ProductionPage() {
@@ -32,6 +32,15 @@ export default function ProductionPage() {
   
   // Tab state for completed/incomplete tickets
   const [activeTab, setActiveTab] = useState('incomplete'); // 'completed' or 'incomplete'
+
+  // Search / Filter / Sort state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showFilter, setShowFilter] = useState(false);
+  const [selectedStatuses, setSelectedStatuses] = useState(new Set());
+  const [selectedPriorities, setSelectedPriorities] = useState(new Set());
+  const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
+  const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status'
+  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
 
   // Function to load batches
   const loadBatchData = async () => {
@@ -407,6 +416,83 @@ export default function ProductionPage() {
     return steps.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
   };
 
+  const priorityRank = (p) => {
+    if (p === "High Priority") return 0;
+    if (p === "Medium Priority") return 1;
+    if (p === "Low Priority") return 2;
+    if (p === "ยังไม่ได้กำหนด Priority") return 3;
+    return 4;
+  };
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (selectedStatuses.size > 0) count += 1;
+    if (selectedPriorities.size > 0) count += 1;
+    if (hasDueDateOnly) count += 1;
+    return count;
+  }, [selectedStatuses, selectedPriorities, hasDueDateOnly]);
+
+  const matchSearch = (t) => {
+    if (!searchTerm) return true;
+    const q = searchTerm.toLowerCase();
+    return (
+      (t.id || "").toLowerCase().includes(q) ||
+      (t.title || "").toLowerCase().includes(q) ||
+      (t.assignee || "").toLowerCase().includes(q) ||
+      (t.itemCode || "").toLowerCase().includes(q) ||
+      (t.customerName || "").toLowerCase().includes(q)
+    );
+  };
+
+  const passFilters = (t) => {
+    if (selectedStatuses.size > 0 && !selectedStatuses.has(t.status)) return false;
+    if (selectedPriorities.size > 0 && !selectedPriorities.has(t.priority)) return false;
+    if (hasDueDateOnly && !t.dueDate) return false;
+    return true;
+  };
+
+  const displayedTickets = useMemo(() => {
+    const base = filteredTickets
+      .filter(matchSearch)
+      .filter(passFilters);
+
+    const sorted = [...base].sort((a, b) => {
+      let av, bv;
+      switch (sortKey) {
+        case 'dueDate': {
+          av = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+          bv = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+          break;
+        }
+        case 'priority': {
+          av = priorityRank(a.priority);
+          bv = priorityRank(b.priority);
+          break;
+        }
+        case 'value': {
+          av = sumTicketAmount(a);
+          bv = sumTicketAmount(b);
+          break;
+        }
+        case 'status': {
+          av = (a.status || '').localeCompare(b.status || '');
+          bv = 0; // handled by localeCompare; we'll map to numbers
+          return sortDir === 'asc' ? av : -av;
+        }
+        case 'id':
+        default: {
+          av = (a.id || '').localeCompare(b.id || '');
+          bv = 0;
+          return sortDir === 'asc' ? av : -av;
+        }
+      }
+      const diff = av - bv;
+      return sortDir === 'asc' ? diff : -diff;
+    });
+
+    return sorted;
+  }, [filteredTickets, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, sortKey, sortDir]);
+
   const stats = useMemo(() => {
     const total = myTickets.length;
     const done = myTickets.filter((t) => (t.status || "") === "Finish").length;
@@ -543,6 +629,133 @@ export default function ProductionPage() {
               </div>
             </div>
 
+            {/* Search / Filter / Sort */}
+            <div className="mt-4 sm:mt-6">
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                {/* Search */}
+                <div className="flex-1 relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Search className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="text"
+                    className="w-full pl-9 sm:pl-10 pr-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm sm:text-base text-gray-900 dark:text-gray-100"
+                    placeholder={t('searchTickets', language)}
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+                {/* Filter toggle */}
+                <button
+                  onClick={() => setShowFilter(v => !v)}
+                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base text-gray-900 dark:text-gray-100"
+                >
+                  <FilterIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+                  <span>{t('filter', language)}</span>
+                  {activeFilterCount > 0 && (
+                    <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">{activeFilterCount}</span>
+                  )}
+                </button>
+                {/* Sort controls */}
+                <div className="flex items-center gap-2">
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value)}
+                    className="px-3 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm sm:text-base text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="dueDate">{language === 'th' ? 'กำหนดส่ง' : 'Due Date'}</option>
+                    <option value="priority">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</option>
+                    <option value="value">{language === 'th' ? 'มูลค่า' : 'Value'}</option>
+                    <option value="id">{language === 'th' ? 'เลขตั๋ว' : 'Ticket No.'}</option>
+                    <option value="status">{language === 'th' ? 'สถานะ' : 'Status'}</option>
+                  </select>
+                  <button
+                    onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                    className="px-3 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
+                    title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก' : 'เรียงจากมากไปน้อย') : (sortDir === 'asc' ? 'Ascending' : 'Descending')}
+                  >
+                    <ArrowUpDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 dark:text-gray-300" />
+                  </button>
+                </div>
+              </div>
+              {showFilter && (
+                <div className="mt-3 p-3 sm:p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    {/* Status filter */}
+                    <div>
+                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'สถานะ' : 'Status'}</div>
+                      {['Pending','Released','In Progress','Finish'].map(st => (
+                        <label key={st} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedStatuses.has(st)}
+                            onChange={(e) => {
+                              setSelectedStatuses(prev => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(st); else next.delete(st);
+                                return next;
+                              });
+                            }}
+                          />
+                          <span>{st}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {/* Priority filter */}
+                    <div>
+                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</div>
+                      {['High Priority','Medium Priority','Low Priority','ยังไม่ได้กำหนด Priority'].map(pr => (
+                        <label key={pr} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                          <input
+                            type="checkbox"
+                            checked={selectedPriorities.has(pr)}
+                            onChange={(e) => {
+                              setSelectedPriorities(prev => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(pr); else next.delete(pr);
+                                return next;
+                              });
+                            }}
+                          />
+                          <span>{pr}</span>
+                        </label>
+                      ))}
+                    </div>
+                    {/* Due date filter */}
+                    <div>
+                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'วันกำหนดส่ง' : 'Due Date'}</div>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                        <input
+                          type="checkbox"
+                          checked={hasDueDateOnly}
+                          onChange={(e) => setHasDueDateOnly(e.target.checked)}
+                        />
+                        <span>{language === 'th' ? 'แสดงเฉพาะที่มีวันกำหนดส่ง' : 'Only with due date'}</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
+                      onClick={() => setShowFilter(false)}
+                    >
+                      {language === 'th' ? 'ใช้ตัวกรอง' : 'Apply'}
+                    </button>
+                    <button
+                      className="px-3 py-2 text-sm bg-gray-100 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 rounded"
+                      onClick={() => {
+                        setSelectedStatuses(new Set());
+                        setSelectedPriorities(new Set());
+                        setHasDueDateOnly(false);
+                      }}
+                    >
+                      {language === 'th' ? 'ล้างค่า' : 'Clear'}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
               {loadingTickets && (
                 <div className="p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-300 text-sm sm:text-base">
@@ -554,7 +767,7 @@ export default function ProductionPage() {
                   {loadError}
                 </div>
               )}
-              {filteredTickets.length === 0 && !loadingTickets && (
+              {displayedTickets.length === 0 && !loadingTickets && (
                 <>
                   {!hasAnyStations ? (
                     <div className="p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-yellow-800 dark:text-yellow-300 text-sm sm:text-base">
@@ -574,7 +787,7 @@ export default function ProductionPage() {
                 </>
               )}
 
-              {filteredTickets.map((ticket) => {
+              {displayedTickets.map((ticket) => {
                 const total = sumTicketAmount(ticket);
                 const cleanedId = (ticket.id || "").replace(/^#/, "");
                 

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
-import { Search, CheckCircle2, Clock, Tag, Ticket as TicketIcon, AlertTriangle, Activity } from "lucide-react";
+import { Search, CheckCircle2, Clock, Tag, Ticket as TicketIcon, AlertTriangle, PlayCircle } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { supabase } from "@/utils/supabaseClient";
@@ -24,7 +24,6 @@ export default function QCPage() {
 
   // Lock style to chip (ignore query/localStorage)
   useEffect(() => { setDesignMode('chip'); }, []);
-  const [qcResults, setQcResults] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [allQcTickets, setAllQcTickets] = useState([]);
   const [archivedTickets, setArchivedTickets] = useState([]);
@@ -49,15 +48,16 @@ export default function QCPage() {
   const [historyTotal, setHistoryTotal] = useState(0);
   const [inspectorMap, setInspectorMap] = useState({}); // id -> display name
   const [historyFilters, setHistoryFilters] = useState({ ticketNo: '', stationId: '', from: '', to: '', inspector: '' });
-
-  useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("qcResults") : null;
-      setQcResults(raw ? JSON.parse(raw) : []);
-    } catch {
-      setQcResults([]);
-    }
-  }, []);
+  // Queue filters/sort
+  const [queueSort, setQueueSort] = useState('asc'); // 'asc' old first, 'desc' new first
+  const [queueFrom, setQueueFrom] = useState(''); // yyyy-mm-dd
+  const [queueTo, setQueueTo] = useState(''); // yyyy-mm-dd
+  const [queueStationId, setQueueStationId] = useState(''); // station id (pre-QC)
+  const [queueTechnician, setQueueTechnician] = useState(''); // technician display name (pre-QC)
+  // Today QC summary
+  const [todayPass, setTodayPass] = useState(0);
+  const [todayFail, setTodayFail] = useState(0);
+  const [todaySessions, setTodaySessions] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -106,72 +106,6 @@ export default function QCPage() {
       } catch {}
     })();
   }, []);
-
-  // Realtime: อัปเดตคิว QC ทันทีเมื่อมีการเปลี่ยนแปลงสถานะหรือบันทึก QC
-  useEffect(() => {
-    const channel = supabase
-      .channel('qc-page-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_station_flow' }, async () => {
-        // หน่วงเล็กน้อยเพื่อให้ DB commit เสร็จสมบูรณ์
-        setTimeout(() => { load(); }, 250);
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'qc_sessions' }, async () => {
-        setTimeout(() => {
-          load();
-          if (activeTab === 'history') loadHistory();
-        }, 250);
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_assignments' }, async () => {
-        setTimeout(() => { load(); }, 250);
-      })
-      .subscribe();
-
-    return () => {
-      try { supabase.removeChannel(channel); } catch {}
-    };
-  }, [load]);
-
-  const qcTickets = useMemo(() => {
-    return allQcTickets.filter((t) => {
-      const matchesSearch = (String(t.id) + (t.title || "")).toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
-    }).map((t)=>{
-      // คำนวณเวลาเข้าถึง QC จาก "ขั้นแรกที่ยังไม่เสร็จ" ถ้าเป็น QC
-      const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
-      const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
-      const active = firstActiveIdx >= 0 ? steps[firstActiveIdx] : null;
-      const arrival = active?.updatedAt ? new Date(active.updatedAt).getTime() : null;
-      return { ...t, _qcArrivalTs: arrival };
-    }).sort((a,b)=>{
-      const A = a._qcArrivalTs ?? Number.MAX_SAFE_INTEGER;
-      const B = b._qcArrivalTs ?? Number.MAX_SAFE_INTEGER;
-      return A - B; // เก่าอยู่บน
-    });
-  }, [searchTerm, allQcTickets]);
-
-  const ticketsToShow = useMemo(() => qcTickets, [qcTickets]);
-
-  // Metrics
-  const waitingCount = allQcTickets.length;
-  const now = new Date();
-  function daysUntil(dateStr) {
-    if (!dateStr) return Infinity;
-    const d = new Date(dateStr);
-    return Math.ceil((d - now) / (1000 * 60 * 60 * 24));
-  }
-  const dueSoonThresholdDays = 3;
-  const dueSoonTickets = useMemo(() => {
-    return allQcTickets
-      .filter((t) => t.dueDate)
-      .map((t) => ({ ...t, days: daysUntil(t.dueDate) }))
-      .filter((t) => t.days <= dueSoonThresholdDays && t.days >= -1)
-      .sort((a, b) => a.days - b.days);
-  }, [allQcTickets]);
-
-  const goodCount = useMemo(() => qcResults.filter((r) => r.result === "pass").length, [qcResults]);
-  const badCount = useMemo(() => qcResults.filter((r) => r.result === "fail").length, [qcResults]);
-  const totalQcDone = goodCount + badCount;
-  const passRate = totalQcDone > 0 ? Math.round((goodCount / totalQcDone) * 100) : 0;
 
   const loadHistory = useCallback(async () => {
     try {
@@ -268,6 +202,241 @@ export default function QCPage() {
     }
   }, [historyPage, pageSize, historyFilters, stations]);
 
+  const loadTodaySummary = useCallback(async () => {
+    try {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('qc_sessions')
+        .select('id')
+        .gte('created_at', start.toISOString());
+      if (sessionsError) throw sessionsError;
+      const ids = Array.from(new Set((sessions || []).map((s) => s.id))).filter(Boolean);
+      setTodaySessions(ids.length);
+      if (ids.length === 0) {
+        setTodayPass(0);
+        setTodayFail(0);
+        return;
+      }
+      const { data: rows, error: rowsError } = await supabase
+        .from('qc_rows')
+        .select('pass')
+        .in('qc_session_id', ids);
+      if (rowsError) throw rowsError;
+      const pass = (rows || []).filter((r) => r.pass === true).length;
+      const fail = (rows || []).filter((r) => r.pass === false).length;
+      setTodayPass(pass);
+      setTodayFail(fail);
+    } catch (e) {
+      console.warn('Failed to load QC summary:', e?.message || e);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadTodaySummary();
+  }, [loadTodaySummary]);
+
+  // Realtime: อัปเดตคิว QC ทันทีเมื่อมีการเปลี่ยนแปลงสถานะหรือบันทึก QC
+  useEffect(() => {
+    const channel = supabase
+      .channel('qc-page-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_station_flow' }, async () => {
+        // หน่วงเล็กน้อยเพื่อให้ DB commit เสร็จสมบูรณ์
+        setTimeout(() => { load(); }, 250);
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'qc_sessions' }, async () => {
+        setTimeout(() => {
+          load();
+          loadTodaySummary();
+          if (activeTab === 'history') loadHistory();
+        }, 250);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'qc_rows' }, async () => {
+        setTimeout(() => { loadTodaySummary(); }, 250);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ticket_assignments' }, async () => {
+        setTimeout(() => { load(); }, 250);
+      })
+      .subscribe();
+
+    return () => {
+      try { supabase.removeChannel(channel); } catch {}
+    };
+  }, [load, loadTodaySummary, activeTab, loadHistory]);
+
+  const qcTickets = useMemo(() => {
+    // Build date range (start-of-day, end-of-day)
+    const startTs = queueFrom ? (() => { const d = new Date(queueFrom); d.setHours(0,0,0,0); return d.getTime(); })() : null;
+    const endTs = queueTo ? (() => { const d = new Date(queueTo); d.setHours(23,59,59,999); return d.getTime(); })() : null;
+    return allQcTickets
+      .map((t) => {
+        // คำนวณเวลาเข้าถึง QC จาก "ขั้นแรกที่ยังไม่เสร็จ" ถ้าเป็น QC
+        const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
+        const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
+        const active = firstActiveIdx >= 0 ? steps[firstActiveIdx] : null;
+        const arrival = active?.updatedAt ? new Date(active.updatedAt).getTime() : null;
+        // หา QC step ปัจจุบัน (pending/current) และ previous station สำหรับการ filter
+        const qcIdx = steps.findIndex(s => String(s.step || '').toUpperCase().includes('QC') && ['pending','current'].includes(s.status || 'pending'));
+        const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
+        const prevStationId = prev?.stationId || '';
+        const prevStationName = prev?.step || '';
+        const activeStatus = qcIdx >= 0 ? (steps[qcIdx]?.status || 'pending') : null;
+        // Resolve technician name using assignmentMapState
+        let technicianName = '';
+        if (prev) {
+          const idNorm = String(t.id).replace('#','');
+          const keyExact = `${idNorm}-${prev.stationId}-${prev.stepOrder || 0}`;
+          const keyNoOrder = `${idNorm}-${prev.stationId}-0`;
+          technicianName = assignmentMapState[keyExact] || assignmentMapState[keyNoOrder] || '';
+        }
+        return {
+          ...t,
+          _qcArrivalTs: arrival,
+          _prevStationId: prevStationId,
+          _prevStationName: prevStationName,
+          _technicianName: technicianName,
+          _qcStatus: activeStatus
+        };
+      })
+      .filter((t) => {
+        const matchesSearch = (String(t.id) + (t.title || "")).toLowerCase().includes(searchTerm.toLowerCase());
+        if (!matchesSearch) return false;
+        // If no date filters, include all
+        if (!startTs && !endTs) return true;
+        // If filtering by date, include only those with arrival timestamp
+        if (!t._qcArrivalTs) return false;
+        if (startTs && t._qcArrivalTs < startTs) return false;
+        if (endTs && t._qcArrivalTs > endTs) return false;
+        return true;
+      })
+      .filter((t) => {
+        // Station filter (pre-QC station)
+        if (queueStationId && String(t._prevStationId || '') !== String(queueStationId)) return false;
+        // Technician filter
+        if (queueTechnician && !String(t._technicianName || '').toLowerCase().includes(queueTechnician.toLowerCase())) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const A = a._qcArrivalTs ?? Number.MAX_SAFE_INTEGER;
+        const B = b._qcArrivalTs ?? Number.MAX_SAFE_INTEGER;
+        const comp = A - B; // เก่าอยู่บน
+        return queueSort === 'asc' ? comp : -comp;
+      });
+  }, [searchTerm, allQcTickets, queueFrom, queueTo, queueSort, queueStationId, queueTechnician, assignmentMapState]);
+
+  const ticketsToShow = useMemo(() => qcTickets, [qcTickets]);
+
+  // Metrics
+  const totalQueueCount = allQcTickets.length;
+  const waitingCount = useMemo(() => qcTickets.filter((t) => (t._qcStatus || 'pending') === 'pending').length, [qcTickets]);
+  const inProgressCount = useMemo(() => qcTickets.filter((t) => (t._qcStatus || 'pending') === 'current').length, [qcTickets]);
+  const now = new Date();
+  function daysUntil(dateStr) {
+    if (!dateStr) return Infinity;
+    const d = new Date(dateStr);
+    return Math.ceil((d - now) / (1000 * 60 * 60 * 24));
+  }
+  const dueSoonThresholdDays = 3;
+  const dueSoonTickets = useMemo(() => {
+    return allQcTickets
+      .filter((t) => t.dueDate)
+      .map((t) => ({ ...t, days: daysUntil(t.dueDate) }))
+      .filter((t) => t.days <= dueSoonThresholdDays && t.days >= -1)
+      .sort((a, b) => a.days - b.days);
+  }, [allQcTickets]);
+  const overdueCount = useMemo(() => {
+    return allQcTickets
+      .filter((t) => t.dueDate)
+      .reduce((count, ticket) => {
+        const diff = daysUntil(ticket.dueDate);
+        return diff < 0 ? count + 1 : count;
+      }, 0);
+  }, [allQcTickets]);
+
+  const waitingPercent = totalQueueCount > 0 ? Math.round((waitingCount / totalQueueCount) * 100) : 0;
+  const inProgressPercent = totalQueueCount > 0 ? Math.round((inProgressCount / totalQueueCount) * 100) : 0;
+  const todayTotal = todayPass + todayFail;
+  const todayPassRate = todayTotal > 0 ? Math.round((todayPass / todayTotal) * 100) : null;
+  const summaryCards = useMemo(() => {
+    return [
+      {
+        key: 'waiting',
+        title: language === 'th' ? 'งานรอตรวจ' : 'Waiting for QC',
+        value: waitingCount,
+        subtitle: language === 'th'
+          ? `ทั้งหมด ${totalQueueCount} งานในคิว`
+          : `${totalQueueCount} tickets in queue`,
+        extra: totalQueueCount > 0
+          ? (language === 'th'
+            ? `${waitingPercent}% ของงานทั้งหมดกำลังรอตรวจ`
+            : `${waitingPercent}% of queue waiting`)
+          : (language === 'th' ? 'ยังไม่มีงานในคิว' : 'No tickets in queue'),
+        icon: TicketIcon,
+        iconClass: 'bg-emerald-100 text-emerald-700',
+        cardClass: 'border-emerald-200/70 dark:border-emerald-500/30 bg-emerald-50/60 dark:bg-emerald-500/10'
+      },
+      {
+        key: 'in-progress',
+        title: language === 'th' ? 'กำลังดำเนินการ' : 'In Progress',
+        value: inProgressCount,
+        subtitle: language === 'th'
+          ? `เริ่มตรวจแล้ว ${inProgressCount} งาน`
+          : `${inProgressCount} active inspections`,
+        extra: totalQueueCount > 0
+          ? (language === 'th'
+            ? `${inProgressPercent}% ของคิวกำลังตรวจ`
+            : `${inProgressPercent}% of queue running`)
+          : '',
+        icon: PlayCircle,
+        iconClass: 'bg-blue-100 text-blue-700',
+        cardClass: 'border-blue-200/70 dark:border-blue-500/30 bg-blue-50/60 dark:bg-blue-500/10'
+      },
+      {
+        key: 'due-soon',
+        title: language === 'th' ? 'ใกล้ Due Date' : 'Due Soon',
+        value: dueSoonTickets.length,
+        subtitle: language === 'th'
+          ? 'ภายใน 3 วัน'
+          : 'Within 3 days',
+        extra: language === 'th'
+          ? `เกินกำหนด ${overdueCount} งาน`
+          : `${overdueCount} overdue`,
+        icon: AlertTriangle,
+        iconClass: 'bg-amber-100 text-amber-700',
+        cardClass: 'border-amber-200/70 dark:border-amber-500/30 bg-amber-50/60 dark:bg-amber-500/10'
+      },
+      {
+        key: 'today',
+        title: language === 'th' ? 'เสร็จสิ้นวันนี้' : 'Completed Today',
+        value: todaySessions,
+        subtitle: language === 'th'
+          ? `ผ่าน ${todayPass} • ไม่ผ่าน ${todayFail}`
+          : `Pass ${todayPass} • Fail ${todayFail}`,
+        extra: todayPassRate !== null
+          ? (language === 'th'
+            ? `อัตราผ่าน ${todayPassRate}%`
+            : `Pass rate ${todayPassRate}%`)
+          : (language === 'th' ? 'ยังไม่มีงานเสร็จวันนี้' : 'No inspections yet today'),
+        icon: CheckCircle2,
+        iconClass: 'bg-slate-200 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200',
+        cardClass: 'border-slate-200/70 dark:border-emerald-500/30 bg-white dark:bg-slate-800'
+      },
+    ];
+  }, [
+    language,
+    waitingCount,
+    waitingPercent,
+    totalQueueCount,
+    inProgressCount,
+    inProgressPercent,
+    dueSoonTickets.length,
+    overdueCount,
+    todaySessions,
+    todayPass,
+    todayFail,
+    todayPassRate,
+  ]);
+
   // Load when switching to History tab or filters/page change
   useEffect(() => {
     if (activeTab === 'history') {
@@ -309,52 +478,40 @@ export default function QCPage() {
 
       {/* Summary widgets (only queue tab) */}
       {activeTab === 'queue' && (
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3 mb-4 sm:mb-6">
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1 sm:mb-2">{t('workAwaitingInspection', language)}</div>
-          <div className="flex items-center justify-between">
-            <div className="text-lg sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">{waitingCount}</div>
-            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <TicketIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 mb-4 sm:mb-6">
+        {summaryCards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.key}
+              className={`rounded-2xl border p-4 sm:p-5 shadow-sm transition-transform duration-200 hover:-translate-y-0.5 ${card.cardClass}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] sm:text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                    {card.title}
+                  </div>
+                  <div className="mt-2 text-2xl sm:text-3xl font-semibold text-gray-900 dark:text-gray-100">
+                    {card.value}
+                  </div>
+                </div>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${card.iconClass}`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+              </div>
+              {card.subtitle && (
+                <div className="mt-3 text-xs sm:text-sm text-gray-600 dark:text-gray-300">
+                  {card.subtitle}
+                </div>
+              )}
+              {card.extra && (
+                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  {card.extra}
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1 sm:mb-2">{t('nearDueDate', language)}</div>
-          <div className="flex items-center justify-between">
-            <div className="text-lg sm:text-2xl font-semibold text-amber-700">{dueSoonTickets.length}</div>
-            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center">
-              <Clock className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1 sm:mb-2">{t('goodVsDefective', language)}</div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs sm:text-sm text-emerald-700">{t('good', language)}: {goodCount}</div>
-              <div className="text-xs sm:text-sm text-red-600">{t('defective', language)}: {badCount}</div>
-            </div>
-            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-          <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mb-1 sm:mb-2">{t('kpiInDevelopment', language)}</div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-lg sm:text-2xl font-semibold text-gray-900 dark:text-gray-100">{passRate}%</div>
-              <div className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400">{t('allPassed', language)} {goodCount}/{totalQcDone}</div>
-            </div>
-            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center">
-              <Activity className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-          </div>
-        </div>
+          );
+        })}
       </div>
       )}
 
@@ -387,11 +544,13 @@ export default function QCPage() {
       {/* Waiting by Assignee (queue tab) */}
       {activeTab === 'queue' && (
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm mb-4 sm:mb-6">
-        <div className="text-gray-800 dark:text-gray-200 font-medium mb-2 sm:mb-3 text-sm sm:text-base">{t('workAwaitingByTechnician', language)}</div>
+        <div className="text-gray-800 dark:text-gray-200 font-medium mb-2 sm:mb-3 text-sm sm:text-base">
+          {language === 'th' ? 'งานรอตรวจ แยกตามสถานี' : 'Waiting by Station'}
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {(() => {
             const groups = ticketsToShow.reduce((acc, t) => {
-              const key = t.assignee || "ไม่ระบุ";
+              const key = t._prevStationName || (language === 'th' ? 'ไม่ระบุสถานี' : 'Unassigned station');
               if (!acc[key]) acc[key] = [];
               acc[key].push(t);
               return acc;
@@ -410,6 +569,11 @@ export default function QCPage() {
                       <div className="min-w-0 flex items-center gap-2 flex-1">
                         <span className="shrink-0 text-gray-800 dark:text-gray-200">{ticket.id}</span>
                         <span className="truncate text-gray-600 dark:text-gray-400 hidden sm:inline">{ticket.title}</span>
+                        {ticket._technicianName && (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hidden lg:inline">
+                            {ticket._technicianName}
+                          </span>
+                        )}
                       </div>
                       <Link href={`/qc/${ticket.id.replace('#','')}`} className="text-emerald-700 hover:underline shrink-0 text-xs sm:text-sm">{t('inspect', language)}</Link>
                     </div>
@@ -423,17 +587,93 @@ export default function QCPage() {
       )}
 
       {activeTab === 'queue' && (
-      <div className="flex flex-col sm:flex-row gap-3 mb-4 sm:mb-6">
-        <div className="flex-1 relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
+      <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-sm mb-4 sm:mb-6 p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-2 mb-4">
+          <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
+            {language === 'th' ? 'กรองคิว QC' : 'Filter QC Queue'}
           </div>
-          <input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder={language === 'th' ? 'ค้นหาด้วยเลขตั๋วหรือชื่อ' : 'Search by ticket number or name'}
-            className="w-full pl-9 sm:pl-10 pr-4 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm sm:text-base"
-          />
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {language === 'th' ? 'เลือกเงื่อนไขที่ต้องการเพื่อลดรายการ' : 'Refine the queue with these controls'}
+          </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 sm:gap-4">
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'ค้นหา' : 'Search'}
+            </label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="w-4 h-4 text-gray-400" />
+              </div>
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={language === 'th' ? 'เลขตั๋วหรือชื่องาน' : 'Ticket number or name'}
+                className="w-full pl-10 pr-4 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+              />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'สถานีก่อนส่ง qc' : 'Pre-QC station'}
+            </label>
+            <select
+              value={queueStationId}
+              onChange={(e) => setQueueStationId(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl text-sm"
+            >
+              <option value="">{language === 'th' ? 'ทุกสถานี' : 'All stations'}</option>
+              {stations.map((s) => (
+                <option key={s.id} value={s.id}>{s.name_th || s.name_en || s.id}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'ชื่อช่าง' : 'Technician'}
+            </label>
+            <input
+              value={queueTechnician}
+              onChange={(e) => setQueueTechnician(e.target.value)}
+              placeholder={language === 'th' ? 'พิมพ์เพื่อกรอง' : 'Type to filter'}
+              className="w-full px-3 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl text-sm"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'เรียงลำดับ' : 'Sort'}
+            </label>
+            <select
+              value={queueSort}
+              onChange={(e) => setQueueSort(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl text-sm"
+            >
+              <option value="asc">{language === 'th' ? 'เก่าก่อน' : 'Oldest first'}</option>
+              <option value="desc">{language === 'th' ? 'ใหม่ก่อน' : 'Newest first'}</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'ตั้งแต่วันที่' : 'From'}
+            </label>
+            <input
+              type="date"
+              value={queueFrom}
+              onChange={(e) => setQueueFrom(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl text-sm"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
+              {language === 'th' ? 'ถึงวันที่' : 'To'}
+            </label>
+            <input
+              type="date"
+              value={queueTo}
+              onChange={(e) => setQueueTo(e.target.value)}
+              className="w-full px-3 py-2.5 bg-gray-50 focus:bg-white dark:bg-slate-900/40 dark:focus:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl text-sm"
+            />
+          </div>
         </div>
       </div>
       )}

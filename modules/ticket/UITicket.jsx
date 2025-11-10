@@ -57,18 +57,53 @@ export default function UITicket() {
           .map(p => p.item_code)
           .filter(code => code && code.trim().length > 0);
         
-        if (!itemCodes.length) {
+        // รวม item codes จาก project_items ด้วย (ครอบคลุมกรณีเพิ่ม item ภายหลัง)
+        // สร้าง projectIdMap เพื่อ map project_items.project_id -> project
+        const projectIdMap = new Map(projects.map(p => [p.id, p]));
+        try {
+          const { data: projectItems, error: projectItemsError } = await supabase
+            .from('project_items')
+            .select('project_id, item_code');
+          
+          if (!projectItemsError && Array.isArray(projectItems)) {
+            for (const it of projectItems) {
+              if (it?.item_code) {
+                itemCodes.push(it.item_code);
+              }
+            }
+          }
+        } catch {}
+        
+        // ทำให้ itemCodes เป็น unique และคงลำดับล่าสุดไว้
+        const itemCodesSet = Array.from(new Set(itemCodes.filter(Boolean)));
+        
+        if (!itemCodesSet.length) {
           if (active) setErpTickets([]);
           return;
         }
         
-        // สร้าง project map
+        // สร้าง project map: map item_code -> project (รองรับทั้ง projects.item_code และ project_items.item_code)
         const projectMap = new Map();
         projects.forEach(p => {
           if (p.item_code) {
             projectMap.set(p.item_code, p);
           }
         });
+        // เติมจาก project_items
+        try {
+          const { data: projectItems, error: projectItemsError } = await supabase
+            .from('project_items')
+            .select('project_id, item_code');
+          
+          if (!projectItemsError && Array.isArray(projectItems)) {
+            for (const it of projectItems) {
+              const proj = projectIdMap.get(it.project_id);
+              if (proj && it?.item_code && !projectMap.has(it.item_code)) {
+                projectMap.set(it.item_code, proj);
+              }
+            }
+          }
+        } catch {}
 
         // 2. เรียก ERP API ด้วย /all endpoint (Real-time)
         let erpTickets = [];
@@ -82,7 +117,7 @@ export default function UITicket() {
             // Filter ตาม item_codes
             erpTickets = allTickets.filter(ticket => {
               const sourceNo = ticket?.Source_No || ticket?.Item_No || ticket?.itemCode;
-              return sourceNo && itemCodes.includes(sourceNo);
+              return sourceNo && itemCodesSet.includes(sourceNo);
             });
             
             console.log(`✅ Fetched ${erpTickets.length} tickets from ERP (filtered from ${allTickets.length} total)`);
