@@ -10,11 +10,13 @@ import { loadActiveQcQueue } from "@/utils/ticketsDb";
 import { LayoutDashboard } from "lucide-react";
 import { useTheme } from "next-themes";
 import TechnicianPerformance from "@/components/TechnicianPerformance";
+import { canPerformActions } from "@/utils/rolePermissions";
 
 export default function DashboardPage() {
   const { language } = useLanguage();
   const { user } = useAuth();
   const { theme } = useTheme();
+  const canAction = canPerformActions(user?.role);
 
   // KPI state (start with zeros to avoid showing mock values)
   const [kpi, setKpi] = useState({ open: 0, doing: 0, aging: 0, mttr: 0, tp: 0, sla: 0 });
@@ -315,9 +317,16 @@ export default function DashboardPage() {
   // (Rework approval list removed)
 
   // Kanban DnD handlers
-  const onDragStart = (e, id) => { e.dataTransfer.setData('text/plain', id); };
+  const onDragStart = (e, id) => {
+    if (!canAction) {
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData('text/plain', id);
+  };
   const onDropTo = async (laneKey, e) => {
     e.preventDefault();
+    if (!canAction) return;
     const id = e.dataTransfer.getData('text/plain');
     setKanban(prev => {
       const remove = (arr) => arr.filter(c => c.id !== id);
@@ -397,7 +406,13 @@ export default function DashboardPage() {
                       <td className="px-2 py-2 text-gray-900 dark:text-gray-100">{a.station_name || '-'}</td>
                       <td className="px-2 py-2 text-gray-900 dark:text-gray-100">{a.defect_qty}</td>
                       <td className="px-2 py-2">
-                        <button onClick={()=> setRpdModal({ open:true, id:a.id, rpd:a.rpd_ref||'', nc:a.nc_note||'', ticket:a.ticket_no, station:a.station_name||'' })} className="px-2 py-1 border dark:border-blue-600 rounded bg-blue-50 dark:bg-blue-900/30 border-blue-200 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/50">บันทึก RPD/NC</button>
+                        <button 
+                          onClick={()=> canAction && setRpdModal({ open:true, id:a.id, rpd:a.rpd_ref||'', nc:a.nc_note||'', ticket:a.ticket_no, station:a.station_name||'' })} 
+                          disabled={!canAction}
+                          className={`px-2 py-1 border dark:border-blue-600 rounded border-blue-200 text-blue-700 dark:text-blue-300 ${canAction ? 'bg-blue-50 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 cursor-pointer' : 'bg-gray-100 dark:bg-gray-700 opacity-50 cursor-not-allowed'}`}
+                        >
+                          บันทึก RPD/NC
+                        </button>
                       </td>
                     </tr>
                   ))}
@@ -439,7 +454,15 @@ export default function DashboardPage() {
                       <td className="px-2 py-2 text-gray-900 dark:text-gray-100">{r.time || '-'}</td>
                       <td className="px-2 py-2 text-gray-900 dark:text-gray-100">-</td>
                       <td className="px-2 py-2 text-gray-900 dark:text-gray-100">{r.status || 'Released'}</td>
-                        <td className="px-2 py-2"><button onClick={()=>{ setSelectedTicket(r); setDrawerOpen(true); }} className="px-2 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600">Details</button></td>
+                        <td className="px-2 py-2">
+                          <button 
+                            onClick={()=>{ if (canAction) { setSelectedTicket(r); setDrawerOpen(true); } }} 
+                            disabled={!canAction}
+                            className={`px-2 py-1 border dark:border-gray-600 rounded text-gray-900 dark:text-gray-100 ${canAction ? 'bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer' : 'bg-gray-100 dark:bg-gray-800 opacity-50 cursor-not-allowed'}`}
+                          >
+                            Details
+                          </button>
+                        </td>
                     </tr>
                     ))
                   )}
@@ -466,19 +489,26 @@ export default function DashboardPage() {
                 </div>
                 <div className="mt-3 flex justify-end gap-2">
                   <button onClick={()=>setRpdModal({ open:false, id:null, rpd:'', nc:'', ticket:'', station:'' })} className="px-3 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600">ยกเลิก</button>
-                  <button onClick={async ()=>{
-                    try {
-                      const resp = await fetch(`/api/qc/defect-alerts/${encodeURIComponent(rpdModal.id)}/update`, {
-                        method:'PATCH', headers:{'Content-Type':'application/json'},
-                        body: JSON.stringify({ rpd_ref: rpdModal.rpd, nc_note: rpdModal.nc, resolve: true })
-                      });
-                      if (!resp.ok) throw new Error('Failed');
-                      setRpdModal({ open:false, id:null, rpd:'', nc:'', ticket:'', station:'' });
-                      await loadAll();
-                    } catch (e) {
-                      alert('บันทึกไม่สำเร็จ');
-                    }
-                  }} className="px-3 py-1 rounded bg-blue-600 dark:bg-blue-700 text-white hover:bg-blue-700 dark:hover:bg-blue-600">บันทึก</button>
+                  <button 
+                    onClick={async ()=>{
+                      if (!canAction) return;
+                      try {
+                        const resp = await fetch(`/api/qc/defect-alerts/${encodeURIComponent(rpdModal.id)}/update`, {
+                          method:'PATCH', headers:{'Content-Type':'application/json'},
+                          body: JSON.stringify({ rpd_ref: rpdModal.rpd, nc_note: rpdModal.nc, resolve: true })
+                        });
+                        if (!resp.ok) throw new Error('Failed');
+                        setRpdModal({ open:false, id:null, rpd:'', nc:'', ticket:'', station:'' });
+                        await loadAll();
+                      } catch (e) {
+                        alert('บันทึกไม่สำเร็จ');
+                      }
+                    }} 
+                    disabled={!canAction}
+                    className={`px-3 py-1 rounded text-white ${canAction ? 'bg-blue-600 dark:bg-blue-700 hover:bg-blue-700 dark:hover:bg-blue-600 cursor-pointer' : 'bg-gray-400 dark:bg-gray-600 opacity-50 cursor-not-allowed'}`}
+                  >
+                    บันทึก
+                  </button>
                 </div>
               </div>
             </div>
@@ -489,11 +519,16 @@ export default function DashboardPage() {
           {/* Assignment Board (Kanban) */}
           <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2" id="kanban">
             {[{key:'open',title:'Open'},{key:'inProgress',title:'In‑Progress'},{key:'waiting',title:'Waiting / Blocked'},{key:'done',title:'Done'}].map(col => (
-              <div key={col.key} className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-2 min-h-[140px]" onDragOver={(e)=>e.preventDefault()} onDrop={(e)=>onDropTo(col.key, e)}>
+              <div key={col.key} className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-2 min-h-[140px]" onDragOver={(e)=>canAction && e.preventDefault()} onDrop={(e)=>onDropTo(col.key, e)}>
                 <h4 className="text-xs font-semibold mb-2 text-gray-900 dark:text-gray-100">{col.title}</h4>
                 <div className="flex flex-col gap-2">
                   {kanban[col.key].map(card => (
-                    <div key={card.id} draggable onDragStart={(e)=>onDragStart(e, card.id)} className="border dark:border-gray-600 rounded p-2 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-move">
+                    <div 
+                      key={card.id} 
+                      draggable={canAction} 
+                      onDragStart={(e)=>onDragStart(e, card.id)} 
+                      className={`border dark:border-gray-600 rounded p-2 text-xs bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${canAction ? 'hover:bg-gray-50 dark:hover:bg-gray-600 cursor-move' : 'cursor-default'}`}
+                    >
                       {card.id} · Line {card.line} · {card.p}
                     </div>
                   ))}
@@ -559,10 +594,15 @@ export default function DashboardPage() {
                 <button onClick={()=>setDrawerOpen(false)} className="px-2 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600">Close</button>
               </div>
               <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">{selectedTicket?.route || '-'} · Priority {selectedTicket?.priority || 'P?'}</p>
-              <div className="flex gap-2">
-                <button className="px-2 py-1 border dark:border-emerald-600 rounded bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50">Start</button>
-                <button className="px-2 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600">Assign ▾</button>
-              </div>
+              {canAction && (
+                <div className="flex gap-2">
+                  <button className="px-2 py-1 border dark:border-emerald-600 rounded bg-emerald-50 dark:bg-emerald-900/30 border-emerald-200 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50">Start</button>
+                  <button className="px-2 py-1 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-600">Assign ▾</button>
+                </div>
+              )}
+              {!canAction && (
+                <div className="text-xs text-gray-500 dark:text-gray-400 italic">โหมดดูอย่างเดียว - ไม่สามารถดำเนินการได้</div>
+              )}
             </aside>
           )}
 

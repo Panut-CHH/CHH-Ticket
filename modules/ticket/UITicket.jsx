@@ -6,10 +6,14 @@ import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t, translations } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
+import { useAuth } from "@/contexts/AuthContext";
+import { canPerformActions } from "@/utils/rolePermissions";
 
 export default function UITicket() {
   const router = useRouter();
   const { language } = useLanguage();
+  const { user } = useAuth();
+  const canAction = canPerformActions(user?.role);
 
   // Reload data when page becomes visible (เมื่อกลับมาจากหน้า edit)
   useEffect(() => {
@@ -1483,8 +1487,13 @@ export default function UITicket() {
             </div>
           </div>
           <button 
-            onClick={() => onEdit(ticket)}
-            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 hover:scale-105 active:scale-95 w-full lg:w-auto lg:flex-shrink-0"
+            onClick={() => canAction && onEdit(ticket)}
+            disabled={!canAction}
+            className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 w-full lg:w-auto lg:flex-shrink-0 ${
+              canAction 
+                ? 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105 active:scale-95 cursor-pointer' 
+                : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
+            }`}
           >
             <Edit className="w-3 h-3" />
             <span>{t('editTicket', language)}</span>

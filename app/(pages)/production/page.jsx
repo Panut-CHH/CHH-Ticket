@@ -9,11 +9,13 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { ClipboardList, CheckCircle2, Clock3, Coins, Search, Filter as FilterIcon, ArrowUpDown } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
+import { canPerformActions } from "@/utils/rolePermissions";
 
 export default function ProductionPage() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const router = useRouter();
+  const canAction = canPerformActions(user?.role);
 
   const myName = (user?.name || user?.email || "").trim();
   const myRole = (user?.role || '').toLowerCase();
@@ -842,8 +844,13 @@ export default function ProductionPage() {
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
                         <button
-                          onClick={() => router.push(`/production/${encodeURIComponent(cleanedId)}`)}
-                          className="px-3 sm:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto"
+                          onClick={() => canAction && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
+                          disabled={!canAction}
+                          className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto ${
+                            canAction 
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
+                              : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
+                          }`}
                         >
                           {t('detailsMore', language)}
                         </button>

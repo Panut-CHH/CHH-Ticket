@@ -5,7 +5,7 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   CNC: {
-    pages: ['dashboard', 'production', 'settings'],
+    pages: ['dashboard', 'production', 'tickets', 'settings'],
     settingsTabs: ['profile', 'security']
   },
   Technician: {
@@ -13,7 +13,7 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   QC: {
-    pages: ['qc', 'settings', 'debug-user-role'],
+    pages: ['qc', 'dashboard', 'production', 'tickets', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
   Admin: {
@@ -188,4 +188,45 @@ export const getAllowedSettingsTabs = (userRole) => {
   }
   
   return ROLE_PERMISSIONS[normalizedRole].settingsTabs;
+};
+
+// Helper function to check if user can perform actions (not just view)
+// QC and CNC roles can view pages but cannot perform actions
+export const canPerformActions = (userRole) => {
+  if (!userRole) {
+    return false;
+  }
+  
+  // Normalize role name
+  let normalizedRole;
+  switch (userRole.toLowerCase()) {
+    case 'superadmin':
+      normalizedRole = 'SuperAdmin';
+      break;
+    case 'admin':
+      normalizedRole = 'Admin';
+      break;
+    case 'drawing':
+      normalizedRole = 'Drawing';
+      break;
+    case 'cnc':
+      normalizedRole = 'CNC';
+      break;
+    case 'technician':
+      normalizedRole = 'Technician';
+      break;
+    case 'qc':
+      normalizedRole = 'QC';
+      break;
+    default:
+      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+  }
+  
+  // QC and CNC roles can only view, not perform actions
+  if (normalizedRole === 'QC' || normalizedRole === 'CNC') {
+    return false;
+  }
+  
+  // All other roles can perform actions
+  return true;
 };
