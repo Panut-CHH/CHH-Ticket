@@ -5,7 +5,7 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   CNC: {
-    pages: ['dashboard', 'production', 'tickets', 'settings'],
+    pages: ['dashboard', 'project', 'production', 'tickets', 'settings'],
     settingsTabs: ['profile', 'security']
   },
   Technician: {
