@@ -1913,7 +1913,7 @@ export default function ProductionDetailPage() {
             onDone={handleDone} 
             onStart={handleStart} 
             me={myName}
-            isAdmin={(user?.role || '').toLowerCase() === 'admin' || (user?.role || '').toLowerCase() === 'superadmin'}
+            isAdmin={(user?.roles || (user?.role ? [user.role] : [])).some(r => r.toLowerCase() === 'admin' || r.toLowerCase() === 'superadmin')}
             userId={user?.id || null}
             batches={batches}
           />

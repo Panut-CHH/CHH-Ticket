@@ -22,7 +22,7 @@ export async function GET(request) {
   try {
     const { data: users, error } = await supabaseAdmin
       .from('users')
-      .select('id, name, email, role')
+      .select('id, name, email, role, roles')
       .order('name', { ascending: true });
 
     if (error) {

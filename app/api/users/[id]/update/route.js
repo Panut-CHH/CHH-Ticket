@@ -18,17 +18,27 @@ export async function POST(request, { params }) {
     const supabaseAdmin = getSupabaseAdmin();
     const { id: userId } = params;
     const body = await request.json();
-    const { name, email, password, role } = body;
+    const { name, email, password, role, roles } = body;
+
+    // Normalize roles: support both old format (role) and new format (roles)
+    const userRoles = roles || (role ? [role] : null);
+    const normalizedRoles = userRoles ? (Array.isArray(userRoles) ? userRoles : [userRoles]) : null;
 
     // 1. Update ข้อมูลใน public.users
+    const updateData = {
+      name: name,
+      email: email,
+      updated_at: new Date().toISOString()
+    };
+
+    if (normalizedRoles) {
+      updateData.roles = normalizedRoles;
+      updateData.role = normalizedRoles[0]; // Keep for backward compatibility
+    }
+
     const { error: dbError } = await supabaseAdmin
       .from('users')
-      .update({
-        name: name,
-        email: email,
-        role: role,
-        updated_at: new Date().toISOString()
-      })
+      .update(updateData)
       .eq('id', userId);
 
     if (dbError) {
@@ -43,10 +53,21 @@ export async function POST(request, { params }) {
     const authUpdateData = {
       email: email,
       user_metadata: {
-        full_name: name,
-        role: role
+        full_name: name
       }
     };
+
+    if (normalizedRoles) {
+      authUpdateData.user_metadata.roles = normalizedRoles;
+      authUpdateData.user_metadata.role = normalizedRoles[0]; // Keep for backward compatibility
+    } else {
+      // If roles not provided, keep existing roles from user_metadata
+      const existingUser = await supabaseAdmin.auth.admin.getUserById(userId);
+      if (existingUser.data?.user?.user_metadata?.roles) {
+        authUpdateData.user_metadata.roles = existingUser.data.user.user_metadata.roles;
+        authUpdateData.user_metadata.role = existingUser.data.user.user_metadata.roles[0];
+      }
+    }
 
     if (password && password.trim() !== '') {
       authUpdateData.password = password;
@@ -66,7 +87,7 @@ export async function POST(request, { params }) {
       success: true,
       message: 'User updated successfully'
     });
-    await logApiCall(request, 'update', 'user', userId, { email, role }, 'success', null);
+    await logApiCall(request, 'update', 'user', userId, { email, roles: normalizedRoles || 'unchanged' }, 'success', null);
     return response;
 
   } catch (error) {

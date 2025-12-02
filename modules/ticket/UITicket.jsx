@@ -13,7 +13,7 @@ export default function UITicket() {
   const router = useRouter();
   const { language } = useLanguage();
   const { user } = useAuth();
-  const canAction = canPerformActions(user?.role);
+  const canAction = canPerformActions(user?.roles || user?.role);
 
   // Reload data when page becomes visible (เมื่อกลับมาจากหน้า edit)
   useEffect(() => {

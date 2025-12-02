@@ -157,7 +157,9 @@ function UserManagement() {
   const filteredUsers = users.filter(user => {
     const matchSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                        user.email.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchRole = roleFilter === "all" || user.role === roleFilter;
+    // Support both old format (role) and new format (roles)
+    const userRoles = user.roles || (user.role ? [user.role] : []);
+    const matchRole = roleFilter === "all" || userRoles.includes(roleFilter);
     const matchStatus = statusFilter === "all" || user.status === statusFilter;
     return matchSearch && matchRole && matchStatus;
   });
@@ -295,9 +297,13 @@ function UserManagement() {
                         </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${roleColors[user.role]}`}>
-                          {user.role}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          {(user.roles || (user.role ? [user.role] : [])).map((role, idx) => (
+                            <span key={idx} className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${roleColors[role] || roleColors['user']}`}>
+                              {role}
+                            </span>
+                          ))}
+                        </div>
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${statusColors[user.status]}`}>
@@ -370,10 +376,10 @@ export default function SettingsPage() {
     { key: "erpTest", label: t('erpTest', language), icon: <Database className="w-4 h-4" /> },
   ];
 
-  // Filter tabs based on user role
+  // Filter tabs based on user roles
   const tabs = allTabs.filter(tab => {
     if (!user) return false;
-    return hasSettingsTabAccess(user.role, tab.key);
+    return hasSettingsTabAccess(user.roles || user.role, tab.key);
   });
 
   const [activeTab, setActiveTab] = useState("profile");

@@ -104,11 +104,15 @@ export async function POST(request, { params }) {
     // ตรวจสอบ role
     const { data: userRecord } = await supabase
       .from('users')
-      .select('role')
+      .select('role, roles')
       .eq('id', user.id)
       .single();
 
-    if (!userRecord || !['Admin', 'SuperAdmin'].includes(userRecord.role)) {
+    // Support both old format (role) and new format (roles)
+    const userRoles = userRecord?.roles || (userRecord?.role ? [userRecord.role] : []);
+    const hasAdminRole = userRoles.some(r => r === 'Admin' || r === 'SuperAdmin');
+    
+    if (!userRecord || !hasAdminRole) {
       return NextResponse.json(
         { success: false, error: 'Forbidden - Admin/SuperAdmin only' },
         { status: 403 }
@@ -258,7 +262,7 @@ export async function POST(request, { params }) {
             .from('users')
             .select('id')
             .eq('name', station.technician)
-            .eq('role', 'Technician')
+            .or('roles.ov.{Production,Painting,Packing},role.in.(Production,Painting,Packing)')
             .single();
           technicianId = techData?.id || null;
         }

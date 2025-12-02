@@ -5,15 +5,23 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   CNC: {
-    pages: ['dashboard', 'project', 'production', 'tickets', 'settings'],
+    pages: ['production', 'settings'],
     settingsTabs: ['profile', 'security']
   },
-  Technician: {
+  Production: {
+    pages: ['production', 'debug-user-role'],
+    settingsTabs: ['profile', 'security']
+  },
+  Painting: {
+    pages: ['production', 'debug-user-role'],
+    settingsTabs: ['profile', 'security']
+  },
+  Packing: {
     pages: ['production', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
   QC: {
-    pages: ['qc', 'dashboard', 'production', 'tickets', 'settings', 'debug-user-role'],
+    pages: ['qc', 'settings'],
     settingsTabs: ['profile', 'security']
   },
   Admin: {
@@ -26,207 +34,164 @@ export const ROLE_PERMISSIONS = {
   }
 };
 
-// Helper function to check if user has access to a page
-export const hasPageAccess = (userRole, pagePath) => {
-  console.log(`hasPageAccess called with: userRole=${userRole}, pagePath=${pagePath}`);
-  
-  if (!userRole) {
-    console.log('No userRole provided');
-    return false;
-  }
-  
-  // Normalize role name (handle case sensitivity)
-  // Convert to proper case: superadmin -> SuperAdmin, admin -> Admin, etc.
-  let normalizedRole;
-  switch (userRole.toLowerCase()) {
+// Helper function to normalize roles (support both string and array)
+const normalizeRoles = (roles) => {
+  if (!roles) return [];
+  if (Array.isArray(roles)) return roles;
+  return [roles];
+};
+
+// Helper function to normalize a single role name
+const normalizeRoleName = (role) => {
+  if (!role) return null;
+  const roleStr = String(role).toLowerCase();
+  switch (roleStr) {
     case 'superadmin':
-      normalizedRole = 'SuperAdmin';
-      break;
+      return 'SuperAdmin';
     case 'admin':
-      normalizedRole = 'Admin';
-      break;
+      return 'Admin';
     case 'drawing':
-      normalizedRole = 'Drawing';
-      break;
+      return 'Drawing';
     case 'cnc':
-      normalizedRole = 'CNC';
-      break;
-    case 'technician':
-      normalizedRole = 'Technician';
-      break;
+      return 'CNC';
+    case 'production':
+      return 'Production';
+    case 'painting':
+      return 'Painting';
+    case 'packing':
+      return 'Packing';
     case 'qc':
-      normalizedRole = 'QC';
-      break;
+      return 'QC';
     default:
-      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+      return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   }
+};
+
+// Helper function to check if user has access to a page
+export const hasPageAccess = (userRoles, pagePath) => {
+  const roles = normalizeRoles(userRoles);
+  console.log(`hasPageAccess called with: userRoles=${JSON.stringify(roles)}, pagePath=${pagePath}`);
   
-  console.log(`Normalized role: ${userRole} -> ${normalizedRole}`);
-  
-  if (!ROLE_PERMISSIONS[normalizedRole]) {
-    console.log(`Role ${userRole} (normalized to ${normalizedRole}) not found in permissions`);
-    console.log('Available roles:', Object.keys(ROLE_PERMISSIONS));
+  if (roles.length === 0) {
+    console.log('No userRoles provided');
     return false;
   }
   
   // Remove leading slash and get base path (handle undefined safely)
   const safePath = typeof pagePath === 'string' ? pagePath : '';
   const basePath = safePath.replace(/^\//, '').split('/')[0];
-  const hasAccess = ROLE_PERMISSIONS[normalizedRole].pages.includes(basePath);
   
-  console.log(`Checking access: Role=${userRole} (${normalizedRole}), Page=${basePath}, HasAccess=${hasAccess}`);
-  console.log(`Available pages for ${normalizedRole}:`, ROLE_PERMISSIONS[normalizedRole].pages);
-  return hasAccess;
+  // Check if any role has access (OR logic)
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (!normalizedRole || !ROLE_PERMISSIONS[normalizedRole]) {
+      continue;
+    }
+    
+    if (ROLE_PERMISSIONS[normalizedRole].pages.includes(basePath)) {
+      console.log(`Access granted: Role=${role} (${normalizedRole}), Page=${basePath}`);
+      return true;
+    }
+  }
+  
+  console.log(`Access denied: No role in ${JSON.stringify(roles)} has access to ${basePath}`);
+  return false;
 };
 
 // Helper function to check if user has access to settings tab
-export const hasSettingsTabAccess = (userRole, tabKey) => {
-  if (!userRole) {
+export const hasSettingsTabAccess = (userRoles, tabKey) => {
+  const roles = normalizeRoles(userRoles);
+  
+  if (roles.length === 0) {
     return false;
   }
   
-  // Normalize role name (handle case sensitivity)
-  let normalizedRole;
-  switch (userRole.toLowerCase()) {
-    case 'superadmin':
-      normalizedRole = 'SuperAdmin';
-      break;
-    case 'admin':
-      normalizedRole = 'Admin';
-      break;
-    case 'drawing':
-      normalizedRole = 'Drawing';
-      break;
-    case 'cnc':
-      normalizedRole = 'CNC';
-      break;
-    case 'technician':
-      normalizedRole = 'Technician';
-      break;
-    case 'qc':
-      normalizedRole = 'QC';
-      break;
-    default:
-      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+  // Check if any role has access (OR logic)
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (!normalizedRole || !ROLE_PERMISSIONS[normalizedRole]) {
+      continue;
+    }
+    
+    if (ROLE_PERMISSIONS[normalizedRole].settingsTabs.includes(tabKey)) {
+      return true;
+    }
   }
   
-  if (!ROLE_PERMISSIONS[normalizedRole]) {
-    return false;
-  }
-  
-  return ROLE_PERMISSIONS[normalizedRole].settingsTabs.includes(tabKey);
+  return false;
 };
 
-// Helper function to get allowed pages for a role
-export const getAllowedPages = (userRole) => {
-  if (!userRole) {
+// Helper function to get allowed pages for roles (union of all roles)
+export const getAllowedPages = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  
+  if (roles.length === 0) {
     return [];
   }
   
-  // Normalize role name (handle case sensitivity)
-  let normalizedRole;
-  switch (userRole.toLowerCase()) {
-    case 'superadmin':
-      normalizedRole = 'SuperAdmin';
-      break;
-    case 'admin':
-      normalizedRole = 'Admin';
-      break;
-    case 'drawing':
-      normalizedRole = 'Drawing';
-      break;
-    case 'cnc':
-      normalizedRole = 'CNC';
-      break;
-    case 'technician':
-      normalizedRole = 'Technician';
-      break;
-    case 'qc':
-      normalizedRole = 'QC';
-      break;
-    default:
-      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+  // Get unique pages from all roles (union)
+  const allowedPagesSet = new Set();
+  
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (!normalizedRole || !ROLE_PERMISSIONS[normalizedRole]) {
+      continue;
+    }
+    
+    ROLE_PERMISSIONS[normalizedRole].pages.forEach(page => allowedPagesSet.add(page));
   }
   
-  if (!ROLE_PERMISSIONS[normalizedRole]) {
-    return [];
-  }
-  
-  return ROLE_PERMISSIONS[normalizedRole].pages;
+  return Array.from(allowedPagesSet);
 };
 
-// Helper function to get allowed settings tabs for a role
-export const getAllowedSettingsTabs = (userRole) => {
-  if (!userRole) {
+// Helper function to get allowed settings tabs for roles (union of all roles)
+export const getAllowedSettingsTabs = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  
+  if (roles.length === 0) {
     return [];
   }
   
-  // Normalize role name (handle case sensitivity)
-  let normalizedRole;
-  switch (userRole.toLowerCase()) {
-    case 'superadmin':
-      normalizedRole = 'SuperAdmin';
-      break;
-    case 'admin':
-      normalizedRole = 'Admin';
-      break;
-    case 'drawing':
-      normalizedRole = 'Drawing';
-      break;
-    case 'technician':
-      normalizedRole = 'Technician';
-      break;
-    case 'qc':
-      normalizedRole = 'QC';
-      break;
-    default:
-      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+  // Get unique tabs from all roles (union)
+  const allowedTabsSet = new Set();
+  
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (!normalizedRole || !ROLE_PERMISSIONS[normalizedRole]) {
+      continue;
+    }
+    
+    ROLE_PERMISSIONS[normalizedRole].settingsTabs.forEach(tab => allowedTabsSet.add(tab));
   }
   
-  if (!ROLE_PERMISSIONS[normalizedRole]) {
-    return [];
-  }
-  
-  return ROLE_PERMISSIONS[normalizedRole].settingsTabs;
+  return Array.from(allowedTabsSet);
 };
 
 // Helper function to check if user can perform actions (not just view)
 // QC and CNC roles can view pages but cannot perform actions
-export const canPerformActions = (userRole) => {
-  if (!userRole) {
+export const canPerformActions = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  
+  if (roles.length === 0) {
     return false;
   }
   
-  // Normalize role name
-  let normalizedRole;
-  switch (userRole.toLowerCase()) {
-    case 'superadmin':
-      normalizedRole = 'SuperAdmin';
-      break;
-    case 'admin':
-      normalizedRole = 'Admin';
-      break;
-    case 'drawing':
-      normalizedRole = 'Drawing';
-      break;
-    case 'cnc':
-      normalizedRole = 'CNC';
-      break;
-    case 'technician':
-      normalizedRole = 'Technician';
-      break;
-    case 'qc':
-      normalizedRole = 'QC';
-      break;
-    default:
-      normalizedRole = userRole.charAt(0).toUpperCase() + userRole.slice(1).toLowerCase();
+  // If user has any role that can perform actions (not QC or CNC), return true
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (!normalizedRole) {
+      continue;
+    }
+    
+    // QC and CNC roles can only view, not perform actions
+    if (normalizedRole === 'QC' || normalizedRole === 'CNC') {
+      continue;
+    }
+    
+    // All other roles can perform actions
+    return true;
   }
   
-  // QC and CNC roles can only view, not perform actions
-  if (normalizedRole === 'QC' || normalizedRole === 'CNC') {
-    return false;
-  }
-  
-  // All other roles can perform actions
-  return true;
+  // If all roles are QC or CNC, cannot perform actions
+  return false;
 };

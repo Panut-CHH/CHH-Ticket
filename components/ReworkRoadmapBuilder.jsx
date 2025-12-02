@@ -43,11 +43,12 @@ const ReworkRoadmapBuilder = ({
       }
 
       // โหลดช่าง
+      // Use overlaps to check if user has any of the required roles
       const { data: techniciansData, error: techniciansError } = await supabase
         .from('users')
-        .select('id, name, role')
+        .select('id, name, role, roles')
         .eq('status', 'active')
-        .in('role', ['Technician', 'Supervisor']);
+        .or('roles.ov.{Production,Painting,Packing,Supervisor},role.in.(Production,Painting,Packing,Supervisor)');
 
       if (techniciansError) {
         console.error('Error loading technicians:', techniciansError);

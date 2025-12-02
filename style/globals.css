@@ -86,6 +86,34 @@ svg.lucide {
   height: 0px;
 }
 
+/* Custom scrollbar for modal - Minimal Design */
+.modal-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.modal-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.modal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 10px;
+  transition: background 0.2s ease;
+}
+
+.modal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}
+
+.dark .modal-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+}
+
+.dark .modal-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.5);
+}
+
 /* Slide-in from left animation for sidebar/drawers */
 @keyframes slideInLeft {
   from { transform: translateX(-100%); opacity: 0.6; }

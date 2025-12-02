@@ -588,9 +588,9 @@ export default function EditTicketPage() {
         setLoadingTechs(true);
         const { data, error } = await supabase
           .from('users')
-          .select('id, name, role, status')
-          .eq('role', 'Technician')
+          .select('id, name, role, roles, status')
           .eq('status', 'active')
+          .or('roles.ov.{Production,Painting,Packing},role.in.(Production,Painting,Packing)')
           .order('name', { ascending: true });
         if (error) {
           console.error('Failed to load technicians:', error);
@@ -750,7 +750,7 @@ export default function EditTicketPage() {
       if (session?.user) {
         const { data: userRecord } = await supabase
           .from('users')
-          .select('id, name, email, role')
+          .select('id, name, email, role, roles')
           .eq('id', session.user.id)
           .single();
         console.log('[SAVE] User record in database:', userRecord);

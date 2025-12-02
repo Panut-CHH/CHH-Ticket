@@ -24,7 +24,7 @@ export const mockUsers = [
     id: 3,
     name: "วิชัย ช่างฝีมือ",
     email: "wichai@factory.com",
-    role: "Technician",
+    role: "Production",
     status: "active",
     avatar: null,
     createdAt: "2024-03-10",
@@ -44,7 +44,7 @@ export const mockUsers = [
     id: 5,
     name: "สมศักดิ์ ช่วยเหลือ",
     email: "somsak@factory.com",
-    role: "Technician",
+    role: "Production",
     status: "active",
     avatar: null,
     createdAt: "2024-04-01",
@@ -84,7 +84,7 @@ export const mockUsers = [
     id: 9,
     name: "สุดา ช่างเทคนิค",
     email: "suda@factory.com",
-    role: "Technician",
+    role: "Production",
     status: "active",
     avatar: null,
     createdAt: "2024-06-20",
@@ -112,13 +112,15 @@ export const mockUsers = [
   }
 ];
 
-export const roles = ["SuperAdmin", "Admin", "QC", "Technician", "CNC", "Drawing"];
+export const roles = ["SuperAdmin", "Admin", "QC", "Production", "Painting", "Packing", "CNC", "Drawing"];
 
 export const roleColors = {
   SuperAdmin: "bg-purple-100 text-purple-700 border-purple-200",
   Admin: "bg-blue-100 text-blue-700 border-blue-200",
   QC: "bg-amber-100 text-amber-700 border-amber-200",
-  Technician: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Production: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Painting: "bg-pink-100 text-pink-700 border-pink-200",
+  Packing: "bg-indigo-100 text-indigo-700 border-indigo-200",
   CNC: "bg-cyan-100 text-cyan-700 border-cyan-200",
   Drawing: "bg-orange-100 text-orange-700 border-orange-200"
 };

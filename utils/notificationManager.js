@@ -42,8 +42,8 @@ export async function createQCFailedNotification(ticketNo, qcSessionId) {
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .or("role.eq.Admin,role.eq.SuperAdmin");
+      .select("id, role, roles")
+      .or("roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)");
     targets = Array.isArray(data) ? data : [];
   } catch {}
 
@@ -71,8 +71,8 @@ export async function createQCReadyNotification(ticketNo, stationName) {
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role, name")
-      .eq("role", "QC");
+      .select("id, role, roles, name")
+      .or('roles.ov.{QC},role.eq.QC');
     qcUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding QC users:", error);
@@ -125,8 +125,8 @@ export async function createTicketCompletedNotification(ticketNo) {
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .in("role", ["Admin", "SuperAdmin"]);
+      .select("id, role, roles")
+      .or('roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)');
     adminUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding admin users:", error);
@@ -164,8 +164,8 @@ export async function createApprovalRequiredNotification(
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .in("role", ["Admin", "SuperAdmin"]);
+      .select("id, role, roles")
+      .or('roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)');
     adminUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding admin users:", error);
@@ -197,8 +197,8 @@ export async function createNewTicketNotification(ticketNo, projectName = null, 
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .in("role", ["Admin", "SuperAdmin"]);
+      .select("id, role, roles")
+      .or('roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)');
     adminUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding admin users:", error);
@@ -234,8 +234,8 @@ export async function createNewProjectNotification(projectNumber, projectName, i
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .in("role", ["Admin", "SuperAdmin"]);
+      .select("id, role, roles")
+      .or('roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)');
     adminUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding admin users:", error);
@@ -267,8 +267,8 @@ export async function createNewItemCodeNotification(projectId, itemCode, itemTyp
   try {
     const { data } = await admin
       .from("users")
-      .select("id, role")
-      .in("role", ["Admin", "SuperAdmin"]);
+      .select("id, role, roles")
+      .or('roles.ov.{Admin,SuperAdmin},role.in.(Admin,SuperAdmin)');
     adminUsers = Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Error finding admin users:", error);

@@ -17,7 +17,11 @@ export async function POST(request) {
   try {
     const supabaseAdmin = getSupabaseAdmin();
     const body = await request.json();
-    const { name, email, password, role } = body;
+    const { name, email, password, role, roles } = body;
+
+    // Normalize roles: support both old format (role) and new format (roles)
+    const userRoles = roles || (role ? [role] : ["user"]);
+    const normalizedRoles = Array.isArray(userRoles) ? userRoles : [userRoles];
 
     // 1. สร้าง user ใน auth.users ก่อน
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
@@ -26,7 +30,8 @@ export async function POST(request) {
       email_confirm: true, // ยืนยัน email ทันที
       user_metadata: {
         full_name: name,
-        role: role
+        roles: normalizedRoles,
+        role: normalizedRoles[0] // Keep for backward compatibility
       }
     });
 
@@ -47,7 +52,8 @@ export async function POST(request) {
         id: userId, // ใช้ ID จาก auth.users
         name: name,
         email: email,
-        role: role,
+        roles: normalizedRoles,
+        role: normalizedRoles[0], // Keep for backward compatibility
         status: 'active'
       });
 
@@ -66,7 +72,7 @@ export async function POST(request) {
       message: 'User created successfully',
       userId: userId
     });
-    await logApiCall(request, 'create', 'user', userId, { email, role }, 'success', null);
+    await logApiCall(request, 'create', 'user', userId, { email, roles: normalizedRoles }, 'success', null);
     return response;
 
   } catch (error) {

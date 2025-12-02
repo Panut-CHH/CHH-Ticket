@@ -14,8 +14,12 @@ const ROLE_COLORS = {
   admin: "bg-blue-100 text-blue-700 border-blue-200",
   QC: "bg-amber-100 text-amber-700 border-amber-200",
   qc: "bg-amber-100 text-amber-700 border-amber-200",
-  Technician: "bg-emerald-100 text-emerald-700 border-emerald-200",
-  technician: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Production: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  production: "bg-emerald-100 text-emerald-700 border-emerald-200",
+  Painting: "bg-pink-100 text-pink-700 border-pink-200",
+  painting: "bg-pink-100 text-pink-700 border-pink-200",
+  Packing: "bg-indigo-100 text-indigo-700 border-indigo-200",
+  packing: "bg-indigo-100 text-indigo-700 border-indigo-200",
   Drawing: "bg-orange-100 text-orange-700 border-orange-200",
   drawing: "bg-orange-100 text-orange-700 border-orange-200",
   user: "bg-gray-100 text-gray-700 border-gray-200"
@@ -110,9 +114,11 @@ export default function ImpersonateModal({ open, onClose }) {
     }
     
     // กรองตาม search term
+    const userRoles = targetUser.roles || (targetUser.role ? [targetUser.role] : []);
+    const rolesString = userRoles.join(' ').toLowerCase();
     return targetUser.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
            targetUser.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-           targetUser.role.toLowerCase().includes(searchTerm.toLowerCase());
+           rolesString.includes(searchTerm.toLowerCase());
   });
 
   return (
@@ -179,9 +185,13 @@ export default function ImpersonateModal({ open, onClose }) {
                           <h3 className="font-medium text-gray-900 dark:text-gray-100">
                             {targetUser.name}
                           </h3>
-                          <span className={`px-2 py-1 text-xs rounded-full border ${ROLE_COLORS[targetUser.role] || ROLE_COLORS.user}`}>
-                            {targetUser.role}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {(targetUser.roles || (targetUser.role ? [targetUser.role] : [])).map((role, idx) => (
+                              <span key={idx} className={`px-2 py-1 text-xs rounded-full border ${ROLE_COLORS[role] || ROLE_COLORS.user}`}>
+                                {role}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                         <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400">
                           <div className="flex items-center gap-1">

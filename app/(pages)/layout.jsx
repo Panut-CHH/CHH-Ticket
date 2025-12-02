@@ -33,18 +33,10 @@ export default function PagesLayout({ children }) {
   const { language } = useLanguage();
   const { user, isImpersonating, originalUser, exitImpersonate } = useAuth();
 
-  // Filter navigation items based on user role (case-insensitive role check)
+  // Filter navigation items based on user roles
   const filteredNavItems = navItems.filter(item => {
     if (!user) return false;
-    const userRoleLower = String(user.role || '').toLowerCase();
-
-    // Check if item has specific role requirements
-    if (item.roles) {
-      const allowed = item.roles.map(r => String(r).toLowerCase());
-      if (!allowed.includes(userRoleLower)) return false;
-    }
-
-    return hasPageAccess(user.role, item.href);
+    return hasPageAccess(user.roles || user.role, item.href);
   });
 
   return (
@@ -200,7 +192,7 @@ export default function PagesLayout({ children }) {
                     <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('activityHistory', language)}</div>
                   </div>
                 </Link>
-                {hasPageAccess(user?.role, "/settings") && (
+                {hasPageAccess(user?.roles || user?.role, "/settings") && (
                   <Link href="/settings" onClick={() => setHomeMode(false)} className="pressable group text-left bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl px-4 sm:px-6 py-4 sm:py-5 border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg hover:border-emerald-400 transition-all duration-300 flex items-center gap-3 sm:gap-4">
                     <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center text-white shadow" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
                       <Settings className="w-5 h-5 sm:w-6 sm:h-6" />

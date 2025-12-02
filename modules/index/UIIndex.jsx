@@ -29,10 +29,10 @@ export default function UIIndex() {
     { path: "/settings", label: "settings", description: "systemSettings", icon: Settings },
   ];
 
-  // Filter buttons based on user role
+  // Filter buttons based on user roles
   const allowedButtons = pageButtons.filter(button => {
     if (!user) return false;
-    return hasPageAccess(user.role, button.path);
+    return hasPageAccess(user.roles || user.role, button.path);
   });
 
   return (

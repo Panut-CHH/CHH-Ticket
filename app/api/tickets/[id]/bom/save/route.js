@@ -54,10 +54,13 @@ export async function POST(request, { params }) {
     }
     const { data: userRecord } = await supabase
       .from('users')
-      .select('role')
+      .select('role, roles')
       .eq('id', user.id)
       .single();
-    if (!userRecord || !['Admin', 'SuperAdmin'].includes(userRecord.role)) {
+    // Support both old format (role) and new format (roles)
+    const userRoles = userRecord?.roles || (userRecord?.role ? [userRecord.role] : []);
+    const hasAdminRole = userRoles.some(r => r === 'Admin' || r === 'SuperAdmin');
+    if (!userRecord || !hasAdminRole) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 

@@ -38,17 +38,19 @@ export async function GET(request) {
       technicianId, dateFrom, dateTo, stationId, userId
     });
 
-    // Get user role to determine permissions
-    let userRole = 'technician'; // default
+    // Get user roles to determine permissions
+    let userRoles = ['production']; // default
     if (userId) {
       const { data: user } = await supabaseAdmin
         .from('users')
-        .select('role')
+        .select('role, roles')
         .eq('id', userId)
         .single();
-      userRole = user?.role || 'technician';
+      // Support both old format (role) and new format (roles)
+      userRoles = user?.roles || (user?.role ? [user.role] : ['production']);
+      userRoles = Array.isArray(userRoles) ? userRoles : [userRoles];
     }
-    const normalizedRole = String(userRole).toLowerCase();
+    const normalizedRoles = userRoles.map(r => String(r).toLowerCase());
 
     // Build query with filters
     let query = supabaseAdmin
@@ -94,8 +96,11 @@ export async function GET(request) {
     }
 
     // Permission-based filtering
-    if (normalizedRole === 'technician') {
-      // Technicians can only see their own data
+    const hasProductionRole = normalizedRoles.some(r => r === 'production' || r === 'painting' || r === 'packing');
+    const hasAdminRole = normalizedRoles.some(r => r === 'admin' || r === 'superadmin');
+    
+    if (hasProductionRole && !hasAdminRole) {
+      // Production, Painting, and Packing roles can only see their own data
       if (technicianId && technicianId !== userId) {
         return NextResponse.json(
           { success: false, error: 'Access denied: Cannot view other technicians\' data' },
@@ -103,7 +108,7 @@ export async function GET(request) {
         );
       }
       query = query.eq('technician_id', userId);
-    } else if (normalizedRole === 'admin' || normalizedRole === 'superadmin') {
+    } else if (hasAdminRole) {
       // Admins and superadmins can see all data or filter by technician
       if (technicianId) {
         query = query.eq('technician_id', technicianId);

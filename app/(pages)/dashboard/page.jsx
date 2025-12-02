@@ -16,7 +16,7 @@ export default function DashboardPage() {
   const { language } = useLanguage();
   const { user } = useAuth();
   const { theme } = useTheme();
-  const canAction = canPerformActions(user?.role);
+  const canAction = canPerformActions(user?.roles || user?.role);
 
   // KPI state (start with zeros to avoid showing mock values)
   const [kpi, setKpi] = useState({ open: 0, doing: 0, aging: 0, mttr: 0, tp: 0, sla: 0 });

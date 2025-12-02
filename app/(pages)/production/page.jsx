@@ -15,7 +15,7 @@ export default function ProductionPage() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const router = useRouter();
-  const canAction = canPerformActions(user?.role);
+  const canAction = canPerformActions(user?.roles || user?.role);
 
   const myName = (user?.name || user?.email || "").trim();
   const myRole = (user?.role || '').toLowerCase();

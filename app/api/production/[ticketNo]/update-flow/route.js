@@ -55,11 +55,13 @@ export async function POST(request, { params }) {
     try {
       const { data: userRow } = await supabaseAdmin
         .from('users')
-        .select('role')
+        .select('role, roles')
         .eq('id', user_id)
         .maybeSingle();
-      const role = String(userRow?.role || '').toLowerCase();
-      if (role === 'admin' || role === 'superadmin') {
+      // Support both old format (role) and new format (roles)
+      const userRoles = userRow?.roles || (userRow?.role ? [userRow.role] : []);
+      const normalizedRoles = userRoles.map(r => String(r).toLowerCase());
+      if (normalizedRoles.some(r => r === 'admin' || r === 'superadmin')) {
         isAdmin = true;
       }
     } catch {}

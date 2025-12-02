@@ -20,7 +20,7 @@ export default function DebugUserRole() {
         },
         body: JSON.stringify({
           email: user.email,
-          role: newRole
+          roles: [newRole]
         })
       });
 
@@ -52,7 +52,13 @@ export default function DebugUserRole() {
           <div className="space-y-2">
             <p><strong>Email:</strong> {user?.email || 'Not available'}</p>
             <p><strong>Name:</strong> {user?.name || 'Not available'}</p>
-            <p><strong>Current Role:</strong> <span className="font-mono bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{user?.role || 'Not set'}</span></p>
+            <p><strong>Current Roles:</strong> 
+              <div className="flex flex-wrap gap-1 mt-1">
+                {(user?.roles || (user?.role ? [user.role] : [])).map((role, idx) => (
+                  <span key={idx} className="font-mono bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{role}</span>
+                ))}
+              </div>
+            </p>
             <p><strong>User ID:</strong> {user?.id || 'Not available'}</p>
           </div>
         </div>
@@ -85,11 +91,27 @@ export default function DebugUserRole() {
             </button>
             
             <button
-              onClick={() => updateUserRole('Technician')}
+              onClick={() => updateUserRole('Production')}
               disabled={isUpdating}
               className="w-full bg-green-600 text-white py-2 px-4 rounded hover:bg-green-700 disabled:opacity-50"
             >
-              {isUpdating ? 'Updating...' : 'Set as Technician'}
+              {isUpdating ? 'Updating...' : 'Set as Production'}
+            </button>
+            
+            <button
+              onClick={() => updateUserRole('Painting')}
+              disabled={isUpdating}
+              className="w-full bg-pink-600 text-white py-2 px-4 rounded hover:bg-pink-700 disabled:opacity-50"
+            >
+              {isUpdating ? 'Updating...' : 'Set as Painting'}
+            </button>
+            
+            <button
+              onClick={() => updateUserRole('Packing')}
+              disabled={isUpdating}
+              className="w-full bg-indigo-600 text-white py-2 px-4 rounded hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {isUpdating ? 'Updating...' : 'Set as Packing'}
             </button>
             
             <button

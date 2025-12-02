@@ -20,7 +20,8 @@ export default function UserProfile() {
   if (!user) return null;
 
   // Check if user can impersonate (SuperAdmin or Admin)
-  const canImpersonate = user.role === 'SuperAdmin' || user.role === 'superadmin' || user.role === 'Admin' || user.role === 'admin';
+  const userRoles = user.roles || (user.role ? [user.role] : []);
+  const canImpersonate = userRoles.some(r => r === 'SuperAdmin' || r === 'superadmin' || r === 'Admin' || r === 'admin');
 
   return (
     <div className="relative">
@@ -66,7 +67,7 @@ export default function UserProfile() {
                 </span>
                 <ThemeToggle />
               </div>
-              {hasPageAccess(user?.role, "/settings") && (
+              {hasPageAccess(user?.roles || user?.role, "/settings") && (
                 <>
                   <hr className="my-2 border-gray-200 dark:border-gray-700" />
                   <button

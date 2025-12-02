@@ -224,9 +224,9 @@ export default function UIProject() {
   };
 
   // ตรวจสอบสิทธิ์สร้างโปรเจ็ค: SuperAdmin, Admin, Drawing, CNC (ไม่สนตัวพิมพ์ใหญ่/เล็ก)
-  const normalizedRole = (user?.role || "").toString();
-  const roleKey = normalizedRole.trim().toLowerCase();
-  const canCreateProject = ["superadmin", "admin", "drawing", "cnc"].includes(roleKey);
+  const userRoles = user?.roles || (user?.role ? [user.role] : []);
+  const normalizedRoles = userRoles.map(r => String(r).trim().toLowerCase());
+  const canCreateProject = normalizedRoles.some(r => ["superadmin", "admin", "drawing", "cnc"].includes(r));
 
   // ฟิลเตอร์โปรเจ็ค (ค้นหาตาม Project Code / ชื่อไฟล์ / Description)
   const filteredProjects = projects.filter(project => {

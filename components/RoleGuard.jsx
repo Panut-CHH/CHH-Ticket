@@ -16,8 +16,9 @@ export default function RoleGuard({ children, requiredRole, pagePath, redirectTo
   useEffect(() => {
     if (!isLoading && isAuthenticated && user) {
       // Check if user has access to this page
-      if (!hasPageAccess(user.role, effectivePath)) {
-        console.warn(`User ${user.name} (${user.role}) attempted to access ${effectivePath} without permission`);
+      if (!hasPageAccess(user.roles || user.role, effectivePath)) {
+        const userRoles = user.roles || (user.role ? [user.role] : []);
+        console.warn(`User ${user.name} (${JSON.stringify(userRoles)}) attempted to access ${effectivePath} without permission`);
         router.push(redirectTo);
       }
     }
@@ -41,7 +42,7 @@ export default function RoleGuard({ children, requiredRole, pagePath, redirectTo
   }
 
   // Don't render if user doesn't have access to this page
-  if (!hasPageAccess(user.role, effectivePath)) {
+  if (!hasPageAccess(user.roles || user.role, effectivePath)) {
     return null;
   }
 

@@ -58,11 +58,16 @@ export const AuthProvider = ({ children }) => {
         const supaUser = session?.user ?? null;
         if (!isMounted) return;
         if (supaUser) {
+          // Normalize roles: support both old format (role) and new format (roles)
+          const roles = supaUser.user_metadata?.roles || 
+                       (supaUser.user_metadata?.role ? [supaUser.user_metadata.role] : ["user"]);
+          
           const profile = {
             id: supaUser.id,
             email: supaUser.email,
             name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
-            role: supaUser.user_metadata?.role || "user",
+            roles: Array.isArray(roles) ? roles : [roles],
+            role: roles[0], // Keep for backward compatibility
             avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
           };
           
@@ -115,7 +120,7 @@ export const AuthProvider = ({ children }) => {
         if (currentUser) {
           logAuthEvent('logout', true, {
             email: currentUser.email,
-            role: currentUser.role,
+            role: currentUser.roles?.[0] || currentUser.role,
             via: 'auth_state_change'
           }).catch(err => console.warn('Failed to log logout event:', err));
         }
@@ -125,11 +130,16 @@ export const AuthProvider = ({ children }) => {
        
       const supaUser = session?.user ?? null;
       if (supaUser) {
+        // Normalize roles: support both old format (role) and new format (roles)
+        const roles = supaUser.user_metadata?.roles || 
+                     (supaUser.user_metadata?.role ? [supaUser.user_metadata.role] : ["user"]);
+        
         const profile = {
           id: supaUser.id,
           email: supaUser.email,
           name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
-          role: supaUser.user_metadata?.role || "user",
+          roles: Array.isArray(roles) ? roles : [roles],
+          role: roles[0], // Keep for backward compatibility
           avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
         };
         
@@ -245,11 +255,16 @@ export const AuthProvider = ({ children }) => {
       
       console.log('AuthContext: Login successful, user:', supaUser.email);
       
+      // Normalize roles: support both old format (role) and new format (roles)
+      const roles = supaUser.user_metadata?.roles || 
+                   (supaUser.user_metadata?.role ? [supaUser.user_metadata.role] : ["user"]);
+      
       const profile = {
         id: supaUser.id,
         email: supaUser.email,
         name: supaUser.user_metadata?.full_name || supaUser.email?.split("@")[0],
-        role: supaUser.user_metadata?.role || "user",
+        roles: Array.isArray(roles) ? roles : [roles],
+        role: roles[0], // Keep for backward compatibility
         avatar: supaUser.user_metadata?.avatar_url || "/pictureUser/pictureUser_1.png",
       };
       
@@ -260,7 +275,7 @@ export const AuthProvider = ({ children }) => {
       // Log successful login
       await logAuthEvent('login', true, {
         email: profile.email,
-        role: profile.role
+        role: profile.roles?.[0] || profile.role
       }).catch(err => console.warn('Failed to log auth event:', err));
       
       return { success: true };
@@ -279,7 +294,7 @@ export const AuthProvider = ({ children }) => {
       if (currentUser) {
         await logAuthEvent('logout', true, {
           email: currentUser.email,
-          role: currentUser.role
+          role: currentUser.roles?.[0] || currentUser.role
         });
       }
     } catch (error) {
@@ -288,6 +303,7 @@ export const AuthProvider = ({ children }) => {
       if (currentUser) {
         await logAuthEvent('logout', false, {
           email: currentUser.email,
+          role: currentUser.roles?.[0] || currentUser.role,
           errorMessage: error.message
         });
       }

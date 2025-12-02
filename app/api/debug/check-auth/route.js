@@ -35,16 +35,21 @@ export async function GET(request) {
       .eq('id', user.id)
       .single();
 
+    // Support both old format (role) and new format (roles)
+    const userRoles = userRecord?.roles || (userRecord?.role ? [userRecord.role] : []);
+    const hasAdminRole = userRoles.some(r => r === 'SuperAdmin' || r === 'Admin');
+    
     return NextResponse.json({
       authenticated: true,
       authUser: {
         id: user.id,
         email: user.email,
-        role: user.user_metadata?.role
+        role: user.user_metadata?.role,
+        roles: user.user_metadata?.roles || (user.user_metadata?.role ? [user.user_metadata.role] : [])
       },
       databaseUser: userRecord,
       matched: userRecord?.id === user.id,
-      canWrite: userRecord && ['SuperAdmin', 'Admin'].includes(userRecord.role)
+      canWrite: userRecord && hasAdminRole
     });
 
   } catch (error) {
