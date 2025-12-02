@@ -16,7 +16,14 @@ export default function DashboardPage() {
   const { language } = useLanguage();
   const { user } = useAuth();
   const { theme } = useTheme();
-  const canAction = canPerformActions(user?.roles || user?.role);
+  const roles = user?.roles || (user?.role ? [user.role] : []);
+  const baseCanAction = canPerformActions(roles);
+  const isAdminLike = roles.some((r) => {
+    const rl = String(r).toLowerCase();
+    return rl === "admin" || rl === "superadmin";
+  });
+  // เฉพาะ Admin / SuperAdmin เท่านั้นที่สามารถทำ action บนหน้า Dashboard ได้
+  const canAction = baseCanAction && isAdminLike;
 
   // KPI state (start with zeros to avoid showing mock values)
   const [kpi, setKpi] = useState({ open: 0, doing: 0, aging: 0, mttr: 0, tp: 0, sla: 0 });

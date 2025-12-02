@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { Search, User, Mail, Shield, Loader2, AlertCircle } from "lucide-react";
+import { getRoleDisplayName } from "@/utils/rolePermissions";
 
 const ROLE_COLORS = {
   SuperAdmin: "bg-purple-100 text-purple-700 border-purple-200",
@@ -14,6 +15,8 @@ const ROLE_COLORS = {
   admin: "bg-blue-100 text-blue-700 border-blue-200",
   QC: "bg-amber-100 text-amber-700 border-amber-200",
   qc: "bg-amber-100 text-amber-700 border-amber-200",
+  DashboardView: "bg-slate-100 text-slate-700 border-slate-200",
+  dashboardview: "bg-slate-100 text-slate-700 border-slate-200",
   Production: "bg-emerald-100 text-emerald-700 border-emerald-200",
   production: "bg-emerald-100 text-emerald-700 border-emerald-200",
   Painting: "bg-pink-100 text-pink-700 border-pink-200",
@@ -188,7 +191,7 @@ export default function ImpersonateModal({ open, onClose }) {
                           <div className="flex flex-wrap gap-1">
                             {(targetUser.roles || (targetUser.role ? [targetUser.role] : [])).map((role, idx) => (
                               <span key={idx} className={`px-2 py-1 text-xs rounded-full border ${ROLE_COLORS[role] || ROLE_COLORS.user}`}>
-                                {role}
+                                {getRoleDisplayName(role)}
                               </span>
                             ))}
                           </div>

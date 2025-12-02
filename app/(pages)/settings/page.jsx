@@ -8,7 +8,7 @@ import { t } from "@/utils/translations";
 import UserModal from "@/components/UserModal";
 import { roles, roleColors, statusColors } from "@/modules/settings/mockUsers";
 import { supabase } from "@/utils/supabaseClient";
-import { hasSettingsTabAccess } from "@/utils/rolePermissions";
+import { hasSettingsTabAccess, getRoleDisplayName } from "@/utils/rolePermissions";
 import ErpTestComponent from "@/components/ErpTestComponent";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
@@ -300,7 +300,7 @@ function UserManagement() {
                         <div className="flex flex-wrap gap-1">
                           {(user.roles || (user.role ? [user.role] : [])).map((role, idx) => (
                             <span key={idx} className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-medium border ${roleColors[role] || roleColors['user']}`}>
-                              {role}
+                              {getRoleDisplayName(role)}
                             </span>
                           ))}
                         </div>

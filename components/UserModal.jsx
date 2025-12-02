@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, User, Mail, Lock, Shield, Check, Sparkles } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
+import { getRoleDisplayName } from "@/utils/rolePermissions";
 
 export default function UserModal({ open, onClose, editingUser = null, onSuccess }) {
   const [formData, setFormData] = useState({
@@ -304,7 +305,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                 
                 {/* Role Badges Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {["SuperAdmin", "Admin", "QC", "Production", "Painting", "Packing", "CNC", "Drawing"].map((role) => {
+                  {["SuperAdmin", "Admin", "QC", "DashboardView", "Production", "Painting", "Packing", "CNC", "Drawing"].map((role) => {
                     const isSelected = formData.roles.includes(role);
                     return (
                       <button
@@ -322,7 +323,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                             <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" />
                           </div>
                         )}
-                        <div className="font-medium text-xs pr-6">{role}</div>
+                        <div className="font-medium text-xs pr-6">{getRoleDisplayName(role)}</div>
                       </button>
                     );
                   })}
@@ -350,7 +351,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                         key={role}
                         className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium border ${roleColors[role]}`}
                       >
-                        {role}
+                        {getRoleDisplayName(role)}
                         <button
                           type="button"
                           onClick={() => toggleRole(role)}

@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { getRoleDisplayName } from "@/utils/rolePermissions";
 
 export default function DebugUserRole() {
   const { user } = useAuth();
@@ -55,7 +56,7 @@ export default function DebugUserRole() {
             <p><strong>Current Roles:</strong> 
               <div className="flex flex-wrap gap-1 mt-1">
                 {(user?.roles || (user?.role ? [user.role] : [])).map((role, idx) => (
-                  <span key={idx} className="font-mono bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{role}</span>
+                  <span key={idx} className="font-mono bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded">{getRoleDisplayName(role)}</span>
                 ))}
               </div>
             </p>

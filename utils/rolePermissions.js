@@ -24,6 +24,10 @@ export const ROLE_PERMISSIONS = {
     pages: ['qc', 'settings'],
     settingsTabs: ['profile', 'security']
   },
+  DashboardView: {
+    pages: ['dashboard'],
+    settingsTabs: ['profile', 'security']
+  },
   Admin: {
     pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security', 'users']
@@ -62,6 +66,9 @@ const normalizeRoleName = (role) => {
       return 'Packing';
     case 'qc':
       return 'QC';
+    case 'dashboardview':
+    case 'dashboard(view)':
+      return 'DashboardView';
     default:
       return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   }
@@ -168,7 +175,7 @@ export const getAllowedSettingsTabs = (userRoles) => {
 };
 
 // Helper function to check if user can perform actions (not just view)
-// QC and CNC roles can view pages but cannot perform actions
+// QC, CNC, and DashboardView roles can view pages but cannot perform actions
 export const canPerformActions = (userRoles) => {
   const roles = normalizeRoles(userRoles);
   
@@ -176,15 +183,15 @@ export const canPerformActions = (userRoles) => {
     return false;
   }
   
-  // If user has any role that can perform actions (not QC or CNC), return true
+  // If user has any role that can perform actions (not QC, CNC, or DashboardView), return true
   for (const role of roles) {
     const normalizedRole = normalizeRoleName(role);
     if (!normalizedRole) {
       continue;
     }
     
-    // QC and CNC roles can only view, not perform actions
-    if (normalizedRole === 'QC' || normalizedRole === 'CNC') {
+    // QC, CNC, and DashboardView roles can only view, not perform actions
+    if (normalizedRole === 'QC' || normalizedRole === 'CNC' || normalizedRole === 'DashboardView') {
       continue;
     }
     
@@ -192,6 +199,21 @@ export const canPerformActions = (userRoles) => {
     return true;
   }
   
-  // If all roles are QC or CNC, cannot perform actions
+  // If all roles are QC, CNC, or DashboardView, cannot perform actions
   return false;
+};
+
+// Helper function to get display name for role (for UI display)
+export const getRoleDisplayName = (role) => {
+  if (!role) return '';
+  const roleStr = String(role);
+  
+  // Map internal role names to display names
+  const displayNames = {
+    'DashboardView': 'Dashboard (View)',
+    'dashboardview': 'Dashboard (View)',
+    'dashboard(view)': 'Dashboard (View)',
+  };
+  
+  return displayNames[roleStr] || roleStr;
 };
