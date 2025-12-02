@@ -96,7 +96,7 @@ export const isValidEmail = (email) => {
  * @returns {object} - Strength analysis
  */
 export const checkPasswordStrength = (password) => {
-  const minLength = 6;
+  const minLength = 4;
   const hasUpperCase = /[A-Z]/.test(password);
   const hasLowerCase = /[a-z]/.test(password);
   const hasNumbers = /\d/.test(password);

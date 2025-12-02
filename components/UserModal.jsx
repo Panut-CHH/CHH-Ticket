@@ -15,6 +15,20 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
 
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (open) {
+      // เลื่อน viewport ไปด้านบนสุด เพื่อให้ modal อยู่ในมุมมองกลางจอเสมอ
+      window.scrollTo({ top: 0, behavior: "auto" });
+
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = originalOverflow;
+      };
+    }
+  }, [open]);
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (open) {
@@ -54,8 +68,8 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
     
     if (!editingUser && !formData.password.trim()) {
       newErrors.password = "กรุณากรอกรหัสผ่าน";
-    } else if (formData.password && formData.password.length < 6) {
-      newErrors.password = "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร";
+    } else if (formData.password && formData.password.length < 4) {
+      newErrors.password = "รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร";
     }
     
     if (!formData.roles || formData.roles.length === 0) {
@@ -281,7 +295,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                       ? 'border-red-400 dark:border-red-500 focus:border-red-500 dark:focus:border-red-400 focus:ring-2 focus:ring-red-100 dark:focus:ring-red-900/30' 
                       : 'border-gray-200 dark:border-slate-700 focus:border-amber-400 dark:focus:border-amber-500 focus:ring-2 focus:ring-amber-100 dark:focus:ring-amber-900/30'
                   } focus:outline-none focus:bg-white dark:focus:bg-slate-800`}
-                  placeholder={editingUser ? "กรอกรหัสผ่านใหม่ (ถ้าต้องการเปลี่ยน)" : "กรอกรหัสผ่าน (อย่างน้อย 6 ตัวอักษร)"}
+                  placeholder={editingUser ? "กรอกรหัสผ่านใหม่ (ถ้าต้องการเปลี่ยน)" : "กรอกรหัสผ่าน (อย่างน้อย 4 ตัวอักษร)"}
                 />
                 {errors.password && (
                   <p className="text-red-500 dark:text-red-400 text-xs sm:text-sm mt-1 flex items-center gap-1">
