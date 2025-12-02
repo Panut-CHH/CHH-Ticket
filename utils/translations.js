@@ -220,7 +220,7 @@ export const translations = {
     allOpenTickets: "ตั๋วทั้งหมดที่เปิด",
     items: "รายการ",
     highPriority: "ความสำคัญสูง",
-    rawMaterialsNotPaid: "ยังไม่ได้จ่ายวัตถุดิบ",
+    rawMaterialsNotPaid: "ยังไม่ได้กรอกข้อมูล",
     dueDate: "กำหนดส่ง",
     urgentWork: "งานเร่งด่วน",
     editTicket: "แก้ไข",

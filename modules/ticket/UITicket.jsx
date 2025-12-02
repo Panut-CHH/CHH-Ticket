@@ -1296,7 +1296,7 @@ export default function UITicket() {
                   return !actualHasBom ? (
                     <span className="inline-flex items-center gap-1 text-red-600 dark:text-red-400">
                       <AlertCircle className="w-3 h-3" />
-                      <span>{language === 'th' ? 'ยังไม่ได้จ่ายวัตถุดิบ' : 'Raw materials not paid'}</span>
+                      <span>{language === 'th' ? 'ยังไม่ได้กรอกข้อมูล' : 'Information not filled in'}</span>
                     </span>
                   ) : null;
                 })()}
