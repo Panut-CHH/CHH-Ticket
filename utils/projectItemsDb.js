@@ -107,6 +107,36 @@ export async function deleteProjectItem(itemId) {
 }
 
 /**
+ * อัปเดต Item Code (รวมถึง product code และ item_code)
+ */
+export async function updateProjectItem(itemId, updateData) {
+  try {
+    const { data, error } = await db
+      .from('project_items')
+      .update({
+        item_code: updateData.itemCode,
+        item_type: updateData.itemType,
+        item_product_code: updateData.itemProductCode,
+        item_unit: updateData.itemUnit,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', itemId)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating project item:', error);
+      return { success: false, error: error.message, data: null };
+    }
+
+    return { success: true, data: data, error: null };
+  } catch (error) {
+    console.error('Error updating project item:', error);
+    return { success: false, error: error.message, data: null };
+  }
+}
+
+/**
  * นับจำนวนไฟล์ในแต่ละ Item Code
  */
 export async function getProjectItemWithFileCount(projectId) {

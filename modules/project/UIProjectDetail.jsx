@@ -20,7 +20,10 @@ import {
   Eye,
   Trash2,
   AlertCircle,
-  X
+  X,
+  Edit,
+  Save,
+  Pencil
 } from "lucide-react";
 import Modal from "@/components/Modal";
 
@@ -40,8 +43,11 @@ export default function UIProjectDetail({ projectId }) {
   const [showDeleteItemModal, setShowDeleteItemModal] = useState(false);
   const [showDeleteFileModal, setShowDeleteFileModal] = useState(false);
   const [showViewFileModal, setShowViewFileModal] = useState(false);
+  const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [showConfirmUpdateModal, setShowConfirmUpdateModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [editingItem, setEditingItem] = useState(null);
   
   // Form states
   const [itemForm, setItemForm] = useState({
@@ -49,6 +55,18 @@ export default function UIProjectDetail({ projectId }) {
     itemProductCode: "",
     itemUnit: "D"
   });
+  
+  // Edit form states
+  const [editForm, setEditForm] = useState({
+    itemType: "FG",
+    itemProductCode: "",
+    itemUnit: "D"
+  });
+  
+  // Preview update states
+  const [previewUpdate, setPreviewUpdate] = useState(null);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   
   const [uploadingItem, setUploadingItem] = useState(null);
   const [uploadFile, setUploadFile] = useState(null);
@@ -114,6 +132,95 @@ export default function UIProjectDetail({ projectId }) {
       return "";
     }
     return `${itemForm.itemType}-${project.project_number}-${itemForm.itemProductCode}-${itemForm.itemUnit}`;
+  };
+
+  // Generate item code preview for edit form
+  const generateEditItemCode = () => {
+    if (!project?.project_number || !editForm.itemType || !editForm.itemProductCode || !editForm.itemUnit) {
+      return "";
+    }
+    return `${editForm.itemType}-${project.project_number}-${editForm.itemProductCode}-${editForm.itemUnit}`;
+  };
+
+  // Handle open edit modal
+  const handleOpenEditModal = (item) => {
+    setEditingItem(item);
+    setEditForm({
+      itemType: item.item_type || "FG",
+      itemProductCode: item.item_product_code || "",
+      itemUnit: item.item_unit || "D"
+    });
+    setPreviewUpdate(null);
+    setShowEditItemModal(true);
+  };
+
+  // Preview update impact
+  const handlePreviewUpdate = async () => {
+    if (!editingItem || !editForm.itemProductCode) return;
+
+    setIsLoadingPreview(true);
+    try {
+      const params = new URLSearchParams({
+        itemType: editForm.itemType,
+        itemProductCode: editForm.itemProductCode,
+        itemUnit: editForm.itemUnit
+      });
+      
+      const response = await fetch(`/api/projects/items/${editingItem.id}?${params}`);
+      const result = await response.json();
+
+      if (result.success) {
+        setPreviewUpdate(result.data);
+        // ถ้า item_code เปลี่ยน ให้แสดง confirmation dialog
+        if (result.data.willChange) {
+          setShowEditItemModal(false);
+          setShowConfirmUpdateModal(true);
+        } else {
+          // ถ้า item_code ไม่เปลี่ยน บันทึกได้เลย
+          handleUpdateItemCode();
+        }
+      }
+    } catch (error) {
+      console.error('Error previewing update:', error);
+      alert(language === 'th' ? 'เกิดข้อผิดพลาดในการตรวจสอบ' : 'Error checking impact');
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  // Handle update item code
+  const handleUpdateItemCode = async () => {
+    if (!editingItem || !editForm.itemProductCode) return;
+
+    setIsUpdating(true);
+    try {
+      const response = await fetch(`/api/projects/items/${editingItem.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm)
+      });
+
+      const result = await response.json();
+
+      if (result.success) {
+        await loadItemCodes();
+        setShowEditItemModal(false);
+        setShowConfirmUpdateModal(false);
+        setEditingItem(null);
+        setPreviewUpdate(null);
+        alert(language === 'th' 
+          ? `อัปเดตสำเร็จ${result.data.ticketsUpdated > 0 ? ` (อัปเดต ${result.data.ticketsUpdated} tickets)` : ''}`
+          : `Update successful${result.data.ticketsUpdated > 0 ? ` (updated ${result.data.ticketsUpdated} tickets)` : ''}`
+        );
+      } else {
+        alert(result.error || (language === 'th' ? 'อัปเดตล้มเหลว' : 'Update failed'));
+      }
+    } catch (error) {
+      console.error('Error updating item code:', error);
+      alert(language === 'th' ? 'เกิดข้อผิดพลาด' : 'Error occurred');
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
   // Handle add item code
@@ -326,7 +433,7 @@ export default function UIProjectDetail({ projectId }) {
                 >
                 {/* Item Code Header - clickable anywhere to expand/collapse */}
                 <div
-                  className="p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/10 dark:to-blue-900/10 border-b border-slate-200 dark:border-slate-700 cursor-pointer select-none"
+                  className="group p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/10 dark:to-blue-900/10 border-b border-slate-200 dark:border-slate-700 cursor-pointer select-none"
                   onClick={() => toggleExpand(item.id)}
                   role="button"
                   aria-expanded={!!expandedItems[item.id]}
@@ -345,9 +452,21 @@ export default function UIProjectDetail({ projectId }) {
                 </button>
                       <FolderDown className="w-6 h-6 text-emerald-600" />
                       <div className="flex-1">
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
-                          {item.item_code}
-                        </h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                            {item.item_code}
+                          </h3>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEditModal(item);
+                            }}
+                            className="opacity-60 hover:opacity-100 transition-opacity p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded"
+                            title={language === 'th' ? 'แก้ไข' : 'Edit'}
+                          >
+                            <Pencil className="w-3 h-3 text-gray-500 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400" />
+                          </button>
+                        </div>
                         <p className="text-xs text-gray-600 dark:text-gray-400">
                           {t(`itemType${item.item_type}`, language)} | {t(`unit${item.item_unit}`, language)} 
                           <span className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-700 px-2 py-1 rounded ml-2">
@@ -713,6 +832,256 @@ export default function UIProjectDetail({ projectId }) {
               {t('delete', language)}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Modal: Edit Item Code */}
+      <Modal
+        open={showEditItemModal}
+        onClose={() => {
+          setShowEditItemModal(false);
+          setEditingItem(null);
+          setPreviewUpdate(null);
+        }}
+        title={language === 'th' ? 'แก้ไขรหัสสินค้า' : 'Edit Product Code'}
+      >
+        <div className="p-6">
+          {editingItem && (
+            <>
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('itemType', language)} *
+                  </label>
+                  <select
+                    value={editForm.itemType}
+                    onChange={(e) => {
+                      setEditForm(prev => ({ ...prev, itemType: e.target.value }));
+                      setPreviewUpdate(null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    <option value="FG">{t('itemTypeFG', language)}</option>
+                    <option value="SM">{t('itemTypeSM', language)}</option>
+                    <option value="WP">{t('itemTypeWP', language)}</option>
+                    <option value="EX">{t('itemTypeEX', language)}</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('productCode', language)} *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="D01"
+                    value={editForm.itemProductCode}
+                    onChange={(e) => {
+                      setEditForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }));
+                      setPreviewUpdate(null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase"
+                    style={{ textTransform: 'uppercase' }}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    {t('itemUnit', language)} *
+                  </label>
+                  <select
+                    value={editForm.itemUnit}
+                    onChange={(e) => {
+                      setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
+                      setPreviewUpdate(null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  >
+                    <option value="D">{t('unitD', language)}</option>
+                    <option value="F">{t('unitF', language)}</option>
+                    <option value="S">{t('unitS', language)}</option>
+                    <option value="P">{t('unitP', language)}</option>
+                    <option value="W">{t('unitW', language)}</option>
+                    <option value="M">{t('unitM', language)}</option>
+                    <option value="O">{t('unitO', language)}</option>
+                  </select>
+                </div>
+
+                {/* Preview */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1">
+                    {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
+                  </span>
+                  <div className="text-xl font-bold text-blue-600 dark:text-blue-400 font-mono">
+                    {generateEditItemCode() || <span className="text-gray-400 text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
+                  </div>
+                  {editingItem?.item_code && generateEditItemCode() && editingItem.item_code !== generateEditItemCode() && (
+                    <div className="mt-2 pt-2 border-t border-blue-300 dark:border-blue-700">
+                      <span className="text-xs text-blue-700 dark:text-blue-300">
+                        {language === 'th' ? 'รหัสเดิม' : 'Old Code'}: <span className="font-mono">{editingItem.item_code}</span>
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Show preview update info if available */}
+                {previewUpdate && previewUpdate.willChange && (
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1">
+                          {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบ' : 'This change will affect'}
+                        </p>
+                        {previewUpdate.affectedTicketsCount > 0 && (
+                          <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                            {language === 'th' 
+                              ? `• ${previewUpdate.affectedTicketsCount} tickets จะถูกอัปเดตให้ใช้รหัสใหม่`
+                              : `• ${previewUpdate.affectedTicketsCount} tickets will be updated to use the new code`
+                            }
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowEditItemModal(false);
+                    setEditingItem(null);
+                    setPreviewUpdate(null);
+                  }}
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                >
+                  {t('cancel', language)}
+                </button>
+                <button
+                  onClick={async () => {
+                    const newItemCode = generateEditItemCode();
+                    // ถ้า item_code เปลี่ยน ต้องตรวจสอบผลกระทบก่อน
+                    if (newItemCode && editingItem.item_code !== newItemCode) {
+                      await handlePreviewUpdate();
+                    } else {
+                      // ถ้าไม่เปลี่ยน บันทึกได้เลย
+                      await handleUpdateItemCode();
+                    }
+                  }}
+                  disabled={!editForm.itemProductCode || isUpdating || isLoadingPreview}
+                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isUpdating || isLoadingPreview ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {isLoadingPreview ? (language === 'th' ? 'กำลังตรวจสอบ...' : 'Checking...') : (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {t('save', language)}
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* Modal: Confirm Update (เมื่อ item_code จะเปลี่ยน) */}
+      <Modal
+        open={showConfirmUpdateModal}
+        onClose={() => {
+          setShowConfirmUpdateModal(false);
+          setShowEditItemModal(true);
+        }}
+        title={language === 'th' ? 'ยืนยันการเปลี่ยนแปลงรหัสสินค้า' : 'Confirm Item Code Change'}
+      >
+        <div className="p-6">
+          {previewUpdate && (
+            <>
+              <div className="mb-6">
+                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800 mb-4">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-2">
+                        {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบต่อระบบ' : 'This change will affect the system'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      {language === 'th' ? 'รหัสสินค้าเดิม' : 'Old Item Code'}:
+                    </p>
+                    <p className="text-lg font-mono text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-slate-700 p-2 rounded">
+                      {previewUpdate.oldItemCode}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
+                    </p>
+                    <p className="text-lg font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded">
+                      {previewUpdate.newItemCode}
+                    </p>
+                  </div>
+
+                  {previewUpdate.affectedTicketsCount > 0 && (
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        {language === 'th' ? 'Tickets ที่จะถูกอัปเดต' : 'Tickets to be updated'}:
+                      </p>
+                      <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                        {previewUpdate.affectedTicketsCount} {language === 'th' ? 'tickets' : 'tickets'}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {language === 'th' 
+                          ? 'Tickets ทั้งหมดที่ใช้รหัสเดิมจะถูกอัปเดตให้ใช้รหัสใหม่อัตโนมัติ'
+                          : 'All tickets using the old code will be automatically updated to use the new code'
+                        }
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => {
+                    setShowConfirmUpdateModal(false);
+                    setShowEditItemModal(true);
+                  }}
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                >
+                  {t('cancel', language)}
+                </button>
+                <button
+                  onClick={handleUpdateItemCode}
+                  disabled={isUpdating}
+                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {isUpdating ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      {language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      {language === 'th' ? 'ยืนยันและบันทึก' : 'Confirm & Save'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </>
+          )}
         </div>
       </Modal>
 
