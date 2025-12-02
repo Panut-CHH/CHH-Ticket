@@ -223,10 +223,10 @@ export default function UIProject() {
     }
   };
 
-  // ตรวจสอบสิทธิ์สร้างโปรเจ็ค: SuperAdmin, Admin, Drawing (ไม่สนตัวพิมพ์ใหญ่/เล็ก)
+  // ตรวจสอบสิทธิ์สร้างโปรเจ็ค: SuperAdmin, Admin, Drawing, CNC (ไม่สนตัวพิมพ์ใหญ่/เล็ก)
   const normalizedRole = (user?.role || "").toString();
   const roleKey = normalizedRole.trim().toLowerCase();
-  const canCreateProject = ["superadmin", "admin", "drawing"].includes(roleKey);
+  const canCreateProject = ["superadmin", "admin", "drawing", "cnc"].includes(roleKey);
 
   // ฟิลเตอร์โปรเจ็ค (ค้นหาตาม Project Code / ชื่อไฟล์ / Description)
   const filteredProjects = projects.filter(project => {
@@ -611,7 +611,7 @@ export default function UIProject() {
               </div>
             </div>
 
-            {/* Upload Button - เฉพาะ Role SuperAdmin/Admin/Drawing */}
+            {/* Upload Button - เฉพาะ Role SuperAdmin/Admin/Drawing/CNC */}
             {canCreateProject ? (
               <button
                 onClick={() => setShowUploadModal(true)}
@@ -622,7 +622,7 @@ export default function UIProject() {
               </button>
             ) : (
               <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded-lg">
-                {language === 'th' ? 'เฉพาะ SuperAdmin / Admin / Drawing เท่านั้น' : 'Only SuperAdmin / Admin / Drawing can create'} (Role: {normalizedRole || 'none'})
+                {language === 'th' ? 'เฉพาะ SuperAdmin / Admin / Drawing / CNC เท่านั้น' : 'Only SuperAdmin / Admin / Drawing / CNC can create'} (Role: {normalizedRole || 'none'})
               </div>
             )}
           </div>
