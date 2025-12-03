@@ -36,7 +36,7 @@ export default function UIProject() {
   const { language } = useLanguage();
   const [projects, setProjects] = useState(getInitialProjects());
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
@@ -90,6 +90,7 @@ export default function UIProject() {
             filePath: project.file_path,
             fileUrl: project.file_url,
             uploadedAt: project.uploaded_at,
+            created_at: project.created_at,
             uploadedBy: userName || project.uploaded_by || t('unknown', language),
             description: project.description,
             syncStatus: project.sync_status,
@@ -228,21 +229,53 @@ export default function UIProject() {
   const normalizedRoles = userRoles.map(r => String(r).trim().toLowerCase());
   const canCreateProject = normalizedRoles.some(r => ["superadmin", "admin", "drawing", "cnc"].includes(r));
 
-  // ฟิลเตอร์โปรเจ็ค (ค้นหาตาม Project Code / ชื่อไฟล์ / Description)
+  // Helper function to check if date is within range
+  const isDateInRange = (date, range) => {
+    if (!date) return false;
+    const projectDate = new Date(date);
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(todayStart);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const monthAgo = new Date(todayStart);
+    monthAgo.setDate(monthAgo.getDate() - 30);
+
+    switch (range) {
+      case "today":
+        return projectDate >= todayStart;
+      case "week":
+        return projectDate >= weekAgo;
+      case "month":
+        return projectDate >= monthAgo;
+      case "older":
+        return projectDate < monthAgo;
+      default:
+        return true;
+    }
+  };
+
+  // ฟิลเตอร์โปรเจ็ค (ค้นหาตาม Project Code / ชื่อไฟล์ / Description และวันที่)
   const filteredProjects = projects.filter(project => {
+    // Search filter
     const q = searchTerm.toLowerCase();
     const matchesSearch = (project.projectCode || "").toLowerCase().includes(q) ||
                           (project.fileName || "").toLowerCase().includes(q) ||
-                          (project.description || "").toLowerCase().includes(q);
-    return matchesSearch;
+                          (project.description || "").toLowerCase().includes(q) ||
+                          (project.projectName || "").toLowerCase().includes(q) ||
+                          (project.itemCode || "").toLowerCase().includes(q);
+    
+    // Date filter
+    const matchesDate = dateFilter === "all" || isDateInRange(project.uploadedAt || project.created_at, dateFilter);
+    
+    return matchesSearch && matchesDate;
   });
 
-  // สถิติโปรเจ็ค
+  // สถิติโปรเจ็คตามวันที่
   const stats = {
     total: projects.length,
-    active: projects.filter(p => p.status === "active").length,
-    completed: projects.filter(p => p.status === "completed").length,
-    pending: projects.filter(p => p.status === "pending").length
+    today: projects.filter(p => isDateInRange(p.uploadedAt || p.created_at, "today")).length,
+    thisWeek: projects.filter(p => isDateInRange(p.uploadedAt || p.created_at, "week")).length,
+    thisMonth: projects.filter(p => isDateInRange(p.uploadedAt || p.created_at, "month")).length
   };
 
   // ป้ายแสดงสถานะซิ้งค์ ERP (เหลือ 2 สถานะ: success/failed)
@@ -408,6 +441,7 @@ export default function UIProject() {
           filePath: result.data.file_path,
           fileUrl: result.data.file_url,
           uploadedAt: result.data.uploaded_at,
+          created_at: result.data.created_at,
           uploadedBy: result.data.uploaded_by,
           description: result.data.description,
           syncStatus: result.data.sync_status,
@@ -476,53 +510,55 @@ export default function UIProject() {
 
   return (
     <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900">
-      <div className="max-w-7xl mx-auto px-4 py-6 animate-fadeInUp">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-4 sm:py-6 animate-fadeInUp container-safe">
         {/* Header */}
-        <div className="mb-8 animate-fadeInDown">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-md" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
+        <div className="mb-6 sm:mb-8 animate-fadeInDown">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center text-white shadow-md flex-shrink-0" style={{ background: "linear-gradient(135deg,#22d3a0,#1cb890)" }}>
               <FolderOpen className="w-5 h-5" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{t('manageProjects', language)}</h1>
-              <p className="text-gray-600 dark:text-gray-400">{t('uploadBlueprintDesc', language)}</p>
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">{t('manageProjects', language)}</h1>
+              <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400">{t('uploadBlueprintDesc', language)}</p>
             </div>
             {/* Removed Dashboard button */}
           </div>
 
           {/* ERP Connection Status */}
           {erpConnectionStatus && (
-            <div className="mb-6">
-              <div className={`p-4 rounded-lg border ${
+            <div className="mb-4 sm:mb-6">
+              <div className={`p-3 sm:p-4 rounded-lg border ${
                 erpConnectionStatus.success 
                   ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
                   : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
               }`}>
-                <div className="flex items-center gap-2">
-                  {erpConnectionStatus.success ? (
-                    <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
-                  ) : (
-                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400" />
-                  )}
-                  <span className={`font-medium ${
-                    erpConnectionStatus.success 
-                      ? 'text-green-800 dark:text-green-200' 
-                      : 'text-red-800 dark:text-red-200'
-                  }`}>
-                    {erpConnectionStatus.success 
-                      ? (language === 'th' ? 'เชื่อมต่อ ERP สำเร็จ' : 'ERP Connected Successfully')
-                      : (language === 'th' ? 'ไม่สามารถเชื่อมต่อ ERP ได้' : 'ERP Connection Failed')
-                    }
-                  </span>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0">
+                    {erpConnectionStatus.success ? (
+                      <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0" />
+                    )}
+                    <span className={`font-medium text-sm sm:text-base break-words ${
+                      erpConnectionStatus.success 
+                        ? 'text-green-800 dark:text-green-200' 
+                        : 'text-red-800 dark:text-red-200'
+                    }`}>
+                      {erpConnectionStatus.success 
+                        ? (language === 'th' ? 'เชื่อมต่อ ERP สำเร็จ' : 'ERP Connected Successfully')
+                        : (language === 'th' ? 'ไม่สามารถเชื่อมต่อ ERP ได้' : 'ERP Connection Failed')
+                      }
+                    </span>
+                  </div>
                   <button
                     onClick={checkErpConnection}
-                    className="ml-auto text-xs px-2 py-1 bg-white dark:bg-slate-700 rounded border hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors"
+                    className="text-xs sm:text-sm px-2 py-1 bg-white dark:bg-slate-700 rounded border hover:bg-gray-50 dark:hover:bg-slate-600 transition-colors sm:ml-auto w-full sm:w-auto"
                   >
                     {language === 'th' ? 'ตรวจสอบใหม่' : 'Refresh'}
                   </button>
                 </div>
                 {erpConnectionStatus.error && (
-                  <p className="text-sm text-red-600 dark:text-red-400 mt-1">
+                  <p className="text-xs sm:text-sm text-red-600 dark:text-red-400 mt-2 break-words">
                     {erpConnectionStatus.error}
                   </p>
                 )}
@@ -531,48 +567,48 @@ export default function UIProject() {
           )}
 
           {/* Stats Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.1s' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+          <div className="project-stats-grid grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.1s' }}>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
                   <FolderOpen className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.total}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{t('totalProjects', language)}</div>
+                <div className="min-w-0">
+                  <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.total}</div>
+                  <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 break-words">{t('totalProjects', language)}</div>
                 </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.2s' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                  <CheckCircle className="w-4 h-4 text-green-600 dark:text-green-400" />
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.2s' }}>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/20 flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                 </div>
-                <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.active}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{t('inProgressProjects', language)}</div>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.3s' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
-                  <CheckCircle className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                </div>
-                <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.completed}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{t('completedProjects', language)}</div>
+                <div className="min-w-0">
+                  <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.today}</div>
+                  <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 break-words">{t('projectsToday', language)}</div>
                 </div>
               </div>
             </div>
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.4s' }}>
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.3s' }}>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                 </div>
-                <div>
-                  <div className="text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.pending}</div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">{t('pendingProjects', language)}</div>
+                <div className="min-w-0">
+                  <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.thisWeek}</div>
+                  <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 break-words">{t('projectsThisWeek', language)}</div>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-3 sm:p-4 border border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.4s' }}>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
+                  <Calendar className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{stats.thisMonth}</div>
+                  <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 break-words">{t('projectsThisMonth', language)}</div>
                 </div>
               </div>
             </div>
@@ -580,33 +616,34 @@ export default function UIProject() {
         </div>
 
         {/* Controls */}
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 mb-6 animate-fadeInUpSmall" style={{ animationDelay: '0.5s' }}>
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 mb-6 animate-fadeInUpSmall" style={{ animationDelay: '0.5s' }}>
+          <div className="flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row gap-4 flex-1">
               {/* Search */}
-              <div className="relative flex-1 max-w-md">
+              <div className="relative flex-1 w-full">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
                   type="text"
                   placeholder={t('searchProject', language)}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                 />
               </div>
 
               {/* Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-400" />
+              <div className="flex items-center gap-2 w-full sm:w-auto sm:flex-shrink-0">
+                <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
                 <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="flex-1 sm:flex-none sm:min-w-[140px] px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                 >
-                  <option value="all">{t('allStatus', language)}</option>
-                  <option value="active">{t('inProgressProjects', language)}</option>
-                  <option value="completed">{t('completedProjects', language)}</option>
-                  <option value="pending">{t('pendingProjects', language)}</option>
+                  <option value="all">{t('allDates', language)}</option>
+                  <option value="today">{t('filterToday', language)}</option>
+                  <option value="week">{t('filterThisWeek', language)}</option>
+                  <option value="month">{t('filterThisMonth', language)}</option>
+                  <option value="older">{t('filterOlder', language)}</option>
                 </select>
               </div>
             </div>
@@ -615,14 +652,14 @@ export default function UIProject() {
             {canCreateProject ? (
               <button
                 onClick={() => setShowUploadModal(true)}
-                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all duration-300 hover:scale-105 hover:shadow-lg flex items-center gap-2"
+                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-all duration-300 hover:scale-105 hover:shadow-lg flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base"
               >
                 <Upload className="w-4 h-4" />
                 {t('createProject', language)}
               </button>
             ) : (
-              <div className="px-4 py-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded-lg">
-                {language === 'th' ? 'เฉพาะ SuperAdmin / Admin / Drawing / CNC เท่านั้น' : 'Only SuperAdmin / Admin / Drawing / CNC can create'} (Role: {normalizedRole || 'none'})
+              <div className="px-4 py-2 text-xs sm:text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-slate-700 rounded-lg break-words">
+                {language === 'th' ? 'เฉพาะ SuperAdmin / Admin / Drawing / CNC เท่านั้น' : 'Only SuperAdmin / Admin / Drawing / CNC can create'} (Role: {normalizedRoles.join(', ') || user?.role || 'none'})
               </div>
             )}
           </div>
@@ -630,56 +667,60 @@ export default function UIProject() {
 
         {/* Projects List */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fadeInUpSmall" style={{ animationDelay: '0.6s' }}>
-          <div className="p-6 border-b border-slate-200 dark:border-slate-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('projectList', language)} ({filteredProjects.length})</h2>
+          <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700">
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">{t('projectList', language)} ({filteredProjects.length})</h2>
           </div>
           
           <div className="divide-y divide-slate-200 dark:divide-slate-700">
             {filteredProjects.length === 0 ? (
-              <div className="p-8 text-center text-gray-500 dark:text-gray-400">
-                <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>{t('noProjectsFound', language)}</p>
+              <div className="p-6 sm:p-8 text-center text-gray-500 dark:text-gray-400">
+                <FolderOpen className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 opacity-50" />
+                <p className="text-sm sm:text-base">{t('noProjectsFound', language)}</p>
               </div>
             ) : (
               filteredProjects.map((project, index) => (
                 <div
                   key={project.id}
-                  className="group p-6 transition-colors animate-fadeInUpSmall border-l-4 border-emerald-500/60 bg-gradient-to-r from-emerald-50/60 to-blue-50/40 dark:from-emerald-900/10 dark:to-blue-900/10 hover:from-emerald-100/60 hover:to-blue-100/40 dark:hover:from-emerald-900/20 dark:hover:to-blue-900/20"
+                  className="group p-4 sm:p-6 transition-colors animate-fadeInUpSmall border-l-4 border-emerald-500/60 bg-gradient-to-r from-emerald-50/60 to-blue-50/40 dark:from-emerald-900/10 dark:to-blue-900/10 hover:from-emerald-100/60 hover:to-blue-100/40 dark:hover:from-emerald-900/20 dark:hover:to-blue-900/20"
                   style={{ animationDelay: `${0.7 + index * 0.1}s` }}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+                  <div className="project-list-item flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+                    <div className="flex-1 min-w-0">
                       {/* Header: ชื่อโปรเจ็ค (ใหญ่) + Project Number badge */}
-                      <div className="flex items-center gap-3 mb-2">
-                        <FolderOpen className="w-5 h-5 text-emerald-600" />
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{project.projectName || '-'}</h3>
-                        <span className="px-2 py-0.5 rounded-full text-xs bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border border-slate-200 dark:border-slate-600">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          <FolderOpen className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+                          <h3 className="text-lg sm:text-xl font-bold text-gray-900 dark:text-gray-100 truncate min-w-0">{project.projectName || '-'}</h3>
+                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-xs bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border border-slate-200 dark:border-slate-600 flex-shrink-0 w-fit">
                           PN: {project.projectNumber || '-'}
                         </span>
                       </div>
 
                       {/* Meta */}
-                      <div className="text-xs text-gray-500 dark:text-gray-400">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 break-words">
                         {t('uploadDate', language)}: {new Date(project.uploadedAt).toLocaleString()}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 ml-4">
+                    <div className="flex items-center gap-2 sm:ml-4 flex-shrink-0">
                       <button
                         onClick={() => handleViewProject(project.id)}
-                        className="pressable inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/10 transition-colors text-xs font-medium"
+                        className="pressable inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/10 transition-colors text-xs font-medium w-full sm:w-auto min-h-[44px]"
                         title="เปิดโฟลเดอร์"
                       >
                         <FolderOpen className="w-4 h-4" />
                         <span className="hidden sm:inline">เปิดโฟลเดอร์</span>
+                        <span className="sm:hidden">เปิด</span>
                       </button>
                       <button
                         onClick={() => handleDeleteProject(project)}
-                        className="pressable inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/10 transition-colors text-xs font-medium"
+                        className="pressable inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/10 transition-colors text-xs font-medium w-full sm:w-auto min-h-[44px]"
                         title="ลบโฟลเดอร์"
                       >
                         <Trash2 className="w-4 h-4" />
                         <span className="hidden sm:inline">ลบโฟลเดอร์</span>
+                        <span className="sm:hidden">ลบ</span>
                       </button>
                     </div>
                   </div>
@@ -700,62 +741,62 @@ export default function UIProject() {
         title={t('createProject', language)}
         maxWidth="max-w-3xl"
       >
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
           {/* Error Message */}
           {uploadError && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-              <p className="text-sm text-red-600 dark:text-red-400">
+              <p className="text-xs sm:text-sm text-red-600 dark:text-red-400 break-words">
                 {typeof uploadError === 'object' ? JSON.stringify(uploadError) : uploadError}
               </p>
             </div>
           )}
 
           {/* Section 1: ข้อมูล Project */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center flex-shrink-0">
                 <span className="text-xl">📦</span>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('projectName', language)}</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{t('projectName', language)}</h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {t('projectNumber', language)} *
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="text"
                     placeholder="00215"
                     value={uploadForm.projectNumber}
                     onChange={(e) => setUploadForm(prev => ({ ...prev, projectNumber: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                     disabled={isUploading}
                   />
                   <button
                     type="button"
                     onClick={searchProjectCode}
                     disabled={isUploading || isSearchingProject || !uploadForm.projectNumber.trim()}
-                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
                   >
                     {isSearchingProject ? (
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                     ) : (
                       <Search className="w-4 h-4" />
                     )}
-                    <span className="text-sm">{t('searchProjectCode', language)}</span>
+                    <span className="text-xs sm:text-sm">{t('searchProjectCode', language)}</span>
                   </button>
                 </div>
                 {projectSearchError && (
-                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                  <p className="text-xs text-orange-600 dark:text-orange-400 mt-1 break-words">
                     {typeof projectSearchError === 'object' ? JSON.stringify(projectSearchError) : projectSearchError}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {t('projectName', language)}
                 </label>
                 <input
@@ -763,7 +804,7 @@ export default function UIProject() {
                   placeholder={language === 'th' ? 'ชื่อโครงการ (จาก API)' : 'Project Name (from API)'}
                   value={uploadForm.projectNameFromApi}
                   readOnly
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-700/50 text-gray-600 dark:text-gray-400 cursor-not-allowed"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-700/50 text-gray-600 dark:text-gray-400 cursor-not-allowed text-sm sm:text-base"
                   disabled
                 />
               </div>
@@ -771,23 +812,23 @@ export default function UIProject() {
           </div>
 
           {/* Section 2: สร้างรหัสสินค้า */}
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center">
+              <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center flex-shrink-0">
                 <span className="text-xl">🏷️</span>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{t('itemCode', language)}</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{t('itemCode', language)}</h3>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {t('itemType', language)} *
                 </label>
                 <select
                   value={uploadForm.itemType}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, itemType: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                   disabled={isUploading}
                 >
                   <option value="FG">{t('itemTypeFG', language)}</option>
@@ -798,7 +839,7 @@ export default function UIProject() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {t('productCode', language)} *
                 </label>
                 <input
@@ -806,20 +847,20 @@ export default function UIProject() {
                   placeholder="D01"
                   value={uploadForm.itemProductCode}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase text-sm sm:text-base"
                   disabled={isUploading}
                   style={{ textTransform: 'uppercase' }}
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {t('itemUnit', language)} *
                 </label>
                 <select
                   value={uploadForm.itemUnit}
                   onChange={(e) => setUploadForm(prev => ({ ...prev, itemUnit: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                   disabled={isUploading}
                 >
                   <option value="D">{t('unitD', language)}</option>
@@ -834,13 +875,13 @@ export default function UIProject() {
             </div>
 
             {/* Generated Item Code Preview */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">📋</span>
-                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">{t('generatedItemCode', language)}:</span>
+                <span className="text-lg flex-shrink-0">📋</span>
+                <span className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100 break-words">{t('generatedItemCode', language)}:</span>
               </div>
-              <div className="text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono">
-                {generateItemCode() || <span className="text-gray-400 text-base">{language === 'th' ? 'กรุณากรอกข้อมูลด้านบน' : 'Please fill in the fields above'}</span>}
+              <div className="text-lg sm:text-2xl font-bold text-blue-600 dark:text-blue-400 font-mono break-all">
+                {generateItemCode() || <span className="text-gray-400 text-sm sm:text-base">{language === 'th' ? 'กรุณากรอกข้อมูลด้านบน' : 'Please fill in the fields above'}</span>}
               </div>
             </div>
           </div>
@@ -850,7 +891,7 @@ export default function UIProject() {
           {/* Upload Progress */}
           {isUploading && (
             <div className="mt-4">
-              <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
+              <div className="flex items-center justify-between text-xs sm:text-sm text-gray-600 dark:text-gray-400 mb-2">
                 <span>{t('uploading', language)}...</span>
                 <span>{uploadProgress}%</span>
               </div>
@@ -863,13 +904,13 @@ export default function UIProject() {
             </div>
           )}
 
-          <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
+          <div className="flex flex-col sm:flex-row justify-end gap-3 mt-4 pt-4 border-t border-gray-200 dark:border-slate-700">
             <button
               onClick={() => {
                 setShowUploadModal(false);
                 resetUploadForm();
               }}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base"
               disabled={isUploading}
             >
               {t('cancel', language)}
@@ -877,17 +918,17 @@ export default function UIProject() {
             <button
               onClick={simulateUpload}
               disabled={isUploading || !uploadForm.projectNumber || !uploadForm.itemProductCode}
-              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
             >
               {isUploading ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  {t('save', language)}...
+                  <span className="text-sm sm:text-base">{t('save', language)}...</span>
                 </>
               ) : (
                 <>
                   <Upload className="w-4 h-4" />
-                  {language === 'th' ? 'บันทึก' : 'Save'}
+                  <span className="text-sm sm:text-base">{language === 'th' ? 'บันทึก' : 'Save'}</span>
                 </>
               )}
             </button>
@@ -901,24 +942,24 @@ export default function UIProject() {
         onClose={() => setShowDeleteModal(false)}
         title={t('confirmProjectDeletion', language)}
       >
-        <div className="p-6">
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
-            {t('sureDeleteProject', language)} <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedProject?.name}</span>?
+        <div className="p-4 sm:p-6">
+          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-4 break-words">
+            {t('sureDeleteProject', language)} <span className="font-semibold text-gray-900 dark:text-gray-100">{selectedProject?.name || selectedProject?.projectName}</span>?
           </p>
-          <p className="text-sm text-red-600 dark:text-red-400 mb-6">
+          <p className="text-xs sm:text-sm text-red-600 dark:text-red-400 mb-6">
             {t('actionCannotUndone', language)}
           </p>
           
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
             <button
               onClick={() => setShowDeleteModal(false)}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base"
             >
               {t('cancel', language)}
             </button>
             <button
               onClick={confirmDelete}
-              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors w-full sm:w-auto text-sm sm:text-base"
             >
               {t('delete', language)}
             </button>

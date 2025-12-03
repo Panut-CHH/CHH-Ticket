@@ -355,43 +355,43 @@ export default function UIProjectDetail({ projectId }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900 flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">{t('loading', language)}</div>
+      <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900 flex items-center justify-center px-4">
+        <div className="text-sm sm:text-base text-gray-600 dark:text-gray-400 text-center">{t('loading', language)}</div>
       </div>
     );
   }
 
   if (!project) {
     return (
-      <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900 flex items-center justify-center">
-        <div className="text-gray-600 dark:text-gray-400">{t('notFound', language)}</div>
+      <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900 flex items-center justify-center px-4">
+        <div className="text-sm sm:text-base text-gray-600 dark:text-gray-400 text-center break-words">{t('notFound', language)}</div>
       </div>
     );
   }
 
   return (
     <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900">
-      <div className="max-w-7xl mx-auto px-4 py-6">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-4 sm:py-6 container-safe">
         {/* Header */}
-        <div className="mb-6">
+        <div className="mb-4 sm:mb-6">
             <button
             onClick={() => router.push('/project')}
-            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors mb-4"
+            className="flex items-center gap-2 text-gray-600 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors mb-3 sm:mb-4 text-sm sm:text-base"
             >
             <ArrowLeft className="w-4 h-4" />
             <span>{t('backToProjects', language)}</span>
             </button>
 
-          <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700">
-            <div className="flex items-start justify-between">
-            <div className="flex-1">
-              <div className="flex items-center gap-3 mb-2">
-                  <FolderOpen className="w-8 h-8 text-emerald-600" />
-                <div>
-                    <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+          <div className="bg-white dark:bg-slate-800 rounded-xl p-4 sm:p-6 border border-slate-200 dark:border-slate-700">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 mb-2">
+                  <FolderOpen className="w-6 h-6 sm:w-8 sm:h-8 text-emerald-600 flex-shrink-0" />
+                <div className="min-w-0">
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 break-words">
                       {project.project_name || t('projectName', language)}
                     </h1>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 break-words">
                       Project Number: {project.project_number}
                     </p>
                 </div>
@@ -400,7 +400,7 @@ export default function UIProjectDetail({ projectId }) {
 
             <button
                 onClick={() => setShowAddItemModal(true)}
-                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center gap-2"
+                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
               >
                 <Plus className="w-4 h-4" />
                 {t('addItemCode', language)}
@@ -412,12 +412,12 @@ export default function UIProjectDetail({ projectId }) {
         {/* Item Codes List */}
         <div className="space-y-4">
           {itemCodes.length === 0 ? (
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-12 border border-slate-200 dark:border-slate-700 text-center">
-              <FolderDown className="w-16 h-16 mx-auto mb-4 text-gray-400 opacity-50" />
-              <p className="text-gray-600 dark:text-gray-400 mb-4">{t('noItemCodesYet', language)}</p>
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-8 sm:p-12 border border-slate-200 dark:border-slate-700 text-center">
+              <FolderDown className="w-12 h-12 sm:w-16 sm:h-16 mx-auto mb-4 text-gray-400 opacity-50" />
+              <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-4 break-words">{t('noItemCodesYet', language)}</p>
                     <button 
                 onClick={() => setShowAddItemModal(true)}
-                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors inline-flex items-center gap-2"
+                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors inline-flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
                     >
                 <Plus className="w-4 h-4" />
                 {t('addItemCode', language)}
@@ -433,16 +433,16 @@ export default function UIProjectDetail({ projectId }) {
                 >
                 {/* Item Code Header - clickable anywhere to expand/collapse */}
                 <div
-                  className="group p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/10 dark:to-blue-900/10 border-b border-slate-200 dark:border-slate-700 cursor-pointer select-none"
+                  className="group p-3 sm:p-4 bg-gradient-to-r from-emerald-50 to-blue-50 dark:from-emerald-900/10 dark:to-blue-900/10 border-b border-slate-200 dark:border-slate-700 cursor-pointer select-none"
                   onClick={() => toggleExpand(item.id)}
                   role="button"
                   aria-expanded={!!expandedItems[item.id]}
                 >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3 flex-1">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                 <button
                         onClick={(e) => { e.stopPropagation(); toggleExpand(item.id); }}
-                        className="p-1 hover:bg-white/50 dark:hover:bg-slate-700/50 rounded transition-colors cursor-pointer"
+                        className="p-1 hover:bg-white/50 dark:hover:bg-slate-700/50 rounded transition-colors cursor-pointer flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
                       >
                         {expandedItems[item.id] ? (
                           <ChevronDown className="w-5 h-5 text-gray-600 dark:text-gray-400" />
@@ -450,10 +450,10 @@ export default function UIProjectDetail({ projectId }) {
                           <ChevronRight className="w-5 h-5 text-gray-600 dark:text-gray-400" />
                         )}
                 </button>
-                      <FolderDown className="w-6 h-6 text-emerald-600" />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">
+                      <FolderDown className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h3 className="text-base sm:text-lg font-bold text-gray-900 dark:text-gray-100 break-all">
                             {item.item_code}
                           </h3>
                           <button
@@ -461,32 +461,33 @@ export default function UIProjectDetail({ projectId }) {
                               e.stopPropagation();
                               handleOpenEditModal(item);
                             }}
-                            className="opacity-60 hover:opacity-100 transition-opacity p-0.5 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded"
+                            className="opacity-60 hover:opacity-100 transition-opacity p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900/20 rounded flex-shrink-0 min-h-[32px] min-w-[32px] flex items-center justify-center"
                             title={language === 'th' ? 'แก้ไข' : 'Edit'}
                           >
                             <Pencil className="w-3 h-3 text-gray-500 dark:text-gray-400 hover:text-emerald-600 dark:hover:text-emerald-400" />
                           </button>
                         </div>
-                        <p className="text-xs text-gray-600 dark:text-gray-400">
+                        <p className="text-xs text-gray-600 dark:text-gray-400 break-words mt-1">
                           {t(`itemType${item.item_type}`, language)} | {t(`unit${item.item_unit}`, language)} 
-                          <span className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-700 px-2 py-1 rounded ml-2">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-700 px-2 py-1 rounded ml-2 inline-block">
                             {item.files?.length || 0} {language === 'th' ? 'ไฟล์' : 'files'}
                               </span>
                         </p>
                           </div>
                         </div>
 
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-shrink-0">
                         <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setUploadingItem(item);
                           setShowUploadModal(true);
                         }}
-                        className="pressable px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs flex items-center gap-1"
+                        className="pressable px-3 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs flex items-center justify-center gap-1 min-h-[44px] flex-1 sm:flex-none"
                       >
                         <Upload className="w-3 h-3" />
-                        {t('uploadFile', language)}
+                        <span className="hidden sm:inline">{t('uploadFile', language)}</span>
+                        <span className="sm:hidden">อัปโหลด</span>
                         </button>
                     <button
                         onClick={(e) => {
@@ -494,10 +495,11 @@ export default function UIProjectDetail({ projectId }) {
                           setSelectedItem(item);
                           setShowDeleteItemModal(true);
                         }}
-                        className="pressable px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-xs flex items-center gap-1"
+                        className="pressable px-3 py-1.5 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-xs flex items-center justify-center gap-1 min-h-[44px] flex-1 sm:flex-none"
                       >
                         <Trash2 className="w-3 h-3" />
-                        {t('delete', language)}
+                        <span className="hidden sm:inline">{t('delete', language)}</span>
+                        <span className="sm:hidden">ลบ</span>
                     </button>
                 </div>
               </div>
@@ -505,108 +507,180 @@ export default function UIProjectDetail({ projectId }) {
 
                 {/* Files Table */}
                 {expandedItems[item.id] && (
-                  <div className="p-4">
+                  <div className="p-3 sm:p-4">
                     {item.files && item.files.length > 0 ? (
-                      <div className="overflow-x-auto">
-                        <table className="w-full">
-                          <thead>
-                            <tr className="border-b border-slate-200 dark:border-slate-700">
-                              <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                {language === 'th' ? 'ชื่อไฟล์' : 'File Name'}
-                              </th>
-                              <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                {language === 'th' ? 'ขนาด' : 'Size'}
-                              </th>
-                              <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                {language === 'th' ? 'สถานะ' : 'Status'}
-                              </th>
-                              <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                {language === 'th' ? 'วันที่อัปโหลด' : 'Uploaded'}
-                              </th>
-                              <th className="text-right py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
-                                Actions
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
+                      <div className="overflow-x-auto -mx-3 sm:mx-0">
+                        <div className="min-w-full inline-block align-middle">
+                          {/* Mobile Card View */}
+                          <div className="sm:hidden space-y-3">
                             {item.files.map((file) => (
-                              <tr
+                              <div
                                 key={file.id}
-                                className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                                className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-3 border border-slate-200 dark:border-slate-600"
                               >
-                                <td className="py-3 px-3">
-                    <div className="flex items-center gap-2">
+                                <div className="flex items-start justify-between gap-2 mb-2">
+                                  <div className="flex items-center gap-2 flex-1 min-w-0">
                                     {getFileIcon(file.file_type)}
-                                    <span className="text-sm text-gray-900 dark:text-gray-100 truncate max-w-xs">
+                                    <span className="text-sm text-gray-900 dark:text-gray-100 break-words flex-1">
                                       {file.file_name}
                                     </span>
-                    </div>
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                                    {file.file_size}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3">
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
+                                  <span>{file.file_size}</span>
+                                  <span>•</span>
+                                  <span>{new Date(file.uploaded_at).toLocaleDateString()}</span>
                                   {file.is_current ? (
-                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
                                       ✓ {t('currentFile', language)}
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
                                       {t('oldFile', language)}
                                     </span>
                                   )}
-                                </td>
-                                <td className="py-3 px-3">
-                                  <span className="text-sm text-gray-600 dark:text-gray-400">
-                                    {new Date(file.uploaded_at).toLocaleDateString()}
-                                  </span>
-                                </td>
-                                <td className="py-3 px-3">
-                                  <div className="flex items-center justify-end gap-1">
+                                </div>
+                                <div className="flex items-center gap-2 pt-2 border-t border-slate-200 dark:border-slate-600">
                                   <button
                                     onClick={() => {
-                                        console.log('View button clicked', file);
-                                        setSelectedFile(file);
-                                        setShowViewFileModal(true);
-                                      }}
-                                      className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors cursor-pointer"
-                                      title={language === 'th' ? 'ดู' : 'View'}
+                                      console.log('View button clicked', file);
+                                      setSelectedFile(file);
+                                      setShowViewFileModal(true);
+                                    }}
+                                    className="flex-1 px-3 py-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors cursor-pointer text-xs font-medium flex items-center justify-center gap-1 min-h-[44px]"
+                                    title={language === 'th' ? 'ดู' : 'View'}
                                   >
                                     <Eye className="w-4 h-4" />
+                                    <span>ดู</span>
                                   </button>
                                   <a
                                     href={file.file_url}
-                                      download
-                                      className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors cursor-pointer"
-                                      title={language === 'th' ? 'ดาวน์โหลด' : 'Download'}
+                                    download
+                                    className="flex-1 px-3 py-2 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors cursor-pointer text-xs font-medium flex items-center justify-center gap-1 min-h-[44px]"
+                                    title={language === 'th' ? 'ดาวน์โหลด' : 'Download'}
                                   >
                                     <Download className="w-4 h-4" />
+                                    <span>ดาวน์โหลด</span>
                                   </a>
-                                    {!file.is_current && (
-                                  <button
-                                    onClick={() => {
-                                          setSelectedFile(file);
-                                          setShowDeleteFileModal(true);
-                                        }}
-                                        className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors cursor-pointer"
-                                        title={language === 'th' ? 'ลบ' : 'Delete'}
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                  </button>
-                              )}
-                            </div>
-                                </td>
-                              </tr>
+                                  {!file.is_current && (
+                                    <button
+                                      onClick={() => {
+                                        setSelectedFile(file);
+                                        setShowDeleteFileModal(true);
+                                      }}
+                                      className="flex-1 px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors cursor-pointer text-xs font-medium flex items-center justify-center gap-1 min-h-[44px]"
+                                      title={language === 'th' ? 'ลบ' : 'Delete'}
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      <span>ลบ</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
                             ))}
-                          </tbody>
-                        </table>
                           </div>
+                          
+                          {/* Desktop Table View */}
+                          <table className="hidden sm:table w-full">
+                            <thead>
+                              <tr className="border-b border-slate-200 dark:border-slate-700">
+                                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  {language === 'th' ? 'ชื่อไฟล์' : 'File Name'}
+                                </th>
+                                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  {language === 'th' ? 'ขนาด' : 'Size'}
+                                </th>
+                                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  {language === 'th' ? 'สถานะ' : 'Status'}
+                                </th>
+                                <th className="text-left py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  {language === 'th' ? 'วันที่อัปโหลด' : 'Uploaded'}
+                                </th>
+                                <th className="text-right py-2 px-3 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                                  Actions
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {item.files.map((file) => (
+                                <tr
+                                  key={file.id}
+                                  className="border-b border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                                >
+                                  <td className="py-3 px-3">
+                                    <div className="flex items-center gap-2">
+                                      {getFileIcon(file.file_type)}
+                                      <span className="text-sm text-gray-900 dark:text-gray-100 truncate max-w-xs">
+                                        {file.file_name}
+                                      </span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                                      {file.file_size}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    {file.is_current ? (
+                                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                                        ✓ {t('currentFile', language)}
+                                      </span>
+                                    ) : (
+                                      <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">
+                                        {t('oldFile', language)}
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">
+                                      {new Date(file.uploaded_at).toLocaleDateString()}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-3">
+                                    <div className="flex items-center justify-end gap-1">
+                                      <button
+                                        onClick={() => {
+                                          console.log('View button clicked', file);
+                                          setSelectedFile(file);
+                                          setShowViewFileModal(true);
+                                        }}
+                                        className="p-1.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded transition-colors cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                        title={language === 'th' ? 'ดู' : 'View'}
+                                      >
+                                        <Eye className="w-4 h-4" />
+                                      </button>
+                                      <a
+                                        href={file.file_url}
+                                        download
+                                        className="p-1.5 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded transition-colors cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                        title={language === 'th' ? 'ดาวน์โหลด' : 'Download'}
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </a>
+                                      {!file.is_current && (
+                                        <button
+                                          onClick={() => {
+                                            setSelectedFile(file);
+                                            setShowDeleteFileModal(true);
+                                          }}
+                                          className="p-1.5 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors cursor-pointer min-h-[32px] min-w-[32px] flex items-center justify-center"
+                                          title={language === 'th' ? 'ลบ' : 'Delete'}
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
                     ) : (
-                      <div className="py-8 text-center text-gray-500 dark:text-gray-400">
-                        <AlertCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">{t('noFilesYet', language)}</p>
+                      <div className="py-6 sm:py-8 text-center text-gray-500 dark:text-gray-400">
+                        <AlertCircle className="w-6 h-6 sm:w-8 sm:h-8 mx-auto mb-2 opacity-50" />
+                        <p className="text-xs sm:text-sm break-words">{t('noFilesYet', language)}</p>
                   </div>
                 )}
                   </div>
@@ -624,16 +698,16 @@ export default function UIProjectDetail({ projectId }) {
         onClose={() => setShowAddItemModal(false)}
         title={t('createNewItemCode', language)}
       >
-        <div className="p-6">
-          <div className="space-y-4 mb-6">
+        <div className="p-4 sm:p-6">
+          <div className="space-y-4 mb-4 sm:mb-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('itemType', language)} *
               </label>
               <select
                 value={itemForm.itemType}
                 onChange={(e) => setItemForm(prev => ({ ...prev, itemType: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
               >
                 <option value="FG">{t('itemTypeFG', language)}</option>
                 <option value="SM">{t('itemTypeSM', language)}</option>
@@ -643,7 +717,7 @@ export default function UIProjectDetail({ projectId }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('productCode', language)} *
               </label>
               <input
@@ -651,18 +725,18 @@ export default function UIProjectDetail({ projectId }) {
                 placeholder="D01"
                 value={itemForm.itemProductCode}
                 onChange={(e) => setItemForm(prev => ({ ...prev, itemProductCode: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 {t('itemUnit', language)} *
               </label>
               <select
                 value={itemForm.itemUnit}
                 onChange={(e) => setItemForm(prev => ({ ...prev, itemUnit: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
               >
                 <option value="D">{t('unitD', language)}</option>
                 <option value="F">{t('unitF', language)}</option>
@@ -675,27 +749,27 @@ export default function UIProjectDetail({ projectId }) {
             </div>
 
             {/* Preview */}
-            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-              <span className="text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1">
+            <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
+              <span className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1 break-words">
                 {t('generatedItemCode', language)}:
               </span>
-              <div className="text-xl font-bold text-blue-600 dark:text-blue-400 font-mono">
-                {generateItemCode() || <span className="text-gray-400 text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
+              <div className="text-lg sm:text-xl font-bold text-blue-600 dark:text-blue-400 font-mono break-all">
+                {generateItemCode() || <span className="text-gray-400 text-xs sm:text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
               </div>
             </div>
           </div>
 
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
             <button
               onClick={() => setShowAddItemModal(false)}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('cancel', language)}
             </button>
             <button
               onClick={handleAddItemCode}
               disabled={!itemForm.itemProductCode}
-              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('save', language)}
             </button>
@@ -713,12 +787,12 @@ export default function UIProjectDetail({ projectId }) {
         }}
         title={`${t('uploadFileToItemCode', language)} ${uploadingItem?.item_code}`}
       >
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2 break-words">
               {t('selectFileToUpload', language)} *
               </label>
-            <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-6 text-center">
+            <div className="border-2 border-dashed border-gray-300 dark:border-slate-600 rounded-lg p-4 sm:p-6 text-center">
                   <input
                     type="file"
                     accept=".pdf,.jpg,.jpeg,.png"
@@ -726,11 +800,11 @@ export default function UIProjectDetail({ projectId }) {
                     className="hidden"
                 id="file-input"
               />
-              <label htmlFor="file-input" className="cursor-pointer">
-                <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">
+              <label htmlFor="file-input" className="cursor-pointer block">
+                <Upload className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400 mx-auto mb-2" />
+                <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 break-words">
                   {uploadFile ? (
-                    <span className="text-emerald-600 font-medium">{uploadFile.name}</span>
+                    <span className="text-emerald-600 font-medium break-all">{uploadFile.name}</span>
                   ) : (
                     language === 'th' ? 'คลิกเพื่อเลือกไฟล์' : 'Click to select file'
                   )}
@@ -751,21 +825,21 @@ export default function UIProjectDetail({ projectId }) {
                     </div>
                   )}
 
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
             <button
               onClick={() => {
                 setShowUploadModal(false);
                 setUploadFile(null);
               }}
               disabled={isUploading}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('cancel', language)}
             </button>
             <button
               onClick={handleUploadFile}
               disabled={!uploadFile || isUploading}
-              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {isUploading ? `${language === 'th' ? 'กำลังอัปโหลด' : 'Uploading'}...` : t('uploadFile', language)}
             </button>
@@ -779,27 +853,27 @@ export default function UIProjectDetail({ projectId }) {
         onClose={() => setShowDeleteItemModal(false)}
         title={t('confirmDeleteItemCode', language)}
       >
-        <div className="p-6">
-          <p className="text-gray-600 dark:text-gray-400 mb-2">
+        <div className="p-4 sm:p-6">
+          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-2 break-words">
             {t('sureDeleteItemCode', language)}
           </p>
-          <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-4">
+          <p className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100 mb-4 break-all">
             {selectedItem?.item_code}
           </p>
-          <p className="text-sm text-red-600 dark:text-red-400 mb-6">
+          <p className="text-xs sm:text-sm text-red-600 dark:text-red-400 mb-6 break-words">
             {t('allFilesWillBeDeleted', language)}
           </p>
           
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
             <button
               onClick={() => setShowDeleteItemModal(false)}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('cancel', language)}
             </button>
             <button
               onClick={handleDeleteItem}
-              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('delete', language)}
             </button>
@@ -813,21 +887,21 @@ export default function UIProjectDetail({ projectId }) {
         onClose={() => setShowDeleteFileModal(false)}
         title={t('deleteFileConfirm', language)}
       >
-        <div className="p-6">
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
+        <div className="p-4 sm:p-6">
+          <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 mb-4 break-words">
             {selectedFile?.file_name}
           </p>
           
-          <div className="flex justify-end gap-3">
+          <div className="flex flex-col sm:flex-row justify-end gap-3">
             <button
               onClick={() => setShowDeleteFileModal(false)}
-              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('cancel', language)}
             </button>
             <button
               onClick={handleDeleteFile}
-              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              className="pressable px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
             >
               {t('delete', language)}
             </button>
@@ -845,12 +919,12 @@ export default function UIProjectDetail({ projectId }) {
         }}
         title={language === 'th' ? 'แก้ไขรหัสสินค้า' : 'Edit Product Code'}
       >
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {editingItem && (
             <>
-              <div className="space-y-4 mb-6">
+              <div className="space-y-4 mb-4 sm:mb-6">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     {t('itemType', language)} *
                   </label>
                   <select
@@ -859,7 +933,7 @@ export default function UIProjectDetail({ projectId }) {
                       setEditForm(prev => ({ ...prev, itemType: e.target.value }));
                       setPreviewUpdate(null);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                   >
                     <option value="FG">{t('itemTypeFG', language)}</option>
                     <option value="SM">{t('itemTypeSM', language)}</option>
@@ -869,7 +943,7 @@ export default function UIProjectDetail({ projectId }) {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     {t('productCode', language)} *
                   </label>
                   <input
@@ -880,13 +954,13 @@ export default function UIProjectDetail({ projectId }) {
                       setEditForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }));
                       setPreviewUpdate(null);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase text-sm sm:text-base"
                     style={{ textTransform: 'uppercase' }}
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     {t('itemUnit', language)} *
                   </label>
                   <select
@@ -895,7 +969,7 @@ export default function UIProjectDetail({ projectId }) {
                       setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
                       setPreviewUpdate(null);
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                   >
                     <option value="D">{t('unitD', language)}</option>
                     <option value="F">{t('unitF', language)}</option>
@@ -908,17 +982,17 @@ export default function UIProjectDetail({ projectId }) {
                 </div>
 
                 {/* Preview */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <span className="text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1">
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
+                  <span className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1 break-words">
                     {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
                   </span>
-                  <div className="text-xl font-bold text-blue-600 dark:text-blue-400 font-mono">
-                    {generateEditItemCode() || <span className="text-gray-400 text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
+                  <div className="text-lg sm:text-xl font-bold text-blue-600 dark:text-blue-400 font-mono break-all">
+                    {generateEditItemCode() || <span className="text-gray-400 text-xs sm:text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
                   </div>
                   {editingItem?.item_code && generateEditItemCode() && editingItem.item_code !== generateEditItemCode() && (
                     <div className="mt-2 pt-2 border-t border-blue-300 dark:border-blue-700">
-                      <span className="text-xs text-blue-700 dark:text-blue-300">
-                        {language === 'th' ? 'รหัสเดิม' : 'Old Code'}: <span className="font-mono">{editingItem.item_code}</span>
+                      <span className="text-xs text-blue-700 dark:text-blue-300 break-words">
+                        {language === 'th' ? 'รหัสเดิม' : 'Old Code'}: <span className="font-mono break-all">{editingItem.item_code}</span>
                       </span>
                     </div>
                   )}
@@ -926,15 +1000,15 @@ export default function UIProjectDetail({ projectId }) {
 
                 {/* Show preview update info if available */}
                 {previewUpdate && previewUpdate.willChange && (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4 border border-yellow-200 dark:border-yellow-800">
+                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 sm:p-4 border border-yellow-200 dark:border-yellow-800">
                     <div className="flex items-start gap-2">
-                      <AlertCircle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                      <div className="flex-1">
-                        <p className="text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1">
+                      <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs sm:text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1 break-words">
                           {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบ' : 'This change will affect'}
                         </p>
                         {previewUpdate.affectedTicketsCount > 0 && (
-                          <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                          <p className="text-xs text-yellow-700 dark:text-yellow-300 break-words">
                             {language === 'th' 
                               ? `• ${previewUpdate.affectedTicketsCount} tickets จะถูกอัปเดตให้ใช้รหัสใหม่`
                               : `• ${previewUpdate.affectedTicketsCount} tickets will be updated to use the new code`
@@ -947,14 +1021,14 @@ export default function UIProjectDetail({ projectId }) {
                 )}
               </div>
 
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button
                   onClick={() => {
                     setShowEditItemModal(false);
                     setEditingItem(null);
                     setPreviewUpdate(null);
                   }}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
                 >
                   {t('cancel', language)}
                 </button>
@@ -970,17 +1044,17 @@ export default function UIProjectDetail({ projectId }) {
                     }
                   }}
                   disabled={!editForm.itemProductCode || isUpdating || isLoadingPreview}
-                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
                 >
                   {isUpdating || isLoadingPreview ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {isLoadingPreview ? (language === 'th' ? 'กำลังตรวจสอบ...' : 'Checking...') : (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')}
+                      <span>{isLoadingPreview ? (language === 'th' ? 'กำลังตรวจสอบ...' : 'Checking...') : (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')}</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      {t('save', language)}
+                      <span>{t('save', language)}</span>
                     </>
                   )}
                 </button>
@@ -999,15 +1073,15 @@ export default function UIProjectDetail({ projectId }) {
         }}
         title={language === 'th' ? 'ยืนยันการเปลี่ยนแปลงรหัสสินค้า' : 'Confirm Item Code Change'}
       >
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {previewUpdate && (
             <>
-              <div className="mb-6">
-                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4 border border-red-200 dark:border-red-800 mb-4">
+              <div className="mb-4 sm:mb-6">
+                <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-3 sm:p-4 border border-red-200 dark:border-red-800 mb-4">
                   <div className="flex items-start gap-2">
-                    <AlertCircle className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-red-800 dark:text-red-200 mb-2">
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-red-800 dark:text-red-200 mb-2 break-words">
                         {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบต่อระบบ' : 'This change will affect the system'}
                       </p>
                     </div>
@@ -1016,32 +1090,32 @@ export default function UIProjectDetail({ projectId }) {
 
                 <div className="space-y-3">
                   <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <p className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 break-words">
                       {language === 'th' ? 'รหัสสินค้าเดิม' : 'Old Item Code'}:
                     </p>
-                    <p className="text-lg font-mono text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-slate-700 p-2 rounded">
+                    <p className="text-base sm:text-lg font-mono text-gray-900 dark:text-gray-100 bg-gray-100 dark:bg-slate-700 p-2 rounded break-all">
                       {previewUpdate.oldItemCode}
                     </p>
                   </div>
 
                   <div>
-                    <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    <p className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 break-words">
                       {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
                     </p>
-                    <p className="text-lg font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded">
+                    <p className="text-base sm:text-lg font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 p-2 rounded break-all">
                       {previewUpdate.newItemCode}
                     </p>
                   </div>
 
                   {previewUpdate.affectedTicketsCount > 0 && (
                     <div>
-                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      <p className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-1 break-words">
                         {language === 'th' ? 'Tickets ที่จะถูกอัปเดต' : 'Tickets to be updated'}:
                       </p>
-                      <p className="text-lg font-semibold text-blue-600 dark:text-blue-400">
+                      <p className="text-base sm:text-lg font-semibold text-blue-600 dark:text-blue-400">
                         {previewUpdate.affectedTicketsCount} {language === 'th' ? 'tickets' : 'tickets'}
                       </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 break-words">
                         {language === 'th' 
                           ? 'Tickets ทั้งหมดที่ใช้รหัสเดิมจะถูกอัปเดตให้ใช้รหัสใหม่อัตโนมัติ'
                           : 'All tickets using the old code will be automatically updated to use the new code'
@@ -1052,30 +1126,30 @@ export default function UIProjectDetail({ projectId }) {
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3">
+              <div className="flex flex-col sm:flex-row justify-end gap-3">
                 <button
                   onClick={() => {
                     setShowConfirmUpdateModal(false);
                     setShowEditItemModal(true);
                   }}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
                 >
                   {t('cancel', language)}
                 </button>
                 <button
                   onClick={handleUpdateItemCode}
                   disabled={isUpdating}
-                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
                 >
                   {isUpdating ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      {language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}
+                      <span>{language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4" />
-                      {language === 'th' ? 'ยืนยันและบันทึก' : 'Confirm & Save'}
+                      <span>{language === 'th' ? 'ยืนยันและบันทึก' : 'Confirm & Save'}</span>
                     </>
                   )}
                 </button>
@@ -1098,7 +1172,7 @@ export default function UIProjectDetail({ projectId }) {
             {/* Close button */}
             <button
               onClick={() => setShowViewFileModal(false)}
-              className="absolute top-3 right-3 z-10 px-3 py-1.5 bg-black/60 text-white rounded-md hover:bg-black/70 transition-colors"
+              className="absolute top-2 right-2 sm:top-3 sm:right-3 z-10 px-3 py-1.5 bg-black/60 text-white rounded-md hover:bg-black/70 transition-colors text-xs sm:text-sm min-h-[44px]"
             >
               {language === 'th' ? 'ปิด' : 'Close'}
             </button>
@@ -1108,11 +1182,11 @@ export default function UIProjectDetail({ projectId }) {
               {selectedFile.file_type === 'pdf' ? (
                 <iframe
                   src={`${selectedFile.file_url}#toolbar=0&navpanes=0&scrollbar=0`}
-                  className="w-full h-[82vh]"
+                  className="w-full h-[75vh] sm:h-[82vh]"
                   title={selectedFile.file_name}
                 />
               ) : (
-                <div className="w-full h-[82vh] flex items-center justify-center bg-black/5 dark:bg-black/20">
+                <div className="w-full h-[75vh] sm:h-[82vh] flex items-center justify-center bg-black/5 dark:bg-black/20 p-2">
                   <img
                     src={selectedFile.file_url}
                     alt={selectedFile.file_name}

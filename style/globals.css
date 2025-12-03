@@ -271,6 +271,45 @@ svg.lucide {
     max-width: 100% !important;
     overflow-x: hidden !important;
   }
+  
+  /* Project page specific responsive fixes */
+  .project-stats-grid {
+    grid-template-columns: 1fr !important;
+  }
+  
+  /* Ensure project list items don't overflow */
+  .project-list-item {
+    flex-direction: column !important;
+  }
+  
+  .project-list-item > div:first-child {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  
+  .project-list-item > div:last-child {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-top: 0.75rem !important;
+  }
+  
+  /* Project detail page responsive fixes */
+  /* Force item code header to stack on mobile */
+  .project-detail-item-header {
+    flex-direction: column !important;
+  }
+  
+  /* Ensure file table/cards don't overflow */
+  .project-detail-files-container {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  
+  /* Ensure modals are full width on mobile */
+  .modal-content {
+    max-width: 100vw !important;
+    margin: 0 !important;
+  }
 }
 
 /* Better mobile scrolling */
