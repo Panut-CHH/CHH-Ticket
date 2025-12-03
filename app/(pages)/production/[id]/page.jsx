@@ -439,15 +439,15 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   }, [ticket.id]);
 
   return (
-    <div className="bg-white dark:bg-slate-800 dark:bg-slate-800 rounded-2xl shadow-sm p-6 border border-gray-200 dark:border-slate-700 dark:border-slate-700">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
+    <div className="ticket-card bg-white dark:bg-slate-800 dark:bg-slate-800 rounded-2xl shadow-sm p-4 sm:p-6 border border-gray-200 dark:border-slate-700 dark:border-slate-700">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+        <div className="flex items-center flex-wrap gap-2 sm:gap-3">
           <div className="text-sm text-gray-600 dark:text-gray-400 dark:text-gray-500">ตั๋ว</div>
           <div className="text-xl font-semibold text-gray-900 dark:text-gray-100">{ticket.id}</div>
           {ticket.route && <span className={`text-xs px-2 py-1 rounded-full font-medium ${ticket.routeClass}`}>{ticket.route}</span>}
           <span className={`text-xs px-2 py-1 rounded-full font-medium ${ticket.priorityClass}`}>{ticket.priority}</span>
         </div>
-        <div className="flex items-center gap-4 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
+        <div className="flex flex-wrap items-start gap-2 sm:gap-4 text-xs sm:text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">
           {ticket.dueDate && (
             <div className="flex items-center gap-1">
               <Calendar className="w-4 h-4" />
@@ -461,7 +461,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         <div className="md:col-span-2">
           {/* ERP Document Button - Top */}
           <div className="mb-4">
@@ -565,7 +565,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 ขั้นตอนปัจจุบันเป็น QC กรุณารอให้ทีม QC ตรวจสอบให้เสร็จก่อนจึงจะเริ่มขั้นตอนถัดไปได้
               </div>
             )}
-            <div className="flex items-center gap-3">
+            <div className="flex flex-col sm:flex-row items-stretch gap-3">
               <button
                 onClick={onStartClick}
                 disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC}
@@ -600,7 +600,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
 
 
           <div className="mt-6">
-            <div className="flex gap-3 overflow-x-auto roadmap-scroll pb-2 pr-4">
+            <div className="flex gap-3 overflow-x-auto roadmap-scroll pb-2 pr-4 -mx-1 px-1 sm:mx-0 sm:px-0">
               {ticket.roadmap.map((step, index) => {
                 const stationData = stations[index];
                 const isQCStep = (step.step || "").toUpperCase().includes("QC");
@@ -1865,8 +1865,8 @@ export default function ProductionDetailPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen p-4 md:p-6 lg:p-8">
-        <div className="mb-4 flex gap-2">
+      <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <button onClick={() => router.push('/production')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-gray-100">
             <ArrowLeft className="w-4 h-4" /> กลับหน้า Production
           </button>

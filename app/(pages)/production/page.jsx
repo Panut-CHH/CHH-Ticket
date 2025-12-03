@@ -529,7 +529,7 @@ export default function ProductionPage() {
   return (
     <ProtectedRoute>
       <RoleGuard pagePath="/production">
-        <div className="min-h-screen p-3 sm:p-4 md:p-6 lg:p-8 animate-fadeInUp">
+        <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 animate-fadeInUp">
         <h1 className="text-xl sm:text-2xl font-semibold text-gray-900 dark:text-gray-100 mb-1">{t('myWork', language)}</h1>
         <p className="text-sm sm:text-base text-gray-500 dark:text-gray-400">{t('myWorkDesc', language)}</p>
 
@@ -541,22 +541,22 @@ export default function ProductionPage() {
 
         {myName && (
           <>
-            <div className="mt-4 sm:mt-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+            <div className="production-stats-grid mt-4 sm:mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 gap-3 sm:gap-4">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('allTickets', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.total}</div>
                   <ClipboardList className="w-5 h-5 sm:w-6 sm:h-6 text-gray-400" />
                 </div>
               </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('completed', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-xl sm:text-2xl font-bold text-emerald-600">{stats.done}</div>
                   <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
                 </div>
               </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('pending', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-xl sm:text-2xl font-bold text-amber-600">{stats.pending}</div>
@@ -564,20 +564,20 @@ export default function ProductionPage() {
                 </div>
               </div>
 
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm md:col-span-2 lg:col-span-1">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm md:col-span-2 lg:col-span-1 stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('totalValueInHand', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">{stats.totalAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
                   <Coins className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
                 </div>
               </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('valueCompleted', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-lg sm:text-xl font-semibold text-emerald-700">{stats.doneAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
                 </div>
               </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm">
+              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
                 <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('valuePending', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
                   <div className="text-lg sm:text-xl font-semibold text-amber-700">{stats.pendingAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
@@ -587,7 +587,7 @@ export default function ProductionPage() {
 
             {/* Tab Navigation */}
             <div className="mt-6 sm:mt-8">
-              <div className="flex gap-2 sm:gap-3 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex gap-2 sm:gap-3 border-b border-gray-200 dark:border-slate-700 overflow-x-auto pb-1 -mx-2 px-2 sm:mx-0 sm:px-0">
                 <button
                   onClick={() => setActiveTab('incomplete')}
                   className={`px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium transition-all duration-200 border-b-2 ${
@@ -659,7 +659,7 @@ export default function ProductionPage() {
                   )}
                 </button>
                 {/* Sort controls */}
-                <div className="flex items-center gap-2">
+                <div className="flex flex-row items-stretch justify-between sm:justify-end gap-2">
                   <select
                     value={sortKey}
                     onChange={(e) => setSortKey(e.target.value)}
@@ -682,7 +682,7 @@ export default function ProductionPage() {
               </div>
               {showFilter && (
                 <div className="mt-3 p-3 sm:p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div className="production-filter-grid grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     {/* Status filter */}
                     <div>
                       <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'สถานะ' : 'Status'}</div>
@@ -797,7 +797,7 @@ export default function ProductionPage() {
                 const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
                 
                 return (
-                  <div key={ticket.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-4 sm:p-5 shadow-sm hover:shadow-md transition-all">
+                  <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
@@ -842,7 +842,7 @@ export default function ProductionPage() {
                           </div>
                         )}
                       </div>
-                      <div className="shrink-0 flex items-center gap-2">
+                      <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                         <button
                           onClick={() => canAction && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
                           disabled={!canAction}
