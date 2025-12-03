@@ -44,7 +44,7 @@ export default function PagesLayout({ children }) {
     <div className={`min-h-screen w-full bg-[#f8fffe] dark:bg-slate-900 overflow-x-hidden ${isImpersonating ? 'pt-[104px]' : 'pt-[72px]'}`}>
       {/* Header */}
       <header className="bg-white dark:bg-slate-800 shadow-sm fixed top-0 left-0 right-0 z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between px-3 sm:px-4 py-3">
+        <div className="w-full flex items-center justify-between px-3 sm:px-4 py-3">
           <div className="flex items-center gap-2 sm:gap-3">
             <button className="xl:hidden p-2 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => setOpen(true)}>
               <Menu className="w-4 h-4 sm:w-5 sm:h-5 text-gray-800 dark:text-gray-200" />
@@ -68,7 +68,7 @@ export default function PagesLayout({ children }) {
       {/* Impersonation Banner */}
       {isImpersonating && originalUser && (
         <div className="bg-orange-100 dark:bg-orange-900/20 border-b border-orange-200 dark:border-orange-800 px-4 py-2 fixed top-[72px] left-0 right-0 z-40">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="w-full flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="w-4 h-4 text-orange-600 dark:text-orange-400" />
               <span className="text-sm text-orange-800 dark:text-orange-200">

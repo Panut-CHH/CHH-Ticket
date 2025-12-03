@@ -1875,24 +1875,6 @@ export default function ProductionDetailPage() {
               ✅ Closed
             </span>
           )}
-          <button 
-            onClick={async () => {
-              console.log('[MANUAL] Force refresh triggered');
-              try {
-                const refreshed = await reloadTicketData();
-                // Force re-render by creating new object reference
-                setTicket({ ...refreshed, _refreshKey: Date.now() });
-                // Reload rework/batch so rework count updates immediately
-                await loadBatchData();
-                console.log('[MANUAL] Refreshed ticket status:', refreshed.status);
-              } catch (e) {
-                console.error('[MANUAL] Refresh failed:', e);
-              }
-            }}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-sm text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800"
-          >
-            🔄 Refresh
-          </button>
         </div>
 
         {loading && (

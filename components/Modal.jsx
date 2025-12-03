@@ -2,7 +2,7 @@
 
 import React, { useEffect } from "react";
 
-export default function Modal({ open, onClose, title, children, maxWidth = "max-w-2xl", hideHeader = false, maxHeight = "max-h-[70vh]" }) {
+export default function Modal({ open, onClose, title, children, maxWidth = "max-w-2xl", hideHeader = false, maxHeight = "max-h-[70vh]", footer }) {
   useEffect(() => {
     if (!open) return;
     
@@ -53,6 +53,13 @@ export default function Modal({ open, onClose, title, children, maxWidth = "max-
         <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-500 scrollbar-track-gray-100 dark:scrollbar-track-gray-700">
           {children}
         </div>
+        
+        {/* Footer */}
+        {footer && (
+          <div className="flex-shrink-0 border-t border-gray-200 dark:border-slate-700">
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );

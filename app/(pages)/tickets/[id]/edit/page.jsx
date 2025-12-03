@@ -387,6 +387,13 @@ export default function EditTicketPage() {
     }
   }, [ticketView, ticketId]);
 
+  // Populate labor prices when stations and availableStations are ready
+  useEffect(() => {
+    if (ticketView?.itemCode && stations.length > 0 && availableStations.length > 0 && !loadingStations) {
+      populateLaborPricesFromDatabase(stations, ticketView.itemCode);
+    }
+  }, [ticketView?.itemCode, availableStations.length, loadingStations]);
+
   const loadTicketFromDatabase = async () => {
     try {
       // โหลดข้อมูล ticket แบบง่ายก่อน (ไม่ join ซับซ้อน)
@@ -525,7 +532,8 @@ export default function EditTicketPage() {
             
             console.log('Setting stations with data from database:', dbStations);
             // ถ้ามีข้อมูลใน database ให้ใช้ข้อมูลนั้น (มี priority สูงกว่า localStorage)
-            setStations(dbStations);
+            // แต่ยังต้อง populate ราคาค่าแรงจากฐานข้อมูลถ้ายังไม่มีราคา
+            await populateLaborPricesFromDatabase(dbStations, ticketView?.itemCode);
             // ลบข้อมูลจาก localStorage เพราะข้อมูลใน database มี priority สูงกว่า
             try {
               localStorage.removeItem(`ticket_${ticketId}_stations`);
@@ -543,6 +551,10 @@ export default function EditTicketPage() {
 
       // ไม่มีข้อมูลทั้ง database ให้ตั้งค่าเริ่มต้นจาก ERP view
       // ถ้ามีข้อมูลใน localStorage จะถูกโหลดใน useEffect แรกแล้ว
+      // แต่ยังต้อง populate ราคาค่าแรงจากฐานข้อมูล
+      if (ticketView?.itemCode) {
+        await populateLaborPricesFromDatabase(stations, ticketView.itemCode);
+      }
 
       // ถ้าไม่มีข้อมูลทั้ง database และ localStorage ให้ตั้งค่าเริ่มต้น
       const customerNameErp = ticketView?.customerName || "";
@@ -630,6 +642,83 @@ export default function EditTicketPage() {
       console.error('Failed to load stations:', err);
     } finally {
       setLoadingStations(false);
+    }
+  };
+
+  // Populate labor prices from database for stations
+  const populateLaborPricesFromDatabase = async (currentStations, itemCode) => {
+    if (!itemCode || !currentStations || currentStations.length === 0) return;
+    
+    try {
+      // ดึงราคาค่าแรงจากฐานข้อมูล
+      const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/labor-prices`);
+      const result = await response.json();
+      
+      if (!result.success || !result.data || result.data.length === 0) {
+        console.log('[LABOR_PRICE] No labor prices found for item code:', itemCode);
+        return;
+      }
+      
+      // สร้าง map จาก station code ไปยัง price และ price_type
+      const priceMap = new Map();
+      result.data.forEach(priceData => {
+        priceMap.set(priceData.station_code, {
+          price: priceData.price,
+          price_type: priceData.price_type
+        });
+      });
+      
+      // หา station codes สำหรับ "อัดบ้าน" และ "สี"
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+      const paintStation = availableStations.find(s => s.name_th === 'สี');
+      
+      // อัปเดตราคาใน stations ที่มีชื่อตรงกับ "อัดบ้าน" หรือ "สี" และยังไม่มีราคา
+      const updatedStations = currentStations.map(station => {
+        // ตรวจสอบว่าเป็นสถานี "อัดบ้าน" หรือ "สี"
+        const isPressStation = pressStation && (station.name === 'อัดบ้าน' || station.name === 'อัดบาน');
+        const isPaintStation = paintStation && station.name === 'สี';
+        
+        if (!isPressStation && !isPaintStation) {
+          return station; // ไม่ใช่สถานีที่ต้องการ populate ราคา
+        }
+        
+        // ถ้ามีราคาอยู่แล้ว (มีค่า) ไม่ต้อง override
+        if (station.price && station.price !== '' && station.price !== null) {
+          console.log(`[LABOR_PRICE] Station "${station.name}" already has price:`, station.price);
+          return station;
+        }
+        
+        // หา station code ที่เหมาะสม
+        const stationCode = isPressStation ? pressStation?.code : paintStation?.code;
+        if (!stationCode) return station;
+        
+        const priceData = priceMap.get(stationCode);
+        if (!priceData) {
+          console.log(`[LABOR_PRICE] No price data found for station "${station.name}" with code "${stationCode}"`);
+          return station;
+        }
+        
+        console.log(`[LABOR_PRICE] Populating price for station "${station.name}":`, priceData);
+        return {
+          ...station,
+          price: priceData.price || '',
+          priceType: priceData.price_type || 'flat'
+        };
+      });
+      
+      // อัปเดต stations state ถ้ามีการเปลี่ยนแปลง
+      const hasChanges = updatedStations.some((s, idx) => 
+        s.price !== currentStations[idx]?.price || 
+        s.priceType !== currentStations[idx]?.priceType
+      );
+      
+      if (hasChanges) {
+        console.log('[LABOR_PRICE] Updating stations with labor prices from database');
+        setStations(updatedStations);
+      }
+    } catch (error) {
+      console.error('[LABOR_PRICE] Error populating labor prices:', error);
+      // ไม่ throw error เพราะเป็น feature เพิ่มเติม
     }
   };
 

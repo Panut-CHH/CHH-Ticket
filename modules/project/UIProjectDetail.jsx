@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { getProjectById } from "@/utils/projectDb";
+import { supabase } from "@/utils/supabaseClient";
 import { 
   ArrowLeft,
   Plus,
@@ -23,9 +24,20 @@ import {
   X,
   Edit,
   Save,
-  Pencil
+  Pencil,
+  DollarSign
 } from "lucide-react";
 import Modal from "@/components/Modal";
+
+// Helper function to check if user is admin or superadmin
+const isAdminOrAbove = (user) => {
+  if (!user) return false;
+  const roles = Array.isArray(user.roles) ? user.roles : (user.role ? [user.role] : []);
+  return roles.some(role => {
+    const roleLower = String(role).toLowerCase();
+    return roleLower === 'admin' || roleLower === 'superadmin';
+  });
+};
 
 export default function UIProjectDetail({ projectId }) {
   const router = useRouter();
@@ -45,9 +57,11 @@ export default function UIProjectDetail({ projectId }) {
   const [showViewFileModal, setShowViewFileModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
   const [showConfirmUpdateModal, setShowConfirmUpdateModal] = useState(false);
+  const [showLaborPriceModal, setShowLaborPriceModal] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
+  const [pricingItem, setPricingItem] = useState(null);
   
   // Form states
   const [itemForm, setItemForm] = useState({
@@ -72,6 +86,16 @@ export default function UIProjectDetail({ projectId }) {
   const [uploadFile, setUploadFile] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  
+  // Labor price states
+  const [laborPrices, setLaborPrices] = useState({
+    pressStation: { price: '', priceType: 'flat' },
+    paintStation: { price: '', priceType: 'flat' }
+  });
+  const [availableStations, setAvailableStations] = useState([]);
+  const [loadingStations, setLoadingStations] = useState(false);
+  const [loadingPrices, setLoadingPrices] = useState(false);
+  const [savingPrices, setSavingPrices] = useState(false);
 
   // Load project data
   useEffect(() => {
@@ -353,6 +377,148 @@ export default function UIProjectDetail({ projectId }) {
     return <ImageIcon className="w-4 h-4 text-blue-500" />;
   };
 
+  // Load available stations for labor price setting
+  useEffect(() => {
+    loadAvailableStations();
+  }, []);
+
+  const loadAvailableStations = async () => {
+    try {
+      setLoadingStations(true);
+      const { data, error } = await supabase
+        .from('stations')
+        .select('id, name_th, code, is_active')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true });
+      
+      if (error) {
+        console.error('Failed to load stations:', error);
+        return;
+      }
+      
+      setAvailableStations(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to load stations:', err);
+    } finally {
+      setLoadingStations(false);
+    }
+  };
+
+  // Handle open labor price modal
+  const handleOpenLaborPriceModal = async (item) => {
+    setPricingItem(item);
+    setShowLaborPriceModal(true);
+    
+    // Load existing prices for this item code
+    setLoadingPrices(true);
+    try {
+      const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(item.item_code)}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        // Find stations by name "อัดบ้าน" and "สี"
+        const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+        const paintStation = availableStations.find(s => s.name_th === 'สี');
+        
+        const prices = {
+          pressStation: { price: '', priceType: 'flat' },
+          paintStation: { price: '', priceType: 'flat' }
+        };
+        
+        // Map existing prices to form
+        result.data.forEach(priceData => {
+          if (pressStation && priceData.station_code === pressStation.code) {
+            prices.pressStation = {
+              price: priceData.price || '',
+              priceType: priceData.price_type || 'flat'
+            };
+          }
+          if (paintStation && priceData.station_code === paintStation.code) {
+            prices.paintStation = {
+              price: priceData.price || '',
+              priceType: priceData.price_type || 'flat'
+            };
+          }
+        });
+        
+        setLaborPrices(prices);
+      } else {
+        // Reset to defaults if no prices found
+        setLaborPrices({
+          pressStation: { price: '', priceType: 'flat' },
+          paintStation: { price: '', priceType: 'flat' }
+        });
+      }
+    } catch (error) {
+      console.error('Error loading labor prices:', error);
+      setLaborPrices({
+        pressStation: { price: '', priceType: 'flat' },
+        paintStation: { price: '', priceType: 'flat' }
+      });
+    } finally {
+      setLoadingPrices(false);
+    }
+  };
+
+  // Handle save labor prices
+  const handleSaveLaborPrices = async () => {
+    if (!pricingItem) return;
+    
+    setSavingPrices(true);
+    try {
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+      const paintStation = availableStations.find(s => s.name_th === 'สี');
+      
+      if (!pressStation && !paintStation) {
+        alert(language === 'th' ? 'ไม่พบสถานี "อัดบ้าน" หรือ "สี" ในระบบ' : 'Stations "Press" or "Paint" not found');
+        setSavingPrices(false);
+        return;
+      }
+      
+      const pricesToSave = [];
+      
+      if (pressStation) {
+        pricesToSave.push({
+          station_code: pressStation.code,
+          price: laborPrices.pressStation.price ? parseFloat(laborPrices.pressStation.price) : null,
+          price_type: laborPrices.pressStation.priceType
+        });
+      }
+      
+      if (paintStation) {
+        pricesToSave.push({
+          station_code: paintStation.code,
+          price: laborPrices.paintStation.price ? parseFloat(laborPrices.paintStation.price) : null,
+          price_type: laborPrices.paintStation.priceType
+        });
+      }
+      
+      const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(pricingItem.item_code)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prices: pricesToSave })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        alert(language === 'th' ? 'บันทึกราคาค่าแรงสำเร็จ' : 'Labor prices saved successfully');
+        setShowLaborPriceModal(false);
+        setPricingItem(null);
+      } else {
+        alert(language === 'th' ? 'บันทึกล้มเหลว: ' + (result.error || 'Unknown error') : 'Save failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (error) {
+      console.error('Error saving labor prices:', error);
+      alert(language === 'th' ? 'เกิดข้อผิดพลาด: ' + error.message : 'Error: ' + error.message);
+    } finally {
+      setSavingPrices(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900 flex items-center justify-center px-4">
@@ -477,6 +643,19 @@ export default function UIProjectDetail({ projectId }) {
                         </div>
 
                               <div className="flex items-center gap-2 flex-shrink-0">
+                        {isAdminOrAbove(user) && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenLaborPriceModal(item);
+                            }}
+                            className="pressable px-3 py-1.5 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors text-xs flex items-center justify-center gap-1 min-h-[44px] flex-1 sm:flex-none"
+                          >
+                            <DollarSign className="w-3 h-3" />
+                            <span className="hidden sm:inline">{language === 'th' ? 'ตั้งราคาค่าแรง' : 'Set Labor Price'}</span>
+                            <span className="sm:hidden">ราคา</span>
+                          </button>
+                        )}
                         <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1197,6 +1376,172 @@ export default function UIProjectDetail({ projectId }) {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Modal: Set Labor Price */}
+      <Modal
+        open={showLaborPriceModal}
+        onClose={() => {
+          setShowLaborPriceModal(false);
+          setPricingItem(null);
+          setLaborPrices({
+            pressStation: { price: '', priceType: 'flat' },
+            paintStation: { price: '', priceType: 'flat' }
+          });
+        }}
+        title={language === 'th' ? `ตั้งราคาค่าแรง - ${pricingItem?.item_code || ''}` : `Set Labor Price - ${pricingItem?.item_code || ''}`}
+        maxWidth="max-w-2xl"
+        maxHeight="max-h-[90vh]"
+        footer={!loadingPrices ? (
+          <div className="px-4 sm:px-6 py-4">
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowLaborPriceModal(false);
+                  setPricingItem(null);
+                  setLaborPrices({
+                    pressStation: { price: '', priceType: 'flat' },
+                    paintStation: { price: '', priceType: 'flat' }
+                  });
+                }}
+                disabled={savingPrices}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm min-h-[44px]"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={handleSaveLaborPrices}
+                disabled={savingPrices}
+                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto text-sm min-h-[44px]"
+              >
+                {savingPrices ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{language === 'th' ? 'กำลังบันทึก...' : 'Saving...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{t('save', language)}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      >
+        <div className="p-4 sm:p-6">
+          {loadingPrices ? (
+            <div className="text-center py-8">
+              <div className="w-8 h-8 border-4 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mx-auto mb-4"></div>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{language === 'th' ? 'กำลังโหลดราคา...' : 'Loading prices...'}</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 break-words">
+                {language === 'th' 
+                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบ้าน" และ "สี" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
+                  : 'Set labor prices for "Press" and "Paint" stations. These prices will automatically appear in ticket edit page'}
+              </p>
+              
+              <div className="space-y-4">
+                {/* Press Station (อัดบ้าน) */}
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    {language === 'th' ? 'สถานี: อัดบ้าน' : 'Station: Press'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ประเภทการคิดเงิน' : 'Price Type'} *
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={laborPrices.pressStation.priceType}
+                          onChange={(e) => setLaborPrices(prev => ({
+                            ...prev,
+                            pressStation: { ...prev.pressStation, priceType: e.target.value }
+                          }))}
+                          className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer text-sm"
+                        >
+                          <option value="flat">{language === 'th' ? 'เหมาจ่าย' : 'Flat Rate'}</option>
+                          <option value="per_piece">{language === 'th' ? 'ต่อชิ้น' : 'Per Piece'}</option>
+                          <option value="per_hour">{language === 'th' ? 'รายชั่วโมง' : 'Per Hour'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ราคา' : 'Price'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborPrices.pressStation.price}
+                        onChange={(e) => setLaborPrices(prev => ({
+                          ...prev,
+                          pressStation: { ...prev.pressStation, price: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
+                        onWheel={(e) => e.target.blur()}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Paint Station (สี) */}
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    {language === 'th' ? 'สถานี: สี' : 'Station: Paint'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ประเภทการคิดเงิน' : 'Price Type'} *
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={laborPrices.paintStation.priceType}
+                          onChange={(e) => setLaborPrices(prev => ({
+                            ...prev,
+                            paintStation: { ...prev.paintStation, priceType: e.target.value }
+                          }))}
+                          className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer text-sm"
+                        >
+                          <option value="flat">{language === 'th' ? 'เหมาจ่าย' : 'Flat Rate'}</option>
+                          <option value="per_piece">{language === 'th' ? 'ต่อชิ้น' : 'Per Piece'}</option>
+                          <option value="per_hour">{language === 'th' ? 'รายชั่วโมง' : 'Per Hour'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ราคา' : 'Price'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborPrices.paintStation.price}
+                        onChange={(e) => setLaborPrices(prev => ({
+                          ...prev,
+                          paintStation: { ...prev.paintStation, price: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
+                        onWheel={(e) => e.target.blur()}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
       </Modal>
     </div>
   );
