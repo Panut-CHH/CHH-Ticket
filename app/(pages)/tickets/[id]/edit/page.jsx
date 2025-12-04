@@ -390,9 +390,25 @@ export default function EditTicketPage() {
   // Populate labor prices when stations and availableStations are ready
   useEffect(() => {
     if (ticketView?.itemCode && stations.length > 0 && availableStations.length > 0 && !loadingStations) {
-      populateLaborPricesFromDatabase(stations, ticketView.itemCode);
+      // Check if there are any "อัดบาน" or "สี" stations without prices
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      const paintStation = availableStations.find(s => s.name_th === 'สี');
+      const hasPressOrPaintWithoutPrice = stations.some(s => {
+        const isPress = pressStation && s.name === 'อัดบาน';
+        const isPaint = paintStation && s.name === 'สี';
+        return (isPress || isPaint) && (!s.price || s.price === '' || s.price === null);
+      });
+      
+      if (hasPressOrPaintWithoutPrice) {
+        // Use a small delay to avoid multiple calls when stations array changes rapidly
+        const timeoutId = setTimeout(() => {
+          populateLaborPricesFromDatabase(stations, ticketView.itemCode);
+        }, 300);
+        
+        return () => clearTimeout(timeoutId);
+      }
     }
-  }, [ticketView?.itemCode, availableStations.length, loadingStations]);
+  }, [ticketView?.itemCode, stations.length, availableStations.length, loadingStations]);
 
   const loadTicketFromDatabase = async () => {
     try {
@@ -668,14 +684,14 @@ export default function EditTicketPage() {
         });
       });
       
-      // หา station codes สำหรับ "อัดบ้าน" และ "สี"
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+      // หา station codes สำหรับ "อัดบาน" และ "สี"
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       
-      // อัปเดตราคาใน stations ที่มีชื่อตรงกับ "อัดบ้าน" หรือ "สี" และยังไม่มีราคา
+      // อัปเดตราคาใน stations ที่มีชื่อตรงกับ "อัดบาน" หรือ "สี" และยังไม่มีราคา
       const updatedStations = currentStations.map(station => {
-        // ตรวจสอบว่าเป็นสถานี "อัดบ้าน" หรือ "สี"
-        const isPressStation = pressStation && (station.name === 'อัดบ้าน' || station.name === 'อัดบาน');
+        // ตรวจสอบว่าเป็นสถานี "อัดบาน" หรือ "สี"
+        const isPressStation = pressStation && (station.name === 'อัดบาน');
         const isPaintStation = paintStation && station.name === 'สี';
         
         if (!isPressStation && !isPaintStation) {
@@ -793,22 +809,23 @@ export default function EditTicketPage() {
 
   function updateStation(index, updates) {
     setStations((prev) => prev.map((s, i) => (i === index ? { ...s, ...updates } : s)));
+    // useEffect will handle populating prices automatically when station name changes
   }
 
   function addStation() {
     const defaultStationName = availableStations.length > 0 ? availableStations[0].name_th : "";
-    setStations((prev) => [
-      ...prev,
-      {
-        id: String(prev.length + 1),
-        name: defaultStationName,
-        technician: "",
-        technicianId: "",
-        priceType: "flat",
-        price: '',
-        completionTime: "",
-      },
-    ]);
+    const newStation = {
+      id: String(stations.length + 1),
+      name: defaultStationName,
+      technician: "",
+      technicianId: "",
+      priceType: "flat",
+      price: '',
+      completionTime: "",
+    };
+    
+    setStations((prev) => [...prev, newStation]);
+    // useEffect will handle populating prices automatically
   }
 
   function removeStation(index) {

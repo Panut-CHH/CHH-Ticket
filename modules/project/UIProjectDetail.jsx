@@ -48,6 +48,7 @@ export default function UIProjectDetail({ projectId }) {
   const [itemCodes, setItemCodes] = useState([]);
   const [expandedItems, setExpandedItems] = useState({});
   const [loading, setLoading] = useState(true);
+  const [itemPrices, setItemPrices] = useState({}); // Store prices for each item: { itemCode: { pressPrice, paintPrice } }
   
   // Modal states
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -89,8 +90,8 @@ export default function UIProjectDetail({ projectId }) {
   
   // Labor price states
   const [laborPrices, setLaborPrices] = useState({
-    pressStation: { price: '', priceType: 'flat' },
-    paintStation: { price: '', priceType: 'flat' }
+    pressStation: { price: '', priceType: 'per_piece' },
+    paintStation: { price: '', priceType: 'per_piece' }
   });
   const [availableStations, setAvailableStations] = useState([]);
   const [loadingStations, setLoadingStations] = useState(false);
@@ -136,7 +137,7 @@ export default function UIProjectDetail({ projectId }) {
             const filesResponse = await fetch(`/api/projects/items/${item.id}/files`);
             const filesResult = await filesResponse.json();
             console.log('Files result for', item.item_code, ':', filesResult);
-    return {
+            return {
               ...item,
               files: filesResult.success ? filesResult.data : []
             };
@@ -144,9 +145,63 @@ export default function UIProjectDetail({ projectId }) {
         );
         console.log('Items with files:', itemsWithFiles);
         setItemCodes(itemsWithFiles);
+        
+        // Load labor prices for all items (only if admin)
+        if (isAdminOrAbove(user)) {
+          await loadItemPrices(itemsWithFiles);
+        }
       }
     } catch (error) {
       console.error('Error loading item codes:', error);
+    }
+  };
+
+  // Load labor prices for all items
+  const loadItemPrices = async (items) => {
+    try {
+      // Find stations by name "อัดบาน" and "สี"
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      const paintStation = availableStations.find(s => s.name_th === 'สี');
+      
+      if (!pressStation && !paintStation) {
+        return; // Stations not found, skip loading prices
+      }
+      
+      const pricesMap = {};
+      
+      // Load prices for each item
+      await Promise.all(
+        items.map(async (item) => {
+          try {
+            const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(item.item_code)}`);
+            const result = await response.json();
+            
+            // Always create an entry, even if no prices found
+            const pressPrice = (result.success && result.data && pressStation)
+              ? result.data.find(p => p.station_code === pressStation.code)?.price ?? null
+              : null;
+            const paintPrice = (result.success && result.data && paintStation)
+              ? result.data.find(p => p.station_code === paintStation.code)?.price ?? null
+              : null;
+            
+            pricesMap[item.item_code] = {
+              pressPrice: pressPrice,
+              paintPrice: paintPrice
+            };
+          } catch (error) {
+            console.error(`Error loading prices for ${item.item_code}:`, error);
+            // Still create entry with null values on error
+            pricesMap[item.item_code] = {
+              pressPrice: null,
+              paintPrice: null
+            };
+          }
+        })
+      );
+      
+      setItemPrices(pricesMap);
+    } catch (error) {
+      console.error('Error loading item prices:', error);
     }
   };
 
@@ -382,6 +437,15 @@ export default function UIProjectDetail({ projectId }) {
     loadAvailableStations();
   }, []);
 
+  // Reload prices when itemCodes change and user is admin
+  useEffect(() => {
+    const isAdmin = isAdminOrAbove(user);
+    if (isAdmin && itemCodes.length > 0 && availableStations.length > 0) {
+      loadItemPrices(itemCodes);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [itemCodes.length, availableStations.length]);
+
   const loadAvailableStations = async () => {
     try {
       setLoadingStations(true);
@@ -419,13 +483,13 @@ export default function UIProjectDetail({ projectId }) {
       const result = await response.json();
       
       if (result.success && result.data) {
-        // Find stations by name "อัดบ้าน" and "สี"
-        const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+        // Find stations by name "อัดบาน" and "สี"
+        const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
         const paintStation = availableStations.find(s => s.name_th === 'สี');
         
         const prices = {
-          pressStation: { price: '', priceType: 'flat' },
-          paintStation: { price: '', priceType: 'flat' }
+          pressStation: { price: '', priceType: 'per_piece' },
+          paintStation: { price: '', priceType: 'per_piece' }
         };
         
         // Map existing prices to form
@@ -433,13 +497,13 @@ export default function UIProjectDetail({ projectId }) {
           if (pressStation && priceData.station_code === pressStation.code) {
             prices.pressStation = {
               price: priceData.price || '',
-              priceType: priceData.price_type || 'flat'
+              priceType: priceData.price_type || 'per_piece'
             };
           }
           if (paintStation && priceData.station_code === paintStation.code) {
             prices.paintStation = {
               price: priceData.price || '',
-              priceType: priceData.price_type || 'flat'
+              priceType: priceData.price_type || 'per_piece'
             };
           }
         });
@@ -448,15 +512,15 @@ export default function UIProjectDetail({ projectId }) {
       } else {
         // Reset to defaults if no prices found
         setLaborPrices({
-          pressStation: { price: '', priceType: 'flat' },
-          paintStation: { price: '', priceType: 'flat' }
+          pressStation: { price: '', priceType: 'per_piece' },
+          paintStation: { price: '', priceType: 'per_piece' }
         });
       }
     } catch (error) {
       console.error('Error loading labor prices:', error);
       setLaborPrices({
-        pressStation: { price: '', priceType: 'flat' },
-        paintStation: { price: '', priceType: 'flat' }
+        pressStation: { price: '', priceType: 'per_piece' },
+        paintStation: { price: '', priceType: 'per_piece' }
       });
     } finally {
       setLoadingPrices(false);
@@ -469,11 +533,11 @@ export default function UIProjectDetail({ projectId }) {
     
     setSavingPrices(true);
     try {
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบ้าน' || s.name_th === 'อัดบาน');
+      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       
       if (!pressStation && !paintStation) {
-        alert(language === 'th' ? 'ไม่พบสถานี "อัดบ้าน" หรือ "สี" ในระบบ' : 'Stations "Press" or "Paint" not found');
+        alert(language === 'th' ? 'ไม่พบสถานี "อัดบาน" หรือ "สี" ในระบบ' : 'Stations "Press" or "Paint" not found');
         setSavingPrices(false);
         return;
       }
@@ -508,6 +572,10 @@ export default function UIProjectDetail({ projectId }) {
         alert(language === 'th' ? 'บันทึกราคาค่าแรงสำเร็จ' : 'Labor prices saved successfully');
         setShowLaborPriceModal(false);
         setPricingItem(null);
+        // Reload prices after saving
+        if (isAdminOrAbove(user) && itemCodes.length > 0) {
+          await loadItemPrices(itemCodes);
+        }
       } else {
         alert(language === 'th' ? 'บันทึกล้มเหลว: ' + (result.error || 'Unknown error') : 'Save failed: ' + (result.error || 'Unknown error'));
       }
@@ -639,6 +707,18 @@ export default function UIProjectDetail({ projectId }) {
                             {item.files?.length || 0} {language === 'th' ? 'ไฟล์' : 'files'}
                               </span>
                         </p>
+                        {/* Display prices for admin only */}
+                        {isAdminOrAbove(user) && itemPrices[item.item_code] && (
+                          <div className="mt-2 px-2 py-1 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
+                            <span className="text-yellow-800 dark:text-yellow-200 font-medium">
+                              {language === 'th' ? 'ราคาผลิต' : 'Production Price'}: {itemPrices[item.item_code].pressPrice !== null && itemPrices[item.item_code].pressPrice !== undefined ? itemPrices[item.item_code].pressPrice : '-'}
+                            </span>
+                            <span className="text-yellow-700 dark:text-yellow-300 mx-2">|</span>
+                            <span className="text-yellow-800 dark:text-yellow-200 font-medium">
+                              {language === 'th' ? 'ราคาสี' : 'Color Price'}: {itemPrices[item.item_code].paintPrice !== null && itemPrices[item.item_code].paintPrice !== undefined ? itemPrices[item.item_code].paintPrice : '-'}
+                            </span>
+                          </div>
+                        )}
                           </div>
                         </div>
 
@@ -1387,8 +1467,8 @@ export default function UIProjectDetail({ projectId }) {
           setShowLaborPriceModal(false);
           setPricingItem(null);
           setLaborPrices({
-            pressStation: { price: '', priceType: 'flat' },
-            paintStation: { price: '', priceType: 'flat' }
+            pressStation: { price: '', priceType: 'per_piece' },
+            paintStation: { price: '', priceType: 'per_piece' }
           });
         }}
         title={language === 'th' ? `ตั้งราคาค่าแรง - ${pricingItem?.item_code || ''}` : `Set Labor Price - ${pricingItem?.item_code || ''}`}
@@ -1402,8 +1482,8 @@ export default function UIProjectDetail({ projectId }) {
                   setShowLaborPriceModal(false);
                   setPricingItem(null);
                   setLaborPrices({
-                    pressStation: { price: '', priceType: 'flat' },
-                    paintStation: { price: '', priceType: 'flat' }
+                    pressStation: { price: '', priceType: 'per_piece' },
+                    paintStation: { price: '', priceType: 'per_piece' }
                   });
                 }}
                 disabled={savingPrices}
@@ -1442,15 +1522,15 @@ export default function UIProjectDetail({ projectId }) {
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 break-words">
                 {language === 'th' 
-                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบ้าน" และ "สี" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
+                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบาน" และ "สี" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
                   : 'Set labor prices for "Press" and "Paint" stations. These prices will automatically appear in ticket edit page'}
               </p>
               
               <div className="space-y-4">
-                {/* Press Station (อัดบ้าน) */}
+                {/* Press Station (อัดบาน) */}
                 <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
                   <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                    {language === 'th' ? 'สถานี: อัดบ้าน' : 'Station: Press'}
+                    {language === 'th' ? 'สถานี: อัดบาน' : 'Station: Press'}
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>

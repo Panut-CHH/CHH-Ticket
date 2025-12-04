@@ -1,5 +1,7 @@
 "use client";
 
+console.log('✅ PRODUCTION DETAIL PAGE LOADED - File version with price calculation');
+
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
@@ -10,7 +12,16 @@ import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
 
 function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null }) {
+  console.log('🚀 [DetailCard] Component RENDERED');
+  // Debug: Check ticket data
+  console.log('[DetailCard] Ticket received:', ticket ? { id: ticket.id, hasStations: !!ticket.stations, stationsLength: ticket.stations?.length } : 'null');
+  
   // ใช้ userId สำหรับการเปรียบเทียบ (ถ้ามี)
+  if (!ticket || !ticket.roadmap) {
+    console.log('[DetailCard] Ticket or roadmap is missing');
+    return null;
+  }
+  
   const currentIndex = ticket.roadmap.findIndex((s) => s.status === "current");
   const nextIndex = currentIndex >= 0 ? currentIndex + 1 : -1;
   const currentStep = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.step : null;
@@ -130,49 +141,43 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
       }
       
       // Load activity logs to find who started QC (for steps with started_at)
+      // Temporarily disabled due to 400 error - will fix schema later
       try {
-        const { data: logs, error: logsError } = await supabase
-          .from('activity_logs')
-          .select('action, entity_id, entity_type, user_data, metadata, created_at')
-          .eq('entity_type', 'qc_workflow')
-          .eq('entity_id', ticketNo)
-          .eq('action', 'qc_started')
-          .order('created_at', { ascending: true });
-        
-        if (!logsError && logs) {
-          console.log('[DEBUG] Loaded QC start activity logs:', logs?.length || 0, 'logs');
-          setActivityLogs(logs || []);
-        }
+        // Skip activity_logs query for now to avoid 400 error
+        setActivityLogs([]);
       } catch (e) {
         console.warn('Failed to load activity logs:', e);
         setActivityLogs([]);
       }
       
       // Load QC sessions to get actual completion time for QC steps
-      const { data: qcSess, error: qcError } = await supabase
-        .from('qc_sessions')
-        .select(`
-          id, 
-          ticket_no, 
-          created_at, 
-          completed_at, 
-          inspected_date, 
-          qc_task_uuid, 
-          step_order,
-          inspector,
-          inspector_id,
-          users:inspector_id (
-            id,
-            name,
-            email
-          )
-        `)
-        .eq('ticket_no', ticketNo)
-        .order('step_order', { ascending: true });
-      
-      if (!qcError && qcSess) {
-        console.log('[DEBUG] Loaded QC sessions:', qcSess?.length || 0, 'sessions');
-        setQcSessions(qcSess || []);
+      try {
+        const { data: qcSess, error: qcError } = await supabase
+          .from('qc_sessions')
+          .select(`
+            id, 
+            ticket_no, 
+            created_at, 
+            completed_at, 
+            inspected_date, 
+            qc_task_uuid, 
+            step_order,
+            inspector,
+            inspector_id
+          `)
+          .eq('ticket_no', ticketNo)
+          .order('step_order', { ascending: true });
+        
+        if (qcError) {
+          console.warn('[DEBUG] Failed to load QC sessions (non-critical):', qcError.message);
+          setQcSessions([]);
+        } else if (qcSess) {
+          console.log('[DEBUG] Loaded QC sessions:', qcSess?.length || 0, 'sessions');
+          setQcSessions(qcSess || []);
+        }
+      } catch (e) {
+        console.warn('Failed to load QC sessions:', e);
+        setQcSessions([]);
       }
     } catch (e) {
       console.error('Failed to load work sessions:', e);
@@ -420,6 +425,67 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
     return steps.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
   }, [ticket.stations]);
+
+  // Calculate production price and color price from stations
+  const priceCalculation = useMemo(() => {
+    console.log('💰 [PRICE_CALC] START - Ticket exists:', !!ticket);
+    if (!ticket) {
+      console.log('💰 [PRICE_CALC] No ticket data');
+      return { productionPrice: 0, colorPrice: 0, total: 0 };
+    }
+    
+    const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
+    const quantity = Number(ticket.quantity) || 0;
+    
+    console.log('💰 [PRICE_CALC] Ticket ID:', ticket.id);
+    console.log('💰 [PRICE_CALC] Stations data:', steps);
+    console.log('💰 [PRICE_CALC] Stations length:', steps.length);
+    console.log('💰 [PRICE_CALC] Quantity:', quantity);
+    
+    let productionPrice = 0;
+    let colorPrice = 0;
+    
+    steps.forEach((station) => {
+      const stationName = (station.name || '').toLowerCase();
+      const price = Number(station.price) || 0;
+      const priceType = station.priceType || 'flat';
+      
+      console.log('[PRICE_CALC] Station:', stationName, 'Price:', price, 'Type:', priceType);
+      
+      // Check if this is color station (สถานีสี)
+      const isColorStation = stationName.includes('สี') || stationName.includes('color');
+      
+      // Calculate price based on price_type
+      let stationTotal = 0;
+      if (priceType === 'per_piece') {
+        stationTotal = price * quantity;
+      } else if (priceType === 'per_hour') {
+        // For per_hour, we'll use the price as is (assuming it's already calculated)
+        stationTotal = price;
+      } else {
+        // flat price
+        stationTotal = price;
+      }
+      
+      if (isColorStation) {
+        colorPrice += stationTotal;
+        console.log('[PRICE_CALC] Added to colorPrice:', stationTotal, 'Total colorPrice:', colorPrice);
+      } else {
+        productionPrice += stationTotal;
+        console.log('[PRICE_CALC] Added to productionPrice:', stationTotal, 'Total productionPrice:', productionPrice);
+      }
+    });
+    
+    const total = productionPrice + colorPrice;
+    
+    console.log('[PRICE_CALC] Final calculation:', { productionPrice, colorPrice, total });
+    
+    return {
+      productionPrice,
+      colorPrice,
+      total
+    };
+  }, [ticket.stations, ticket.quantity]);
 
   const bomItems = Array.isArray(ticket.bom) ? ticket.bom : [];
 
@@ -839,12 +905,33 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           })()}
 
           <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
-            <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ค่าแรงรวมตั๋ว</div>
-            <div className="mt-1 inline-flex items-center gap-2 text-gray-800 dark:text-gray-200 font-semibold">
-              <Coins className="w-4 h-4 text-emerald-600" />
-              {totalLabor.toLocaleString()} บาท
+            <div className="space-y-2">
+              <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-2">ราคารวม</div>
+              {priceCalculation.total === 0 && Array.isArray(ticket.stations) && ticket.stations.length > 0 ? (
+                <div className="text-xs text-amber-600 dark:text-amber-400">
+                  ⚠️ ยังไม่ได้กำหนดราคาในแต่ละสถานี กรุณาไปกำหนดราคาในหน้า Ticket Edit
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">รวมทั้งสิ้น</span>
+                <span className="text-sm font-semibold text-gray-900 dark:text-gray-100 inline-flex items-center gap-1">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  {priceCalculation.total.toLocaleString()} บาท
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">ราคาผลิต</span>
+                <span className="text-sm text-gray-800 dark:text-gray-200">
+                  {priceCalculation.productionPrice.toLocaleString()} บาท
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-gray-600 dark:text-gray-400">ราคาสี</span>
+                <span className="text-sm text-gray-800 dark:text-gray-200">
+                  {priceCalculation.colorPrice.toLocaleString()} บาท
+                </span>
+              </div>
             </div>
-            <div className="mt-1 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ของฉัน: <span className="text-gray-800 dark:text-gray-200 font-medium">{myEarnings.toLocaleString()} บาท</span></div>
           </div>
           <div className="p-4 rounded-xl border border-gray-100 dark:border-slate-600">
             <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">
@@ -924,6 +1011,7 @@ export default function ProductionDetailPage() {
 
   // Function to reload ticket data from DB
   const reloadTicketData = useCallback(async () => {
+    console.log('🚀 [RELOAD] reloadTicketData STARTED for ticket:', ticketId);
     try {
       let erpTicket;
       {
@@ -965,12 +1053,32 @@ export default function ProductionDetailPage() {
         .eq('ticket_no', ticketId)
         .order('step_order', { ascending: true });
       
-      console.log('[RELOAD] Raw flows from DB:', flows?.map(f => ({
+      console.log('🔍 [RELOAD] Raw flows from DB:', flows?.map(f => ({
         station: f.stations?.name_th,
         status: f.status,
         station_id: f.station_id,
+        price: f.price,
+        price_type: f.price_type,
         is_rework_ticket: f.is_rework_ticket
       })));
+      console.log('💰 [RELOAD] PRICE CHECK - First flow price:', flows?.[0]?.price, 'Type:', flows?.[0]?.price_type);
+      console.log('💰 [RELOAD] PRICE CHECK - All prices:', flows?.map(f => ({ station: f.stations?.name_th, price: f.price, type: f.price_type })));
+      console.log('[RELOAD] Price details:', flows?.map(f => ({
+        station: f.stations?.name_th,
+        price: f.price,
+        price_type: f.price_type,
+        price_value: Number(f.price) || 0
+      })));
+      // Log full flow object to see all fields
+      if (flows && flows.length > 0) {
+        console.log('[RELOAD] First flow full object:', flows[0]);
+        console.log('[RELOAD] All flow prices:', flows.map(f => ({ 
+          station: f.stations?.name_th, 
+          raw_price: f.price, 
+          price_type: f.price_type,
+          has_price: f.price !== null && f.price !== undefined
+        })));
+      }
       
       if (flowError) {
         console.warn('Load flows error:', flowError.message);
@@ -1483,6 +1591,7 @@ export default function ProductionDetailPage() {
   }
 
   function mergeFlowsIntoTicket(base, flows, assignments) {
+    console.log('🚀 [MERGE] mergeFlowsIntoTicket STARTED');
     if (!flows || flows.length === 0) return base;
     
     console.log('[MERGE] Merging flows:', flows.map(f => ({
@@ -1536,16 +1645,24 @@ export default function ProductionDetailPage() {
     
     const stations = flows.map(flow => {
       const techKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
-      return {
+      const stationData = {
         name: flow.stations?.name_th || '',
         technician: assignmentMap[techKey] || '',
         technicianIds: assignmentIdMap[techKey] || [], // เก็บ array ของ technician IDs
         priceType: flow.price_type || 'flat',
         price: Number(flow.price) || 0,
-            status: flow.status || 'pending',
-            stationId: flow.station_id
+        status: flow.status || 'pending',
+        stationId: flow.station_id
       };
+      console.log('🔍 [MERGE] Station data:', {
+        name: stationData.name,
+        price: stationData.price,
+        priceType: stationData.priceType,
+        raw_price: flow.price
+      });
+      return stationData;
     });
+    console.log('💰 [MERGE] ALL STATIONS WITH PRICES:', stations.map(s => ({ name: s.name, price: s.price, type: s.priceType })));
     
     const currentFlow = flows.find(f => f.status === 'current');
     console.log('[MERGE] Current flow found:', currentFlow ? currentFlow.stations?.name_th : 'none');
@@ -1563,6 +1680,11 @@ export default function ProductionDetailPage() {
     
     const status = calculateTicketStatus(stations, roadmap);
     console.log('[MERGE] Calculated status:', status);
+    console.log('[MERGE] Stations with prices:', stations.map(s => ({
+      name: s.name,
+      price: s.price,
+      priceType: s.priceType
+    })));
     
     const statusClass = getStatusClass(status);
     return { ...base, roadmap, stations, assignee: assignee || '-', status, statusClass };

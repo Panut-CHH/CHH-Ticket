@@ -461,7 +461,39 @@ export default function ProductionPage() {
 
   const sumTicketAmount = (ticket) => {
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
-    return steps.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+    const quantity = Number(ticket.quantity) || 0;
+    
+    let productionPrice = 0;
+    let colorPrice = 0;
+    
+    steps.forEach((station) => {
+      const stationName = (station.name || '').toLowerCase();
+      const price = Number(station.price) || 0;
+      const priceType = station.priceType || 'flat';
+      
+      // Check if this is color station (สถานีสี)
+      const isColorStation = stationName.includes('สี') || stationName.includes('color');
+      
+      // Calculate price based on price_type
+      let stationTotal = 0;
+      if (priceType === 'per_piece') {
+        stationTotal = price * quantity;
+      } else if (priceType === 'per_hour') {
+        stationTotal = price;
+      } else {
+        // flat price
+        stationTotal = price;
+      }
+      
+      if (isColorStation) {
+        colorPrice += stationTotal;
+      } else {
+        productionPrice += stationTotal;
+      }
+    });
+    
+    const total = productionPrice + colorPrice;
+    return total;
   };
 
   const priorityRank = (p) => {
@@ -884,7 +916,7 @@ export default function ProductionPage() {
                         {/* Meta row */}
                         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
                           <span>
-                            {language === 'th' ? 'มูลค่าตั๋ว:' : 'Ticket value:'}{' '}
+                            {language === 'th' ? 'มูลค่าตั๋ว:' : 'Total price:'}{' '}
                             <span className="font-medium text-gray-900 dark:text-gray-100">
                               {total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}
                             </span>
