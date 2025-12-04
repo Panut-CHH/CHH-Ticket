@@ -1097,148 +1097,150 @@ export default function UIProjectDetail({ projectId }) {
           setPreviewUpdate(null);
         }}
         title={language === 'th' ? 'แก้ไขรหัสสินค้า' : 'Edit Product Code'}
+        maxHeight="max-h-[85vh]"
+        footer={editingItem ? (
+          <div className="px-4 sm:px-6 py-4">
+            <div className="flex flex-col sm:flex-row justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowEditItemModal(false);
+                  setEditingItem(null);
+                  setPreviewUpdate(null);
+                }}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={async () => {
+                  const newItemCode = generateEditItemCode();
+                  // ถ้า item_code เปลี่ยน ต้องตรวจสอบผลกระทบก่อน
+                  if (newItemCode && editingItem.item_code !== newItemCode) {
+                    await handlePreviewUpdate();
+                  } else {
+                    // ถ้าไม่เปลี่ยน บันทึกได้เลย
+                    await handleUpdateItemCode();
+                  }
+                }}
+                disabled={!editForm.itemProductCode || isUpdating || isLoadingPreview}
+                className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
+              >
+                {isUpdating || isLoadingPreview ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>{isLoadingPreview ? (language === 'th' ? 'กำลังตรวจสอบ...' : 'Checking...') : (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{t('save', language)}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        ) : null}
       >
         <div className="p-4 sm:p-6">
           {editingItem && (
-            <>
-              <div className="space-y-4 mb-4 sm:mb-6">
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    {t('itemType', language)} *
-                  </label>
-                  <select
-                    value={editForm.itemType}
-                    onChange={(e) => {
-                      setEditForm(prev => ({ ...prev, itemType: e.target.value }));
-                      setPreviewUpdate(null);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-                  >
-                    <option value="FG">{t('itemTypeFG', language)}</option>
-                    <option value="SM">{t('itemTypeSM', language)}</option>
-                    <option value="WP">{t('itemTypeWP', language)}</option>
-                    <option value="EX">{t('itemTypeEX', language)}</option>
-                  </select>
-                </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {t('itemType', language)} *
+                </label>
+                <select
+                  value={editForm.itemType}
+                  onChange={(e) => {
+                    setEditForm(prev => ({ ...prev, itemType: e.target.value }));
+                    setPreviewUpdate(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                >
+                  <option value="FG">{t('itemTypeFG', language)}</option>
+                  <option value="SM">{t('itemTypeSM', language)}</option>
+                  <option value="WP">{t('itemTypeWP', language)}</option>
+                  <option value="EX">{t('itemTypeEX', language)}</option>
+                </select>
+              </div>
 
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    {t('productCode', language)} *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="D01"
-                    value={editForm.itemProductCode}
-                    onChange={(e) => {
-                      setEditForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }));
-                      setPreviewUpdate(null);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase text-sm sm:text-base"
-                    style={{ textTransform: 'uppercase' }}
-                  />
-                </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {t('productCode', language)} *
+                </label>
+                <input
+                  type="text"
+                  placeholder="D01"
+                  value={editForm.itemProductCode}
+                  onChange={(e) => {
+                    setEditForm(prev => ({ ...prev, itemProductCode: e.target.value.toUpperCase() }));
+                    setPreviewUpdate(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase text-sm sm:text-base"
+                  style={{ textTransform: 'uppercase' }}
+                />
+              </div>
 
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    {t('itemUnit', language)} *
-                  </label>
-                  <select
-                    value={editForm.itemUnit}
-                    onChange={(e) => {
-                      setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
-                      setPreviewUpdate(null);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-                  >
-                    <option value="D">{t('unitD', language)}</option>
-                    <option value="F">{t('unitF', language)}</option>
-                    <option value="S">{t('unitS', language)}</option>
-                    <option value="P">{t('unitP', language)}</option>
-                    <option value="W">{t('unitW', language)}</option>
-                    <option value="M">{t('unitM', language)}</option>
-                    <option value="O">{t('unitO', language)}</option>
-                  </select>
-                </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {t('itemUnit', language)} *
+                </label>
+                <select
+                  value={editForm.itemUnit}
+                  onChange={(e) => {
+                    setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
+                    setPreviewUpdate(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                >
+                  <option value="D">{t('unitD', language)}</option>
+                  <option value="F">{t('unitF', language)}</option>
+                  <option value="S">{t('unitS', language)}</option>
+                  <option value="P">{t('unitP', language)}</option>
+                  <option value="W">{t('unitW', language)}</option>
+                  <option value="M">{t('unitM', language)}</option>
+                  <option value="O">{t('unitO', language)}</option>
+                </select>
+              </div>
 
-                {/* Preview */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
-                  <span className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1 break-words">
-                    {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
-                  </span>
-                  <div className="text-lg sm:text-xl font-bold text-blue-600 dark:text-blue-400 font-mono break-all">
-                    {generateEditItemCode() || <span className="text-gray-400 text-xs sm:text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
-                  </div>
-                  {editingItem?.item_code && generateEditItemCode() && editingItem.item_code !== generateEditItemCode() && (
-                    <div className="mt-2 pt-2 border-t border-blue-300 dark:border-blue-700">
-                      <span className="text-xs text-blue-700 dark:text-blue-300 break-words">
-                        {language === 'th' ? 'รหัสเดิม' : 'Old Code'}: <span className="font-mono break-all">{editingItem.item_code}</span>
-                      </span>
-                    </div>
-                  )}
+              {/* Preview */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 sm:p-4 border border-blue-200 dark:border-blue-800">
+                <span className="text-xs sm:text-sm font-medium text-blue-900 dark:text-blue-100 block mb-1 break-words">
+                  {language === 'th' ? 'รหัสสินค้าใหม่' : 'New Item Code'}:
+                </span>
+                <div className="text-lg sm:text-xl font-bold text-blue-600 dark:text-blue-400 font-mono break-all">
+                  {generateEditItemCode() || <span className="text-gray-400 text-xs sm:text-sm">{language === 'th' ? 'กรุณากรอกข้อมูล' : 'Please fill in data'}</span>}
                 </div>
-
-                {/* Show preview update info if available */}
-                {previewUpdate && previewUpdate.willChange && (
-                  <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 sm:p-4 border border-yellow-200 dark:border-yellow-800">
-                    <div className="flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1 break-words">
-                          {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบ' : 'This change will affect'}
-                        </p>
-                        {previewUpdate.affectedTicketsCount > 0 && (
-                          <p className="text-xs text-yellow-700 dark:text-yellow-300 break-words">
-                            {language === 'th' 
-                              ? `• ${previewUpdate.affectedTicketsCount} tickets จะถูกอัปเดตให้ใช้รหัสใหม่`
-                              : `• ${previewUpdate.affectedTicketsCount} tickets will be updated to use the new code`
-                            }
-                          </p>
-                        )}
-                      </div>
-                    </div>
+                {editingItem?.item_code && generateEditItemCode() && editingItem.item_code !== generateEditItemCode() && (
+                  <div className="mt-2 pt-2 border-t border-blue-300 dark:border-blue-700">
+                    <span className="text-xs text-blue-700 dark:text-blue-300 break-words">
+                      {language === 'th' ? 'รหัสเดิม' : 'Old Code'}: <span className="font-mono break-all">{editingItem.item_code}</span>
+                    </span>
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col sm:flex-row justify-end gap-3">
-                <button
-                  onClick={() => {
-                    setShowEditItemModal(false);
-                    setEditingItem(null);
-                    setPreviewUpdate(null);
-                  }}
-                  className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
-                >
-                  {t('cancel', language)}
-                </button>
-                <button
-                  onClick={async () => {
-                    const newItemCode = generateEditItemCode();
-                    // ถ้า item_code เปลี่ยน ต้องตรวจสอบผลกระทบก่อน
-                    if (newItemCode && editingItem.item_code !== newItemCode) {
-                      await handlePreviewUpdate();
-                    } else {
-                      // ถ้าไม่เปลี่ยน บันทึกได้เลย
-                      await handleUpdateItemCode();
-                    }
-                  }}
-                  disabled={!editForm.itemProductCode || isUpdating || isLoadingPreview}
-                  className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto text-sm sm:text-base min-h-[44px]"
-                >
-                  {isUpdating || isLoadingPreview ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>{isLoadingPreview ? (language === 'th' ? 'กำลังตรวจสอบ...' : 'Checking...') : (language === 'th' ? 'กำลังบันทึก...' : 'Saving...')}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="w-4 h-4" />
-                      <span>{t('save', language)}</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </>
+              {/* Show preview update info if available */}
+              {previewUpdate && previewUpdate.willChange && (
+                <div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-3 sm:p-4 border border-yellow-200 dark:border-yellow-800">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 sm:w-5 sm:h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs sm:text-sm font-medium text-yellow-800 dark:text-yellow-200 mb-1 break-words">
+                        {language === 'th' ? 'การเปลี่ยนแปลงนี้จะส่งผลกระทบ' : 'This change will affect'}
+                      </p>
+                      {previewUpdate.affectedTicketsCount > 0 && (
+                        <p className="text-xs text-yellow-700 dark:text-yellow-300 break-words">
+                          {language === 'th' 
+                            ? `• ${previewUpdate.affectedTicketsCount} tickets จะถูกอัปเดตให้ใช้รหัสใหม่`
+                            : `• ${previewUpdate.affectedTicketsCount} tickets will be updated to use the new code`
+                          }
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
       </Modal>

@@ -34,6 +34,7 @@ export default function UITicket() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [itemCodes, setItemCodes] = useState([]);
   const [groupedByItem, setGroupedByItem] = useState([]);
+  const [projectMapByItemCode, setProjectMapByItemCode] = useState(new Map());
   const [expandedItems, setExpandedItems] = useState(new Set());
   // Filters
   const [showFilter, setShowFilter] = useState(false);
@@ -108,6 +109,9 @@ export default function UITicket() {
             }
           }
         } catch {}
+
+        // เก็บ projectMap ไว้ใช้ในมุมมองแบบ grouped ด้วย
+        setProjectMapByItemCode(projectMap);
 
         // 2. เรียก ERP API ด้วย /all endpoint (Real-time)
         let erpTickets = [];
@@ -279,9 +283,20 @@ export default function UITicket() {
             const dbTicket = dbTicketMap.get(rpdNo);
             const isNew = newTickets.some(t => t.no === rpdNo);
             
+            // แปลงข้อมูลจาก ERP ก่อน
+            const erpMapped = mapErpRecordToTicket(erpRecord, projectMap);
+
+            // ถ้า ticket จากฐานข้อมูลมี project ที่ join มา ให้ใช้ชื่อโปรเจ็คจากนั้นแทนเลขโค้ด
+            const dbProjectName =
+              dbTicket?.projects?.project_name ||
+              dbTicket?.projects?.description ||
+              null;
+            
             return {
               // ข้อมูลจาก ERP (ล่าสุด)
-              ...mapErpRecordToTicket(erpRecord, projectMap),
+              ...erpMapped,
+              // บังคับใช้ชื่อโปรเจ็คจาก DB ถ้ามี (จะได้เป็น "Bristal Bangkok" แทน 00051)
+              projectName: dbProjectName || erpMapped.projectName,
               
               // ข้อมูลจาก DB (station flow, status, assignments)
               project_id: dbTicket?.project_id,
@@ -342,8 +357,8 @@ export default function UITicket() {
             const sourceNo = rec?.Source_No || rec?.Item_No || rec?.Item_Code || '';
             if (!sourceNo || !codes.includes(sourceNo)) continue;
             
-            // แปลงข้อมูล ERP เป็น ticket object เหมือนเดิม
-            const ticket = mapErpRecordToTicket(rec, new Map());
+            // แปลงข้อมูล ERP เป็น ticket object เหมือนเดิม แต่ใช้ projectMapByItemCode
+            const ticket = mapErpRecordToTicket(rec, projectMapByItemCode || new Map());
             
             if (!groups.has(sourceNo)) groups.set(sourceNo, []);
             groups.get(sourceNo).push(ticket);
@@ -1239,7 +1254,7 @@ export default function UITicket() {
 
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
-  function TicketCard({ ticket, onEdit, ticketBomStatus, ticketAssignmentStatus }) {
+  function TicketCard({ ticket, onEdit, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
@@ -1259,12 +1274,7 @@ export default function UITicket() {
                     <span className="font-mono text-gray-900 dark:text-gray-100">{ticket.itemCode}</span>
                   </span>
                 )}
-                {ticket.projectName && (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="text-gray-500 dark:text-gray-400">Project</span>
-                    <span className="font-mono text-gray-900 dark:text-gray-100">{ticket.projectName}</span>
-                  </span>
-                )}
+                {/* เอา Project name ด้านบนออกเพราะไปแสดงตรงไอคอนคนด้านล่างแล้ว */}
               </div>
             </div>
              {/* ข้อมูลที่ย้ายมาจากด้านบน - ใส่ในกรอบ */}
@@ -1273,12 +1283,21 @@ export default function UITicket() {
                 <span className={`text-xs px-2 py-1 rounded-full ${ticket.priorityClass}`}>
                   {ticket.priority}
                 </span>
-                {ticket.customerName && (
                   <span className="inline-flex items-center gap-1 font-medium text-blue-700 dark:text-blue-300">
                     <User className="w-3 h-3" />
-                    {ticket.customerName}
+                  {/* ใช้ชื่อโปรเจ็คจาก projectMapByItemCode เป็นหลัก แสดงตรงไอคอนคน (ตำแหน่งที่ต้องการ) */}
+                  {(() => {
+                    const projectFromMap = projectMapByItemCode instanceof Map
+                      ? projectMapByItemCode.get(ticket.itemCode)
+                      : null;
+                    const displayProjectName =
+                      projectFromMap?.project_name ||
+                      projectFromMap?.description ||
+                      ticket.projectName ||
+                      ticket.customerName;
+                    return displayProjectName || (language === 'th' ? 'ไม่ระบุโปรเจ็ค' : 'Unknown project');
+                  })()}
                   </span>
-                )}
                 <span className="inline-flex items-center gap-1 font-medium text-gray-700 dark:text-gray-300">
                   จำนวน: {ticket.quantity} ชิ้น
                 </span>
@@ -1775,7 +1794,25 @@ export default function UITicket() {
                                 ) : (
                                   <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                                 )}
-                                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 font-mono">{g.itemCode}</h3>
+                                {(() => {
+                                  const projectFromMap = projectMapByItemCode instanceof Map
+                                    ? projectMapByItemCode.get(g.itemCode)
+                                    : null;
+                                  const displayProjectName =
+                                    projectFromMap?.project_name ||
+                                    projectFromMap?.description ||
+                                    '';
+                                  return (
+                                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                      <span className="font-mono">{g.itemCode}</span>
+                                      {displayProjectName && (
+                                        <span className="ml-2 text-sm font-normal text-blue-300">
+                                          {displayProjectName}
+                                        </span>
+                                      )}
+                                    </h3>
+                                  );
+                                })()}
                               </div>
                               <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
                                 {(() => {
@@ -1803,7 +1840,13 @@ export default function UITicket() {
                                 <div className="space-y-3 pt-3">
                                   {displayItems.map((ticket, ticketIndex) => (
                                     <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
-                                      <TicketCard ticket={ticket} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                                      <TicketCard
+                                        ticket={ticket}
+                                        onEdit={handleEdit}
+                                        ticketBomStatus={ticketBomStatus}
+                                        ticketAssignmentStatus={ticketAssignmentStatus}
+                                        projectMapByItemCode={projectMapByItemCode}
+                                      />
                                     </div>
                                   ))}
                                   {displayItems.length === 0 && (
@@ -1868,7 +1911,25 @@ export default function UITicket() {
                                 ) : (
                                   <ChevronRight className="w-4 h-4 text-gray-500 dark:text-gray-400" />
                                 )}
-                                <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 font-mono">{g.itemCode}</h3>
+                                {(() => {
+                                  const projectFromMap = projectMapByItemCode instanceof Map
+                                    ? projectMapByItemCode.get(g.itemCode)
+                                    : null;
+                                  const displayProjectName =
+                                    projectFromMap?.project_name ||
+                                    projectFromMap?.description ||
+                                    '';
+                                  return (
+                                    <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                                      <span className="font-mono">{g.itemCode}</span>
+                                      {displayProjectName && (
+                                        <span className="ml-2 text-sm font-normal text-blue-300">
+                                          {displayProjectName}
+                                        </span>
+                                      )}
+                                    </h3>
+                                  );
+                                })()}
                               </div>
                               <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
                                 {(() => {
@@ -1896,7 +1957,13 @@ export default function UITicket() {
                                 <div className="space-y-3 pt-3">
                                   {displayItems.map((ticket, ticketIndex) => (
                                     <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
-                                      <TicketCard ticket={ticket} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                                      <TicketCard
+                                        ticket={ticket}
+                                        onEdit={handleEdit}
+                                        ticketBomStatus={ticketBomStatus}
+                                        ticketAssignmentStatus={ticketAssignmentStatus}
+                                        projectMapByItemCode={projectMapByItemCode}
+                                      />
                                     </div>
                                   ))}
                                   {displayItems.length === 0 && (
@@ -1918,7 +1985,13 @@ export default function UITicket() {
             {/* แสดงผลตั๋วปกติ - แสดงเฉพาะเมื่อไม่มีข้อมูลจาก Item Code */}
             {activeTab === "open" && groupedTicketsCount === 0 && currentTab.data.map((t, i) => (
               <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
-                <TicketCard ticket={t} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                <TicketCard
+                  ticket={t}
+                  onEdit={handleEdit}
+                  ticketBomStatus={ticketBomStatus}
+                  ticketAssignmentStatus={ticketAssignmentStatus}
+                  projectMapByItemCode={projectMapByItemCode}
+                />
               </div>
             ))}
             
@@ -1958,7 +2031,13 @@ export default function UITicket() {
               
               return currentTab.data.map((t, i) => (
                 <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
-                  <TicketCard ticket={t} onEdit={handleEdit} ticketBomStatus={ticketBomStatus} ticketAssignmentStatus={ticketAssignmentStatus} />
+                  <TicketCard
+                    ticket={t}
+                    onEdit={handleEdit}
+                    ticketBomStatus={ticketBomStatus}
+                    ticketAssignmentStatus={ticketAssignmentStatus}
+                    projectMapByItemCode={projectMapByItemCode}
+                  />
                 </div>
               ));
             })()}

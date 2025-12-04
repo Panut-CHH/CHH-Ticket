@@ -101,12 +101,57 @@ export default function ProductionPage() {
         setTickets([]);
         return;
       }
-      // 2) Map DB tickets to base ticket objects (DB-first)
+      // 2) Load projects & project_items to map itemCode -> project name (เช่น Bristal Bangkok)
+      const projectMap = new Map();
+      try {
+        const { data: projects, error: projectsError } = await supabase
+          .from('projects')
+          .select('id, item_code, project_name, description');
+        if (projectsError) {
+          console.warn('[PRODUCTION] Failed to load projects for projectName mapping:', projectsError.message);
+        } else if (Array.isArray(projects)) {
+          projects.forEach(p => {
+            if (p.item_code) {
+              projectMap.set(p.item_code, p);
+            }
+          });
+        }
+
+        // เติมจาก project_items (รองรับ item_code ที่อยู่ใน project_items)
+        try {
+          const { data: projectItems, error: projectItemsError } = await supabase
+            .from('project_items')
+            .select('project_id, item_code');
+          if (!projectItemsError && Array.isArray(projectItems) && Array.isArray(projects)) {
+            const projectIdMap = new Map(projects.map(p => [p.id, p]));
+            projectItems.forEach(it => {
+              const proj = projectIdMap.get(it.project_id);
+              if (proj && it?.item_code && !projectMap.has(it.item_code)) {
+                projectMap.set(it.item_code, proj);
+              }
+            });
+          }
+        } catch (e) {
+          console.warn('[PRODUCTION] Failed to load project_items for projectName mapping:', e?.message);
+        }
+      } catch (e) {
+        console.warn('[PRODUCTION] Exception while building projectMap:', e?.message);
+      }
+
+      // 3) Map DB tickets to base ticket objects (DB-first)
       const baseMapped = (ticketData || []).map(t => {
         const id = (t.no || '').replace('#','');
         const displayQty = (typeof t.pass_quantity === 'number' && t.pass_quantity !== null)
           ? t.pass_quantity
           : (t.quantity || 0);
+
+        // ดึงชื่อโปรเจ็คจาก projectMap ตาม itemCode/source_no
+        const projectFromMap = t.source_no ? projectMap.get(t.source_no) : null;
+        const projectNameFromMap =
+          projectFromMap?.project_name ||
+          projectFromMap?.description ||
+          '';
+
         return {
           id,
           title: t.description || '',
@@ -123,7 +168,8 @@ export default function ProductionPage() {
           rpd: id,
           itemCode: t.source_no || '',
           projectCode: t.source_no || id,
-          projectName: t.description || id,
+          // ใช้ชื่อโปรเจ็คจาก projects เป็นหลัก (เช่น Bristal Bangkok)
+          projectName: projectNameFromMap || t.description || id,
           description: t.description || '',
           description2: t.description_2 || '',
           stations: [],
@@ -426,6 +472,23 @@ export default function ProductionPage() {
     return 4;
   };
 
+  // สไตล์ป้าย "ความสำคัญ" ให้เด่นชัดตามระดับ
+  const getPriorityChipClass = (priority) => {
+    // รองรับทั้ง "High Priority" และ "High" (รวมถึงเคสอื่น ๆ จาก DB)
+    const p = (priority || "").toLowerCase();
+    if (p === "high priority" || p === "high") {
+      return "bg-red-600 text-white shadow-[0_0_12px_rgba(220,38,38,0.6)]";
+    }
+    if (p === "low priority" || p === "low") {
+      return "bg-emerald-600 text-white";
+    }
+    if (p === "medium priority" || p === "medium") {
+      return "bg-white text-gray-800 border border-gray-300 dark:bg-slate-800 dark:text-gray-100 dark:border-slate-600";
+    }
+    // ไม่ได้กำหนด priority หรือค่าอื่น ๆ
+    return "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100";
+  };
+
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (selectedStatuses.size > 0) count += 1;
@@ -442,6 +505,7 @@ export default function ProductionPage() {
       (t.title || "").toLowerCase().includes(q) ||
       (t.assignee || "").toLowerCase().includes(q) ||
       (t.itemCode || "").toLowerCase().includes(q) ||
+      (t.projectName || "").toLowerCase().includes(q) ||
       (t.customerName || "").toLowerCase().includes(q)
     );
   };
@@ -800,26 +864,58 @@ export default function ProductionPage() {
                   <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-4">
                       <div className="flex-1 min-w-0">
+                        {/* Header row: RPD + Item Code + Project name */}
                         <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                          <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">{ticket.id}</div>
-                          
-                          {ticket.route && <span className={`text-xs px-2 py-1 rounded-full ${ticket.routeClass}`}>{ticket.route}</span>}
-                          <span className={`text-xs px-2 py-1 rounded-full ${ticket.priorityClass}`}>{ticket.priority}</span>
-                          <span className={`text-xs sm:text-sm ${ticket.statusClass}`}>{ticket.status}</span>
-                          
-                          {/* Batch Status Indicators */}
+                          <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            {ticket.id}
+                          </div>
+                          {ticket.route && (
+                            <span className={`text-xs px-2 py-1 rounded-full font-mono ${ticket.routeClass}`}>
+                              {ticket.route}
+                            </span>
+                          )}
+                          {ticket.projectName && (
+                            <span className="text-xs sm:text-sm font-medium text-blue-300">
+                              {ticket.projectName}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Meta row */}
+                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
+                          <span>
+                            {language === 'th' ? 'มูลค่าตั๋ว:' : 'Ticket value:'}{' '}
+                            <span className="font-medium text-gray-900 dark:text-gray-100">
+                              {total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}
+                            </span>
+                          </span>
+                          {ticket.dueDate && (
+                            <span>
+                              {language === 'th' ? 'กำหนดส่ง:' : 'Due:'}{' '}
+                              <span className="font-medium text-gray-800 dark:text-gray-200">
+                                {new Date(ticket.dueDate).toLocaleDateString('th-TH')}
+                              </span>
+                            </span>
+                          )}
+                          <span>
+                            {language === 'th' ? 'จำนวน:' : 'Qty:'}{' '}
+                            <span className="font-medium text-gray-800 dark:text-gray-200">
+                              {ticket.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'}
+                            </span>
+                          </span>
+                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${getPriorityChipClass(ticket.priority)}`}>
+                            {ticket.priority}
+                          </span>
+                          <span className={`inline-flex items-center rounded-full border border-transparent px-2 py-0.5 text-[11px] sm:text-xs font-medium ${ticket.statusClass}`}>
+                            {ticket.status}
+                          </span>
+                          {/* Batch count pill */}
                           {ticketBatches.length > 0 && (
-                            <span className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
                               {ticketBatches.length} {language === 'th' ? 'Batch' : 'Batch'}
                             </span>
                           )}
-                          
-                          
                         </div>
-                        <div className="text-gray-700 dark:text-gray-300 mt-1 truncate text-sm sm:text-base">{ticket.title}</div>
-                        
-                        
-                        <div className="mt-2 text-xs sm:text-sm text-gray-600 dark:text-gray-400">{t('ticketValue', language)}: <span className="font-medium text-gray-900 dark:text-gray-100">{total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</span></div>
                         
                         {/* Batch Details */}
                         {ticketBatches.length > 0 && (

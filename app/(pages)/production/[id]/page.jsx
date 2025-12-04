@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2 } from "lucide-react";
+import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
@@ -460,6 +460,18 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           ) : null}
         </div>
       </div>
+
+      {/* Ticket Description */}
+      {ticket.title && (
+        <div className="mb-4 sm:mb-6">
+          <div className="inline-flex items-start gap-2 sm:gap-3 px-4 sm:px-5 py-3 sm:py-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 rounded-xl border border-blue-200/50 dark:border-blue-800/50 shadow-sm">
+            <Info className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+            <div className="text-gray-800 dark:text-gray-200 text-sm sm:text-base break-words leading-relaxed">
+              {ticket.title}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         <div className="md:col-span-2">
