@@ -21,6 +21,16 @@ export default function ProductionPage() {
   const myRole = (user?.role || '').toLowerCase();
   const isAdmin = myRole === 'admin' || myRole === 'superadmin';
   const myNameLower = myName.toLowerCase();
+  
+  // Helper function to check if user has a specific role
+  const hasRole = (roleName) => {
+    if (!user) return false;
+    const userRoles = user.roles || (user.role ? [user.role] : []);
+    return userRoles.some(r => String(r).toLowerCase() === roleName.toLowerCase());
+  };
+  
+  const hasCNCRole = hasRole('CNC');
+  const hasPackingRole = hasRole('Packing');
 
   // Load ERP tickets and merge with DB station assignments
   const [tickets, setTickets] = useState([]);
@@ -434,11 +444,42 @@ export default function ProductionPage() {
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
-        // เช็ค assignee หรือ technician
+        // เช็ค assignee หรือ technician (existing logic)
         const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
         if (assigneeLower.includes(myNameLower)) return true;
         const stations = Array.isArray(t.stations) ? t.stations : [];
-        return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
+        if (stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower))) {
+          return true;
+        }
+        
+        // เช็ค Role-based visibility สำหรับ CNC และ Packing (เหมือน QC)
+        const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
+        
+        // เช็คสถานี CNC (เหมือน QC - ไม่ต้อง assign แต่คนที่มี Role เห็นได้)
+        if (hasCNCRole) {
+          const hasCNCStation = roadmap.some(step => {
+            const stepName = (step.step || '').toLowerCase().trim();
+            const stepStatus = (step.status || 'pending').toLowerCase();
+            // เช็คทั้ง "CNC" ตรงๆ และชื่อที่อาจมี "CNC" รวมอยู่ด้วย
+            return (stepName === 'cnc' || stepName.includes('cnc')) && 
+                   (stepStatus === 'pending' || stepStatus === 'current');
+          });
+          if (hasCNCStation) return true;
+        }
+        
+        // เช็คสถานี Packing (เหมือน QC - ไม่ต้อง assign แต่คนที่มี Role เห็นได้)
+        if (hasPackingRole) {
+          const hasPackingStation = roadmap.some(step => {
+            const stepName = (step.step || '').toLowerCase().trim();
+            const stepStatus = (step.status || 'pending').toLowerCase();
+            // เช็คทั้ง "Packing" ตรงๆ และชื่อที่อาจมี "Packing" หรือ "แพ็ค" รวมอยู่ด้วย
+            return (stepName === 'packing' || stepName.includes('packing') || stepName.includes('แพ็ค')) && 
+                   (stepStatus === 'pending' || stepStatus === 'current');
+          });
+          if (hasPackingStation) return true;
+        }
+        
+        return false;
       });
     }
     
@@ -447,7 +488,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {

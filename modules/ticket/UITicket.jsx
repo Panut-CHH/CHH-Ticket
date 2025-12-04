@@ -1814,14 +1814,36 @@ export default function UITicket() {
                                   );
                                 })()}
                               </div>
-                              <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                  {(() => {
+                                    const relevantCount = activeTab === "open"
+                                      ? g.items.filter(ticket => ticket.status !== "Finish").length
+                                      : g.items.filter(ticket => ticket.status === "Finish").length;
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                  })()}
+                                </span>
                                 {(() => {
-                                  const relevantCount = activeTab === "open"
-                                    ? g.items.filter(ticket => ticket.status !== "Finish").length
-                                    : g.items.filter(ticket => ticket.status === "Finish").length;
-                                  return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                  // คำนวณจำนวน RPD ที่ยังไม่กรอกข้อมูล (ไม่มีสถานี)
+                                  const relevantTickets = activeTab === "open"
+                                    ? g.items.filter(ticket => ticket.status !== "Finish")
+                                    : g.items.filter(ticket => ticket.status === "Finish");
+                                  
+                                  const missingStationCount = relevantTickets.filter(ticket => {
+                                    // เช็คว่ามี station flow หรือไม่
+                                    return !ticket.hasStationFlow;
+                                  }).length;
+                                  
+                                  if (missingStationCount > 0) {
+                                    return (
+                                      <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                                        {language === 'th' ? `ยังไม่กรอกข้อมูล ${missingStationCount} ตั๋ว` : `${missingStationCount} tickets missing info`}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
                                 })()}
-                              </span>
+                              </div>
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                               {isExpanded ? (language === 'th' ? 'คลิกเพื่อย่อ' : 'Click to collapse') : (language === 'th' ? 'คลิกเพื่อขยาย' : 'Click to expand')}
@@ -1931,14 +1953,36 @@ export default function UITicket() {
                                   );
                                 })()}
                               </div>
-                              <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
+                                  {(() => {
+                                    const relevantCount = activeTab === "open"
+                                      ? g.items.filter(ticket => ticket.status !== "Finish").length
+                                      : g.items.filter(ticket => ticket.status === "Finish").length;
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                  })()}
+                                </span>
                                 {(() => {
-                                  const relevantCount = activeTab === "open"
-                                    ? g.items.filter(ticket => ticket.status !== "Finish").length
-                                    : g.items.filter(ticket => ticket.status === "Finish").length;
-                                  return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                  // คำนวณจำนวน RPD ที่ยังไม่กรอกข้อมูล (ไม่มีสถานี)
+                                  const relevantTickets = activeTab === "open"
+                                    ? g.items.filter(ticket => ticket.status !== "Finish")
+                                    : g.items.filter(ticket => ticket.status === "Finish");
+                                  
+                                  const missingStationCount = relevantTickets.filter(ticket => {
+                                    // เช็คว่ามี station flow หรือไม่
+                                    return !ticket.hasStationFlow;
+                                  }).length;
+                                  
+                                  if (missingStationCount > 0) {
+                                    return (
+                                      <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">
+                                        {language === 'th' ? `ยังไม่กรอกข้อมูล ${missingStationCount} ตั๋ว` : `${missingStationCount} tickets missing info`}
+                                      </span>
+                                    );
+                                  }
+                                  return null;
                                 })()}
-                              </span>
+                              </div>
                             </div>
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                               {isExpanded ? (language === 'th' ? 'คลิกเพื่อย่อ' : 'Click to collapse') : (language === 'th' ? 'คลิกเพื่อขยาย' : 'Click to expand')}

@@ -23,13 +23,14 @@ const supabaseAdmin = createClient(
  *   name_th: string,
  *   name_en?: string,
  *   department?: string,
- *   estimated_hours?: number
+ *   estimated_hours?: number,
+ *   allowed_roles?: string[]
  * }
  */
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name_th, name_en, department, estimated_hours } = body;
+    const { name_th, name_en, department, estimated_hours, allowed_roles } = body;
 
     console.log('[API CREATE STATION] Received request:', { name_th, name_en, department });
 
@@ -90,7 +91,8 @@ export async function POST(request) {
         department: department?.trim() || null,
         estimated_hours: estimated_hours || 0,
         is_active: true,
-        sort_order: nextNumber
+        sort_order: nextNumber,
+        allowed_roles: allowed_roles && Array.isArray(allowed_roles) && allowed_roles.length > 0 ? allowed_roles : null
       })
       .select()
       .single();

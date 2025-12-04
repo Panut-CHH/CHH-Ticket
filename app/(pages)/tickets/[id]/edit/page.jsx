@@ -4,11 +4,12 @@ import React, { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { GripVertical, Save, Plus, Trash2, User, DollarSign, Calendar, ChevronDown, ArrowLeft, FileText, Info, Loader } from "lucide-react";
+import { GripVertical, Save, Plus, Trash2, User, DollarSign, Calendar, ChevronDown, ArrowLeft, FileText, Info, Loader, Settings } from "lucide-react";
 import Modal from "@/components/Modal";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useEffect as useClientEffect } from "react";
+import { getRoleDisplayName } from "@/utils/rolePermissions";
 
 export default function EditTicketPage() {
   const params = useParams();
@@ -30,6 +31,12 @@ export default function EditTicketPage() {
   const [showNewStationModal, setShowNewStationModal] = useState(false);
   const [newStationName, setNewStationName] = useState("");
   const [creatingStation, setCreatingStation] = useState(false);
+  
+  // Allowed roles modal state
+  const [showRoleModal, setShowRoleModal] = useState(false);
+  const [selectedStationForRole, setSelectedStationForRole] = useState(null);
+  const [selectedRoles, setSelectedRoles] = useState([]);
+  const [savingRoles, setSavingRoles] = useState(false);
   
   // ดึงข้อมูล ERP ตาม ticketId (RPD No.) จาก API ภายใน
   const [ticketData, setTicketData] = useState(null);
@@ -424,6 +431,8 @@ export default function EditTicketPage() {
         console.error('Error loading ticket from database:', error);
       }
 
+      let hasStationFlows = false;
+
       if (ticketData) {
         // มีข้อมูลใน database - ใช้ข้อมูลจาก database
         const dbPriority = ticketData.priority === "High" ? "High Priority" 
@@ -465,9 +474,10 @@ export default function EditTicketPage() {
                 .order('step_order', { ascending: true });
               if (fallbackError) {
                 console.log('No station flows found for this ticket:', fallbackError.message);
-                return;
+                // ไม่ return ออกไป ให้ไปเช็ค localStorage แทน
+              } else {
+                stationFlows = fallback;
               }
-              stationFlows = fallback;
             } else {
               stationFlows = data;
             }
@@ -550,6 +560,8 @@ export default function EditTicketPage() {
             // ถ้ามีข้อมูลใน database ให้ใช้ข้อมูลนั้น (มี priority สูงกว่า localStorage)
             // แต่ยังต้อง populate ราคาค่าแรงจากฐานข้อมูลถ้ายังไม่มีราคา
             await populateLaborPricesFromDatabase(dbStations, ticketView?.itemCode);
+            setStations(dbStations);
+            hasStationFlows = true;
             // ลบข้อมูลจาก localStorage เพราะข้อมูลใน database มี priority สูงกว่า
             try {
               localStorage.removeItem(`ticket_${ticketId}_stations`);
@@ -557,7 +569,6 @@ export default function EditTicketPage() {
             } catch (e) {
               console.warn('[LOCALSTORAGE] Failed to remove stations from localStorage:', e);
             }
-            return;
           }
         } catch (flowErr) {
           console.log('Error loading station flows:', flowErr.message);
@@ -565,17 +576,43 @@ export default function EditTicketPage() {
         }
       }
 
+      // ถ้าไม่มี station flows ใน database ให้ลองโหลดจาก localStorage
+      if (!hasStationFlows) {
+        try {
+          const savedStations = localStorage.getItem(`ticket_${ticketId}_stations`);
+          if (savedStations) {
+            try {
+              const parsed = JSON.parse(savedStations);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                console.log('[LOCALSTORAGE] Loading stations from localStorage (no database data):', parsed);
+                setStations(parsed);
+                // Populate labor prices for stations from localStorage
+                if (ticketView?.itemCode) {
+                  await populateLaborPricesFromDatabase(parsed, ticketView.itemCode);
+                }
+              }
+            } catch (e) {
+              console.warn('[LOCALSTORAGE] Failed to parse saved stations:', e);
+            }
+          }
+        } catch (err) {
+          console.warn('[LOCALSTORAGE] Error loading stations from localStorage:', err);
+        }
+      }
+
       // ไม่มีข้อมูลทั้ง database ให้ตั้งค่าเริ่มต้นจาก ERP view
-      // ถ้ามีข้อมูลใน localStorage จะถูกโหลดใน useEffect แรกแล้ว
+      // ถ้ามีข้อมูลใน localStorage จะถูกโหลดข้างบนแล้ว
       // แต่ยังต้อง populate ราคาค่าแรงจากฐานข้อมูล
-      if (ticketView?.itemCode) {
+      if (!hasStationFlows && ticketView?.itemCode && stations.length > 0) {
         await populateLaborPricesFromDatabase(stations, ticketView.itemCode);
       }
 
       // ถ้าไม่มีข้อมูลทั้ง database และ localStorage ให้ตั้งค่าเริ่มต้น
-      const customerNameErp = ticketView?.customerName || "";
-      setPriority("Medium Priority");
-      setCustomerName(customerNameErp);
+      if (!hasStationFlows && stations.length === 0) {
+        const customerNameErp = ticketView?.customerName || "";
+        setPriority("Medium Priority");
+        setCustomerName(customerNameErp);
+      }
     } catch (err) {
       console.error('Error in loadTicketFromDatabase:', err);
       // ตั้งค่าเริ่มต้นหากเกิดข้อผิดพลาด
@@ -644,7 +681,7 @@ export default function EditTicketPage() {
       setLoadingStations(true);
       const { data, error } = await supabase
         .from('stations')
-        .select('id, name_th, code, is_active')
+        .select('id, name_th, code, is_active, allowed_roles')
         .eq('is_active', true)
         .order('sort_order', { ascending: true });
       
@@ -785,7 +822,95 @@ export default function EditTicketPage() {
     }
   };
 
+  // Open role configuration modal
+  const openRoleModal = (stationName) => {
+    const station = availableStations.find(s => s.name_th === stationName);
+    if (!station) return;
+    
+    setSelectedStationForRole(station);
+    // Load current allowed_roles
+    const currentRoles = Array.isArray(station.allowed_roles) ? station.allowed_roles : [];
+    setSelectedRoles(currentRoles);
+    setShowRoleModal(true);
+  };
 
+  // Save allowed roles for station
+  const saveAllowedRoles = async () => {
+    if (!selectedStationForRole) return;
+    
+    setSavingRoles(true);
+    try {
+      let authHeader = {};
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession?.access_token) {
+          authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+        }
+      } catch {}
+
+      const response = await fetch(`/api/stations/${selectedStationForRole.id}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+        },
+        body: JSON.stringify({
+          allowed_roles: selectedRoles.length > 0 ? selectedRoles : null
+        })
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        alert('ไม่สามารถบันทึกการตั้งค่าได้: ' + (result.error || 'Unknown error'));
+        return;
+      }
+
+      // Reload stations to get updated allowed_roles
+      await loadAvailableStations();
+      
+      // Update selectedStationForRole with new data
+      setSelectedStationForRole({
+        ...selectedStationForRole,
+        allowed_roles: result.data.allowed_roles
+      });
+
+      alert('บันทึกการตั้งค่าแล้ว! ✅');
+      setShowRoleModal(false);
+    } catch (error) {
+      console.error('Error saving allowed roles:', error);
+      alert('เกิดข้อผิดพลาด: ' + error.message);
+    } finally {
+      setSavingRoles(false);
+    }
+  };
+
+  // Filter technicians based on station's allowed_roles
+  const getFilteredTechnicians = (stationName) => {
+    const station = availableStations.find(s => s.name_th === stationName);
+    
+    // If no station or no allowed_roles, show all technicians
+    if (!station || !station.allowed_roles || !Array.isArray(station.allowed_roles) || station.allowed_roles.length === 0) {
+      return technicians;
+    }
+
+    // Filter technicians that have at least one role in allowed_roles
+    return technicians.filter(tech => {
+      // Check single role field
+      const techRole = tech.role;
+      if (techRole && station.allowed_roles.includes(techRole)) {
+        return true;
+      }
+
+      // Check roles array field
+      const techRoles = tech.roles;
+      if (Array.isArray(techRoles)) {
+        return techRoles.some(role => station.allowed_roles.includes(role));
+      }
+
+      return false;
+    });
+  };
 
   function onDragStart(e, index) {
     e.dataTransfer.setData("text/plain", String(index));
@@ -806,6 +931,20 @@ export default function EditTicketPage() {
     updated.splice(index, 0, moved);
     setStations(updated);
   }
+
+  // Helper function to check if station should hide technician dropdown (like QC)
+  // QC, CNC, และ Packing ไม่ต้อง assign เป็นบุคคล - คนที่มี Role เห็นตั๋วได้เลย
+  const shouldHideTechnicianDropdown = (stationName) => {
+    if (!stationName) return false;
+    const nameLower = String(stationName).toLowerCase().trim();
+    // เช็คทั้งชื่อตรงๆ และชื่อที่อาจมีคำเหล่านี้รวมอยู่ด้วย
+    return nameLower === 'qc' || 
+           nameLower === 'cnc' || 
+           nameLower.includes('cnc') || 
+           nameLower === 'packing' || 
+           nameLower.includes('packing') || 
+           nameLower.includes('แพ็ค');
+  };
 
   function updateStation(index, updates) {
     setStations((prev) => prev.map((s, i) => (i === index ? { ...s, ...updates } : s)));
@@ -1156,7 +1295,18 @@ export default function EditTicketPage() {
 
               <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1">
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">สถานี</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 block">สถานี</label>
+                    {s.name && availableStations.find(st => st.name_th === s.name) && (
+                      <button
+                        onClick={() => openRoleModal(s.name)}
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 inline-flex items-center gap-1"
+                        title="กำหนด Role ที่สามารถ Assign ได้"
+                      >
+                        <Settings className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <select
                       value={availableStations.find(st => st.name_th === s.name) ? s.name : "__loading__"}
@@ -1184,22 +1334,30 @@ export default function EditTicketPage() {
                   </div>
                 </div>
 
-                {s.name !== "QC" && (
+                {!shouldHideTechnicianDropdown(s.name) && (
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">ช่าง</label>
                     <div className="relative">
                       <select value={s.technicianId || ''} onChange={(e) => {
                         const techId = e.target.value || '';
-                        const techName = technicians.find(t => String(t.id) === String(techId))?.name || '';
+                        const filteredTechs = getFilteredTechnicians(s.name);
+                        const techName = filteredTechs.find(t => String(t.id) === String(techId))?.name || '';
                         updateStation(index, { technicianId: techId, technician: techName });
                       }} className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer">
                         <option value="">- เลือกช่าง -</option>
                         {loadingTechs ? (
                           <option value="" disabled>กำลังโหลดรายชื่อ...</option>
                         ) : (
-                          technicians.map((tech) => (
-                            <option key={tech.id} value={tech.id}>{tech.name}</option>
-                          ))
+                          (() => {
+                            const filteredTechs = getFilteredTechnicians(s.name);
+                            return filteredTechs.length > 0 ? (
+                              filteredTechs.map((tech) => (
+                                <option key={tech.id} value={tech.id}>{tech.name}</option>
+                              ))
+                            ) : (
+                              <option value="" disabled>ไม่มีช่างที่ตรงตาม Role ที่กำหนด</option>
+                            );
+                          })()
                         )}
                       </select>
                       <User className="w-4 h-4 absolute right-8 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
@@ -1208,7 +1366,7 @@ export default function EditTicketPage() {
                   </div>
                 )}
 
-                {s.name !== "QC" && (
+                {!shouldHideTechnicianDropdown(s.name) && (
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">การคิดเงิน</label>
                     <div className="relative">
@@ -1223,7 +1381,7 @@ export default function EditTicketPage() {
                   </div>
                 )}
 
-                {s.name !== "QC" && (
+                {!shouldHideTechnicianDropdown(s.name) && (
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">ราคา</label>
                     <input type="number" value={s.price} onChange={(e) => {
@@ -1418,6 +1576,97 @@ export default function EditTicketPage() {
                   <>
                     <Plus className="w-4 h-4" />
                     สร้างสถานี
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* Allowed Roles Configuration Modal */}
+        <Modal
+          open={showRoleModal}
+          onClose={() => {
+            setShowRoleModal(false);
+            setSelectedStationForRole(null);
+            setSelectedRoles([]);
+          }}
+          title={`กำหนด Role ที่สามารถ Assign ได้ - ${selectedStationForRole?.name_th || ''}`}
+        >
+          <div className="p-6">
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              เลือก Role ที่ต้องการให้แสดงใน dropdown เมื่อเลือกสถานีนี้ ถ้าไม่เลือกอะไร = แสดงทุกคน
+            </p>
+            
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                เลือก Role ที่สามารถ Assign ได้:
+              </label>
+              <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-200 dark:border-slate-600 rounded-lg p-3">
+                {['Painting', 'Production'].map((role) => {
+                  const isChecked = selectedRoles.includes(role);
+                  return (
+                    <label
+                      key={role}
+                      className="flex items-center gap-3 p-2 hover:bg-gray-50 dark:hover:bg-slate-700 rounded cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedRoles([...selectedRoles, role]);
+                          } else {
+                            setSelectedRoles(selectedRoles.filter(r => r !== role));
+                          }
+                        }}
+                        className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">
+                        {getRoleDisplayName(role)}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {selectedRoles.length > 0 && (
+                <p className="mt-2 text-xs text-blue-600 dark:text-blue-400">
+                  เลือกแล้ว {selectedRoles.length} Role: {selectedRoles.map(r => getRoleDisplayName(r)).join(', ')}
+                </p>
+              )}
+              {selectedRoles.length === 0 && (
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  ไม่ได้เลือก Role ใด = จะแสดงทุกคนใน dropdown
+                </p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setShowRoleModal(false);
+                  setSelectedStationForRole(null);
+                  setSelectedRoles([]);
+                }}
+                className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                disabled={savingRoles}
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={saveAllowedRoles}
+                disabled={savingRoles}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {savingRoles ? (
+                  <>
+                    <Loader className="w-4 h-4 animate-spin" />
+                    กำลังบันทึก...
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    บันทึก
                   </>
                 )}
               </button>

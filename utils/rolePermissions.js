@@ -217,3 +217,11 @@ export const getRoleDisplayName = (role) => {
   
   return displayNames[roleStr] || roleStr;
 };
+
+// Helper function to get all available roles (for dropdown/selection)
+export const getAllAvailableRoles = () => {
+  return Object.keys(ROLE_PERMISSIONS).filter(role => {
+    // Exclude Admin and SuperAdmin from assignable roles (they shouldn't be assigned to stations)
+    return role !== 'Admin' && role !== 'SuperAdmin';
+  });
+};
