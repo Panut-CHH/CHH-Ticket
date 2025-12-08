@@ -98,10 +98,121 @@ export default function UIProjectDetail({ projectId }) {
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [savingPrices, setSavingPrices] = useState(false);
 
+  // Product units states
+  const [productUnits, setProductUnits] = useState([]);
+  const [loadingUnits, setLoadingUnits] = useState(false);
+  const [showAddUnitModal, setShowAddUnitModal] = useState(false);
+  const [newUnitForm, setNewUnitForm] = useState({ code: '', name_th: '', name_en: '' });
+  const [isAddingUnit, setIsAddingUnit] = useState(false);
+  const [addUnitError, setAddUnitError] = useState('');
+
   // Load project data
   useEffect(() => {
     loadProjectData();
+    loadProductUnits();
   }, [projectId]);
+
+  // โหลดหน่วยสินค้าจาก API
+  const loadProductUnits = async () => {
+    try {
+      setLoadingUnits(true);
+      const response = await fetch('/api/product-units');
+      const result = await response.json();
+      if (result.success) {
+        setProductUnits(result.data || []);
+      } else {
+        console.error('Failed to load product units:', result.error);
+        // Fallback to default units if API fails
+        setProductUnits([
+          { code: 'D', name_th: 'ประตู', name_en: 'Door', is_custom: false },
+          { code: 'F', name_th: 'วง', name_en: 'Frame', is_custom: false },
+          { code: 'S', name_th: 'ชุดชาร์ป', name_en: 'Sharp Set', is_custom: false },
+          { code: 'P', name_th: 'แผ่นตกแต่ง', name_en: 'Decorative Panel', is_custom: false },
+          { code: 'W', name_th: 'ท่อน', name_en: 'Piece', is_custom: false },
+          { code: 'M', name_th: 'บัว', name_en: 'Molding', is_custom: false },
+          { code: 'O', name_th: 'อื่นๆ', name_en: 'Other', is_custom: false }
+        ]);
+      }
+    } catch (error) {
+      console.error('Error loading product units:', error);
+      // Fallback to default units
+      setProductUnits([
+        { code: 'D', name_th: 'ประตู', name_en: 'Door', is_custom: false },
+        { code: 'F', name_th: 'วง', name_en: 'Frame', is_custom: false },
+        { code: 'S', name_th: 'ชุดชาร์ป', name_en: 'Sharp Set', is_custom: false },
+        { code: 'P', name_th: 'แผ่นตกแต่ง', name_en: 'Decorative Panel', is_custom: false },
+        { code: 'W', name_th: 'ท่อน', name_en: 'Piece', is_custom: false },
+        { code: 'M', name_th: 'บัว', name_en: 'Molding', is_custom: false },
+        { code: 'O', name_th: 'อื่นๆ', name_en: 'Other', is_custom: false }
+      ]);
+    } finally {
+      setLoadingUnits(false);
+    }
+  };
+
+  // เพิ่มหน่วยสินค้าใหม่
+  const handleAddUnit = async () => {
+    if (!newUnitForm.code || !newUnitForm.name_th) {
+      setAddUnitError(language === 'th' ? 'กรุณากรอกรหัสและชื่อภาษาไทย' : 'Please enter code and Thai name');
+      return;
+    }
+
+    setIsAddingUnit(true);
+    setAddUnitError('');
+
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch('/api/product-units', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(newUnitForm)
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        setNewUnitForm({ code: '', name_th: '', name_en: '' });
+        setShowAddUnitModal(false);
+        await loadProductUnits(); // Reload units
+      } else {
+        setAddUnitError(result.error || (language === 'th' ? 'ไม่สามารถเพิ่มหน่วยสินค้าได้' : 'Failed to add product unit'));
+      }
+    } catch (error) {
+      console.error('Error adding product unit:', error);
+      setAddUnitError(language === 'th' ? 'เกิดข้อผิดพลาดในการเพิ่มหน่วยสินค้า' : 'Error adding product unit');
+    } finally {
+      setIsAddingUnit(false);
+    }
+  };
+
+  // ลบหน่วยสินค้า (SuperAdmin เท่านั้น)
+  const handleDeleteUnit = async (unitId) => {
+    if (!confirm(language === 'th' ? 'คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้านี้?' : 'Are you sure you want to delete this product unit?')) {
+      return;
+    }
+
+    try {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      const response = await fetch(`/api/product-units/${unitId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      const result = await response.json();
+      if (result.success) {
+        await loadProductUnits(); // Reload units
+      } else {
+        alert(result.error || (language === 'th' ? 'ไม่สามารถลบหน่วยสินค้าได้' : 'Failed to delete product unit'));
+      }
+    } catch (error) {
+      console.error('Error deleting product unit:', error);
+      alert(language === 'th' ? 'เกิดข้อผิดพลาดในการลบหน่วยสินค้า' : 'Error deleting product unit');
+    }
+  };
 
   const loadProjectData = async () => {
     setLoading(true);
@@ -989,22 +1100,83 @@ export default function UIProjectDetail({ projectId }) {
             </div>
 
             <div>
-              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                {t('itemUnit', language)} *
-              </label>
-              <select
-                value={itemForm.itemUnit}
-                onChange={(e) => setItemForm(prev => ({ ...prev, itemUnit: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-              >
-                <option value="D">{t('unitD', language)}</option>
-                <option value="F">{t('unitF', language)}</option>
-                <option value="S">{t('unitS', language)}</option>
-                <option value="P">{t('unitP', language)}</option>
-                <option value="W">{t('unitW', language)}</option>
-                <option value="M">{t('unitM', language)}</option>
-                <option value="O">{t('unitO', language)}</option>
-              </select>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">
+                  {t('itemUnit', language)} *
+                </label>
+                <div className="flex items-center gap-2">
+                  {(() => {
+                    const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+                    const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
+                    return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
+                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                        <span>{language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}</span>
+                      </div>
+                    );
+                  })()}
+                  {isAdminOrAbove(user) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddUnitModal(true)}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>{language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-2">
+                <select
+                  value={itemForm.itemUnit}
+                  onChange={(e) => setItemForm(prev => ({ ...prev, itemUnit: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                  disabled={loadingUnits}
+                >
+                  {productUnits.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                      {unit.is_custom && ' (Custom)'}
+                    </option>
+                  ))}
+                </select>
+                {/* แสดงรายการ custom units พร้อมปุ่มลบ (เฉพาะ SuperAdmin) */}
+                {(() => {
+                  const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+                  const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
+                  return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
+                    <div className="space-y-1 max-h-32 overflow-y-auto">
+                      {productUnits
+                        .filter(u => u.is_custom)
+                        .map((unit) => (
+                          <div
+                            key={unit.id}
+                            className="flex items-center justify-between px-2 py-1.5 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600"
+                          >
+                            <span className="text-xs text-gray-700 dark:text-gray-300">
+                              {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                if (confirm(language === 'th' 
+                                  ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
+                                  : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
+                                  await handleDeleteUnit(unit.id);
+                                }
+                              }}
+                              className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                              title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
 
             {/* Preview */}
@@ -1261,25 +1433,86 @@ export default function UIProjectDetail({ projectId }) {
               </div>
 
               <div>
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  {t('itemUnit', language)} *
-                </label>
-                <select
-                  value={editForm.itemUnit}
-                  onChange={(e) => {
-                    setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
-                    setPreviewUpdate(null);
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-                >
-                  <option value="D">{t('unitD', language)}</option>
-                  <option value="F">{t('unitF', language)}</option>
-                  <option value="S">{t('unitS', language)}</option>
-                  <option value="P">{t('unitP', language)}</option>
-                  <option value="W">{t('unitW', language)}</option>
-                  <option value="M">{t('unitM', language)}</option>
-                  <option value="O">{t('unitO', language)}</option>
-                </select>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {t('itemUnit', language)} *
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+                      const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
+                      return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
+                        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span>{language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}</span>
+                        </div>
+                      );
+                    })()}
+                    {isAdminOrAbove(user) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAddUnitModal(true)}
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>{language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <select
+                    value={editForm.itemUnit}
+                    onChange={(e) => {
+                      setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
+                      setPreviewUpdate(null);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                    disabled={loadingUnits}
+                  >
+                    {productUnits.map((unit) => (
+                      <option key={unit.code} value={unit.code}>
+                        {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                        {unit.is_custom && ' (Custom)'}
+                      </option>
+                    ))}
+                  </select>
+                  {/* แสดงรายการ custom units พร้อมปุ่มลบ (เฉพาะ SuperAdmin) */}
+                  {(() => {
+                    const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
+                    const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
+                    return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {productUnits
+                          .filter(u => u.is_custom)
+                          .map((unit) => (
+                            <div
+                              key={unit.id}
+                              className="flex items-center justify-between px-2 py-1.5 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600"
+                            >
+                              <span className="text-xs text-gray-700 dark:text-gray-300">
+                                {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  if (confirm(language === 'th' 
+                                    ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
+                                    : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
+                                    await handleDeleteUnit(unit.id);
+                                  }
+                                }}
+                                className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
 
               {/* Preview */}
@@ -1623,6 +1856,154 @@ export default function UIProjectDetail({ projectId }) {
               </div>
             </>
           )}
+        </div>
+      </Modal>
+
+      {/* Modal: Add Product Unit */}
+      <Modal
+        open={showAddUnitModal}
+        onClose={() => {
+          setShowAddUnitModal(false);
+          setNewUnitForm({ code: '', name_th: '', name_en: '' });
+          setAddUnitError('');
+        }}
+        title={language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Product Unit'}
+        maxWidth="max-w-md"
+        footer={
+          <div className="flex flex-col sm:flex-row justify-end gap-3 px-4 sm:px-6 py-4">
+            <button
+              onClick={() => {
+                setShowAddUnitModal(false);
+                setNewUnitForm({ code: '', name_th: '', name_en: '' });
+                setAddUnitError('');
+              }}
+              className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors w-full sm:w-auto text-sm sm:text-base"
+              disabled={isAddingUnit}
+            >
+              {t('cancel', language)}
+            </button>
+            <button
+              onClick={handleAddUnit}
+              disabled={isAddingUnit || !newUnitForm.code || !newUnitForm.name_th}
+              className="pressable px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full sm:w-auto text-sm sm:text-base"
+            >
+              {isAddingUnit ? (language === 'th' ? 'กำลังเพิ่ม...' : 'Adding...') : t('save', language)}
+            </button>
+          </div>
+        }
+      >
+        <div className="p-4 sm:p-6 space-y-4">
+          {addUnitError && (
+            <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-xs sm:text-sm text-red-600 dark:text-red-400">{addUnitError}</p>
+            </div>
+          )}
+
+          {/* แสดงตัวอย่างหน่วยสินค้าที่มีอยู่ */}
+          {productUnits.length > 0 && (
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-xs font-medium text-blue-900 dark:text-blue-100 mb-2">
+                {language === 'th' ? 'ตัวอย่างหน่วยสินค้าที่มีอยู่:' : 'Example existing units:'}
+              </p>
+              <div className="space-y-1">
+                {productUnits.slice(0, 3).map((unit) => (
+                  <div key={unit.code} className="text-xs text-blue-800 dark:text-blue-300">
+                    <span className="font-mono font-semibold">{unit.code}</span>
+                    {' - '}
+                    <span>{unit.name_th}</span>
+                    {unit.name_en && (
+                      <>
+                        {' / '}
+                        <span className="italic">{unit.name_en}</span>
+                      </>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              {language === 'th' ? 'รหัสหน่วยสินค้า *' : 'Product Unit Code *'}
+            </label>
+            <input
+              type="text"
+              placeholder={productUnits.length > 0 
+                ? `${productUnits[0]?.code || 'D'} (เช่น ${productUnits[0]?.code || 'D'})`
+                : 'D'}
+              value={newUnitForm.code}
+              onChange={(e) => setNewUnitForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent uppercase text-sm sm:text-base"
+              style={{ textTransform: 'uppercase' }}
+              disabled={isAddingUnit}
+            />
+            {productUnits.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {language === 'th' ? 'ตัวอย่าง: ' : 'Example: '}
+                {productUnits.slice(0, 3).map((u, i) => (
+                  <span key={u.code}>
+                    <span className="font-mono">{u.code}</span>
+                    {i < 2 && ', '}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              {language === 'th' ? 'ชื่อภาษาไทย *' : 'Thai Name *'}
+            </label>
+            <input
+              type="text"
+              placeholder={productUnits.length > 0 
+                ? `${productUnits[0]?.name_th || 'ประตู'} (เช่น ${productUnits[0]?.name_th || 'ประตู'})`
+                : (language === 'th' ? 'ชื่อหน่วยสินค้า' : 'Product unit name')}
+              value={newUnitForm.name_th}
+              onChange={(e) => setNewUnitForm(prev => ({ ...prev, name_th: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+              disabled={isAddingUnit}
+            />
+            {productUnits.length > 0 && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {language === 'th' ? 'ตัวอย่าง: ' : 'Example: '}
+                {productUnits.slice(0, 3).map((u, i) => (
+                  <span key={u.code}>
+                    {u.name_th}
+                    {i < 2 && ', '}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              {language === 'th' ? 'ชื่อภาษาอังกฤษ' : 'English Name (Optional)'}
+            </label>
+            <input
+              type="text"
+              placeholder={productUnits.length > 0 && productUnits[0]?.name_en
+                ? `${productUnits[0].name_en} (เช่น ${productUnits[0].name_en})`
+                : (language === 'th' ? 'ชื่อหน่วยสินค้าภาษาอังกฤษ' : 'Product unit name in English')}
+              value={newUnitForm.name_en}
+              onChange={(e) => setNewUnitForm(prev => ({ ...prev, name_en: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+              disabled={isAddingUnit}
+            />
+            {productUnits.length > 0 && productUnits.some(u => u.name_en) && (
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                {language === 'th' ? 'ตัวอย่าง: ' : 'Example: '}
+                {productUnits.filter(u => u.name_en).slice(0, 3).map((u, i) => (
+                  <span key={u.code}>
+                    <span className="italic">{u.name_en}</span>
+                    {i < productUnits.filter(u => u.name_en).slice(0, 3).length - 1 && ', '}
+                  </span>
+                ))}
+              </p>
+            )}
+          </div>
         </div>
       </Modal>
     </div>

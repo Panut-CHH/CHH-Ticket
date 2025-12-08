@@ -250,6 +250,8 @@ export const translations = {
     ticketValue: "มูลค่าตั๋ว",
     detailsMore: "รายละเอียด / เพิ่มเติม",
     route: "เส้นทาง",
+    ticketsDueSoon: "ตั๋วที่ใกล้กำหนดส่ง",
+    highPriorityTickets: "ตั๋วที่มีความสำคัญสูง",
     
     // QC Management
     qcQueue: "คิวตรวจคุณภาพ (QC)",
@@ -703,6 +705,8 @@ export const translations = {
     ticketValue: "Ticket Value",
     detailsMore: "Details / More",
     route: "Route",
+    ticketsDueSoon: "Tickets Due Soon",
+    highPriorityTickets: "High Priority Tickets",
     
     // QC Management
     qcQueue: "Quality Control Queue (QC)",

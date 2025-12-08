@@ -7,7 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins, Search, Filter as FilterIcon, ArrowUpDown } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions } from "@/utils/rolePermissions";
 
@@ -538,10 +538,22 @@ export default function ProductionPage() {
   };
 
   const priorityRank = (p) => {
-    if (p === "High Priority") return 0;
-    if (p === "Medium Priority") return 1;
-    if (p === "Low Priority") return 2;
-    if (p === "ยังไม่ได้กำหนด Priority") return 3;
+    if (!p) return 4; // No priority - lowest
+    const priority = p.toString().toLowerCase().trim();
+    
+    // High priority variations
+    if (priority === "high priority" || priority === "high") return 0;
+    
+    // Medium priority variations
+    if (priority === "medium priority" || priority === "medium") return 1;
+    
+    // Low priority variations
+    if (priority === "low priority" || priority === "low") return 2;
+    
+    // No priority set (Thai)
+    if (priority === "ยังไม่ได้กำหนด priority" || priority.includes("ไม่ได้กำหนด")) return 3;
+    
+    // Unknown/other - put at end
     return 4;
   };
 
@@ -599,8 +611,14 @@ export default function ProductionPage() {
       let av, bv;
       switch (sortKey) {
         case 'dueDate': {
-          av = a.dueDate ? new Date(a.dueDate).getTime() : 0;
-          bv = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+          // Put items without dueDate at the end
+          const aHasDate = !!a.dueDate;
+          const bHasDate = !!b.dueDate;
+          if (!aHasDate && !bHasDate) return 0;
+          if (!aHasDate) return 1; // a goes to end
+          if (!bHasDate) return -1; // b goes to end
+          av = new Date(a.dueDate).getTime();
+          bv = new Date(b.dueDate).getTime();
           break;
         }
         case 'priority': {
@@ -614,9 +632,18 @@ export default function ProductionPage() {
           break;
         }
         case 'status': {
-          av = (a.status || '').localeCompare(b.status || '');
-          bv = 0; // handled by localeCompare; we'll map to numbers
-          return sortDir === 'asc' ? av : -av;
+          // Create status rank for consistent sorting
+          const statusRank = (s) => {
+            const status = (s || '').toString();
+            if (status === 'Pending') return 0;
+            if (status === 'Released') return 1;
+            if (status === 'In Progress') return 2;
+            if (status === 'Finish') return 3;
+            return 4; // Unknown status
+          };
+          av = statusRank(a.status);
+          bv = statusRank(b.status);
+          break;
         }
         case 'id':
         default: {
@@ -634,34 +661,32 @@ export default function ProductionPage() {
 
   const stats = useMemo(() => {
     const total = myTickets.length;
-    const done = myTickets.filter((t) => (t.status || "") === "Finish").length;
-    const pending = total - done;
-    const totalAmount = myTickets.reduce((s, t) => s + sumTicketAmount(t), 0);
-    const doneAmount = myTickets
-      .filter((t) => (t.status || "") === "Finish")
-      .reduce((s, t) => s + sumTicketAmount(t), 0);
-    const pendingAmount = totalAmount - doneAmount;
     
-    // Batch statistics
-    const myBatches = batches.filter(batch => {
-      const batchTicket = tickets.find(t => t.id === batch.ticket_no);
-      if (!batchTicket) return false;
-      const assigneeLower = ((batchTicket.assignee || "").toString()).toLowerCase();
-      if (assigneeLower.includes(myNameLower)) return true;
-      const stations = Array.isArray(batchTicket.stations) ? batchTicket.stations : [];
-      return stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower));
-    });
+    // Calculate due soon count (within 7 days from today)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const sevenDaysLater = new Date(today);
+    sevenDaysLater.setDate(today.getDate() + 7);
+    
+    const dueSoonCount = myTickets.filter((t) => {
+      if (!t.dueDate) return false;
+      const dueDate = new Date(t.dueDate);
+      dueDate.setHours(0, 0, 0, 0);
+      return dueDate >= today && dueDate <= sevenDaysLater;
+    }).length;
+    
+    // Calculate high priority count
+    const highPriorityCount = myTickets.filter((t) => {
+      const priority = (t.priority || "").toString();
+      return priority === "High Priority" || priority.toLowerCase() === "high";
+    }).length;
     
     return { 
-      total, 
-      done, 
-      pending, 
-      totalAmount, 
-      doneAmount, 
-      pendingAmount,
-      batchCount: myBatches.length
+      total,
+      dueSoonCount,
+      highPriorityCount
     };
-  }, [myTickets, batches, myNameLower, tickets]);
+  }, [myTickets]);
 
   return (
     <ProtectedRoute>
@@ -687,37 +712,17 @@ export default function ProductionPage() {
                 </div>
               </div>
               <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('completed', language)}</div>
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('ticketsDueSoon', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
-                  <div className="text-xl sm:text-2xl font-bold text-emerald-600">{stats.done}</div>
-                  <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
-                </div>
-              </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('pending', language)}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="text-xl sm:text-2xl font-bold text-amber-600">{stats.pending}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-amber-600 dark:text-amber-500">{stats.dueSoonCount}</div>
                   <Clock3 className="w-5 h-5 sm:w-6 sm:h-6 text-amber-500" />
                 </div>
               </div>
-
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm md:col-span-2 lg:col-span-1 stat-card">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('totalValueInHand', language)}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">{stats.totalAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
-                  <Coins className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-600" />
-                </div>
-              </div>
               <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('valueCompleted', language)}</div>
+                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('highPriorityTickets', language)}</div>
                 <div className="mt-1 flex items-center justify-between">
-                  <div className="text-lg sm:text-xl font-semibold text-emerald-700">{stats.doneAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
-                </div>
-              </div>
-              <div className="p-4 sm:p-5 bg-white dark:bg-slate-800 rounded-xl sm:rounded-2xl border border-gray-200 dark:border-slate-700 shadow-sm stat-card">
-                <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{t('valuePending', language)}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <div className="text-lg sm:text-xl font-semibold text-amber-700">{stats.pendingAmount.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-500">{stats.highPriorityCount}</div>
+                  <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 text-red-500" />
                 </div>
               </div>
             </div>
@@ -784,115 +789,49 @@ export default function ProductionPage() {
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
-                {/* Filter toggle */}
-                <button
-                  onClick={() => setShowFilter(v => !v)}
-                  className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors text-sm sm:text-base text-gray-900 dark:text-gray-100"
-                >
-                  <FilterIcon className="w-4 h-4 sm:w-5 sm:h-5" />
-                  <span>{t('filter', language)}</span>
-                  {activeFilterCount > 0 && (
-                    <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">{activeFilterCount}</span>
-                  )}
-                </button>
                 {/* Sort controls */}
-                <div className="flex flex-row items-stretch justify-between sm:justify-end gap-2">
-                  <select
-                    value={sortKey}
-                    onChange={(e) => setSortKey(e.target.value)}
-                    className="px-3 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm sm:text-base text-gray-900 dark:text-gray-100"
-                  >
-                    <option value="dueDate">{language === 'th' ? 'กำหนดส่ง' : 'Due Date'}</option>
-                    <option value="priority">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</option>
-                    <option value="value">{language === 'th' ? 'มูลค่า' : 'Value'}</option>
-                    <option value="id">{language === 'th' ? 'เลขตั๋ว' : 'Ticket No.'}</option>
-                    <option value="status">{language === 'th' ? 'สถานะ' : 'Status'}</option>
-                  </select>
+                <div className="flex flex-row items-stretch gap-2">
+                  <div className="relative flex-1 sm:flex-initial sm:min-w-[160px]">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <ArrowUpDown className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <select
+                      value={sortKey}
+                      onChange={(e) => setSortKey(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm sm:text-base text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700"
+                    >
+                      <option value="dueDate">{language === 'th' ? 'กำหนดส่ง' : 'Due Date'}</option>
+                      <option value="priority">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</option>
+                      <option value="value">{language === 'th' ? 'มูลค่า' : 'Value'}</option>
+                      <option value="id">{language === 'th' ? 'เลขตั๋ว' : 'Ticket No.'}</option>
+                      <option value="status">{language === 'th' ? 'สถานะ' : 'Status'}</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
                   <button
                     onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
-                    className="px-3 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700"
-                    title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก' : 'เรียงจากมากไปน้อย') : (sortDir === 'asc' ? 'Ascending' : 'Descending')}
+                    className={`px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5 min-w-[48px] ${
+                      sortDir === 'asc' 
+                        ? 'text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' 
+                        : 'text-gray-700 dark:text-gray-300'
+                    }`}
+                    title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก (คลิกเพื่อเปลี่ยน)' : 'เรียงจากมากไปน้อย (คลิกเพื่อเปลี่ยน)') : (sortDir === 'asc' ? 'Ascending (click to change)' : 'Descending (click to change)')}
                   >
-                    <ArrowUpDown className="w-4 h-4 sm:w-5 sm:h-5 text-gray-700 dark:text-gray-300" />
+                    {sortDir === 'asc' ? (
+                      <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
+                    ) : (
+                      <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5" />
+                    )}
+                    <span className="text-xs hidden sm:inline">
+                      {sortDir === 'asc' ? (language === 'th' ? 'น้อย→มาก' : 'A→Z') : (language === 'th' ? 'มาก→น้อย' : 'Z→A')}
+                    </span>
                   </button>
                 </div>
               </div>
-              {showFilter && (
-                <div className="mt-3 p-3 sm:p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg">
-                  <div className="production-filter-grid grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    {/* Status filter */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'สถานะ' : 'Status'}</div>
-                      {['Pending','Released','In Progress','Finish'].map(st => (
-                        <label key={st} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
-                          <input
-                            type="checkbox"
-                            checked={selectedStatuses.has(st)}
-                            onChange={(e) => {
-                              setSelectedStatuses(prev => {
-                                const next = new Set(prev);
-                                if (e.target.checked) next.add(st); else next.delete(st);
-                                return next;
-                              });
-                            }}
-                          />
-                          <span>{st}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {/* Priority filter */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</div>
-                      {['High Priority','Medium Priority','Low Priority','ยังไม่ได้กำหนด Priority'].map(pr => (
-                        <label key={pr} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
-                          <input
-                            type="checkbox"
-                            checked={selectedPriorities.has(pr)}
-                            onChange={(e) => {
-                              setSelectedPriorities(prev => {
-                                const next = new Set(prev);
-                                if (e.target.checked) next.add(pr); else next.delete(pr);
-                                return next;
-                              });
-                            }}
-                          />
-                          <span>{pr}</span>
-                        </label>
-                      ))}
-                    </div>
-                    {/* Due date filter */}
-                    <div>
-                      <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'วันกำหนดส่ง' : 'Due Date'}</div>
-                      <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
-                        <input
-                          type="checkbox"
-                          checked={hasDueDateOnly}
-                          onChange={(e) => setHasDueDateOnly(e.target.checked)}
-                        />
-                        <span>{language === 'th' ? 'แสดงเฉพาะที่มีวันกำหนดส่ง' : 'Only with due date'}</span>
-                      </label>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded"
-                      onClick={() => setShowFilter(false)}
-                    >
-                      {language === 'th' ? 'ใช้ตัวกรอง' : 'Apply'}
-                    </button>
-                    <button
-                      className="px-3 py-2 text-sm bg-gray-100 dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-200 rounded"
-                      onClick={() => {
-                        setSelectedStatuses(new Set());
-                        setSelectedPriorities(new Set());
-                        setHasDueDateOnly(false);
-                      }}
-                    >
-                      {language === 'th' ? 'ล้างค่า' : 'Clear'}
-                    </button>
-                  </div>
-                </div>
-              )}
             </div>
 
             <div className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
