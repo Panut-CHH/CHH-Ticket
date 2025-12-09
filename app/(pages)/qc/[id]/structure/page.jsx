@@ -68,7 +68,7 @@ export default function QCStructurePage({ params }) {
   };
 
   const TabBtn = ({ id: tabId, th, en }) => (
-    <button onClick={() => setActiveTab(tabId)} className={`px-3 py-2 rounded-md text-sm ${activeTab === tabId ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200'}`}>
+    <button onClick={() => setActiveTab(tabId)} className={`px-3 py-2 rounded-md text-sm whitespace-nowrap shrink-0 ${activeTab === tabId ? 'bg-emerald-600 text-white' : 'bg-gray-100 dark:bg-slate-700 text-gray-800 dark:text-gray-200'}`}>
       {language === 'th' ? th : en}
     </button>
   );
@@ -89,7 +89,7 @@ export default function QCStructurePage({ params }) {
             </div>
             <h1 className="text-xl sm:text-2xl font-bold mb-4">{language === 'th' ? 'ตรวจสอบโครง - ตั๋ว' : 'Structure Inspection - Ticket'} #{id}</h1>
 
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 -mx-4 sm:mx-0 px-4 sm:px-0">
               <TabBtn id="cut_edge" th="ตัดขอบบาน" en="Cut Edge" />
               <TabBtn id="shoot_frame" th="การยิงโครง" en="Shoot Frame" />
               <TabBtn id="press_glue" th="การอัดกาว" en="Press Glue" />
@@ -97,8 +97,9 @@ export default function QCStructurePage({ params }) {
 
 
             {activeTab === 'cut_edge' && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+                  <table className="min-w-full text-xs sm:text-sm border">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-2 border">เวลา</th>
@@ -136,12 +137,13 @@ export default function QCStructurePage({ params }) {
                     ))}
                   </tbody>
                 </table>
-                <div className="mt-3 flex gap-2">
-                  <button className="px-3 py-2 bg-gray-100 rounded" onClick={addRow}>เพิ่มแถว</button>
-        </div>
+                </div>
+                <div className="mt-3 flex gap-2 px-4 sm:px-0">
+                  <button className="px-3 py-2 bg-gray-100 dark:bg-slate-700 rounded text-sm" onClick={addRow}>เพิ่มแถว</button>
+                </div>
                 
                 {/* หมายเหตุ */}
-                <div className="mt-4">
+                <div className="mt-4 px-4 sm:px-0">
                   <label className="block text-sm font-medium mb-2">{language === 'th' ? 'หมายเหตุ' : 'Remark'}</label>
                   <textarea
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md" 
@@ -153,8 +155,8 @@ export default function QCStructurePage({ params }) {
                 </div>
                 
                 {/* ปุ่มบันทึก */}
-                <div className="mt-4">
-                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium" onClick={save}>
+                <div className="mt-4 px-4 sm:px-0">
+                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium w-full sm:w-auto" onClick={save}>
                     {language === 'th' ? 'บันทึก' : 'Save'}
                   </button>
                 </div>
@@ -162,8 +164,9 @@ export default function QCStructurePage({ params }) {
             )}
 
             {activeTab === 'shoot_frame' && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+                  <table className="min-w-full text-xs sm:text-sm border">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-2 border">เวลา</th>
@@ -207,12 +210,13 @@ export default function QCStructurePage({ params }) {
                     ))}
                   </tbody>
                 </table>
-                <div className="mt-3 flex gap-2">
-                  <button className="px-3 py-2 bg-gray-100 rounded" onClick={addRow}>เพิ่มแถว</button>
-        </div>
+                </div>
+                <div className="mt-3 flex gap-2 px-4 sm:px-0">
+                  <button className="px-3 py-2 bg-gray-100 dark:bg-slate-700 rounded text-sm" onClick={addRow}>เพิ่มแถว</button>
+                </div>
 
                 {/* หมายเหตุ */}
-                <div className="mt-4">
+                <div className="mt-4 px-4 sm:px-0">
                   <label className="block text-sm font-medium mb-2">{language === 'th' ? 'หมายเหตุ' : 'Remark'}</label>
                   <textarea 
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md" 
@@ -224,8 +228,8 @@ export default function QCStructurePage({ params }) {
                 </div>
                 
                 {/* ปุ่มบันทึก */}
-                <div className="mt-4">
-                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium" onClick={save}>
+                <div className="mt-4 px-4 sm:px-0">
+                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium w-full sm:w-auto" onClick={save}>
                     {language === 'th' ? 'บันทึก' : 'Save'}
                   </button>
                 </div>
@@ -233,8 +237,9 @@ export default function QCStructurePage({ params }) {
             )}
 
             {activeTab === 'press_glue' && (
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-sm border">
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+                  <table className="min-w-full text-xs sm:text-sm border">
                   <thead className="bg-gray-50">
                     <tr>
                       <th className="p-2 border">โครงการ</th>
@@ -264,28 +269,29 @@ export default function QCStructurePage({ params }) {
                     ))}
                   </tbody>
                 </table>
-                <div className="mt-3 flex gap-2">
-                  <button className="px-3 py-2 bg-gray-100 rounded" onClick={addRow}>เพิ่มแถว</button>
-            </div>
+                </div>
+                <div className="mt-3 flex gap-2 px-4 sm:px-0">
+                  <button className="px-3 py-2 bg-gray-100 dark:bg-slate-700 rounded text-sm" onClick={addRow}>เพิ่มแถว</button>
+                </div>
             
                 {/* หมายเหตุ */}
-                <div className="mt-4">
+                <div className="mt-4 px-4 sm:px-0">
                   <label className="block text-sm font-medium mb-2">{language === 'th' ? 'หมายเหตุ' : 'Remark'}</label>
-              <textarea
+                  <textarea
                     className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-md" 
-                rows="3"
+                    rows="3"
                     value={header.remark} 
                     onChange={e => setHeader({ ...header, remark: e.target.value })}
                     placeholder={language === 'th' ? 'กรอกหมายเหตุเพิ่มเติม...' : 'Enter additional remarks...'}
-              />
-        </div>
+                  />
+                </div>
 
-        {/* ปุ่มบันทึก */}
-                <div className="mt-4">
-                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium" onClick={save}>
+                {/* ปุ่มบันทึก */}
+                <div className="mt-4 px-4 sm:px-0">
+                  <button className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-medium w-full sm:w-auto" onClick={save}>
                     {language === 'th' ? 'บันทึก' : 'Save'}
-          </button>
-        </div>
+                  </button>
+                </div>
               </div>
             )}
       </div>

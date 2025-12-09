@@ -82,11 +82,11 @@ export default function QCHistoryDetailPage() {
   return (
     <div className="min-h-screen p-4 sm:p-6 md:p-8 bg-gray-50 dark:bg-slate-900">
       <div className="max-w-5xl mx-auto">
-        <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">รายละเอียดประวัติการตรวจ</h1>
-          <div className="flex items-center gap-2">
-            <button onClick={() => router.push('/qc')} className="px-3 py-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 text-sm">กลับไปรายการ</button>
-            <button onClick={() => window.open(`/qc/report/${encodeURIComponent(sessionId)}`, '_blank')} className="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm">พิมพ์/บันทึก PDF</button>
+        <div className="mb-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <h1 className="text-lg sm:text-xl font-semibold text-gray-900 dark:text-gray-100">รายละเอียดประวัติการตรวจ</h1>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
+            <button onClick={() => router.push('/qc')} className="px-3 py-1.5 rounded-md border bg-white dark:bg-slate-800 dark:border-slate-700 text-sm w-full sm:w-auto">กลับไปรายการ</button>
+            <button onClick={() => window.open(`/qc/report/${encodeURIComponent(sessionId)}`, '_blank')} className="px-3 py-1.5 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-sm w-full sm:w-auto">พิมพ์/บันทึก PDF</button>
           </div>
         </div>
 
@@ -109,27 +109,31 @@ export default function QCHistoryDetailPage() {
             <div className="p-4">
               {Object.entries(grouped).map(([group, list]) => (
                 <div key={group} className="mb-4">
-                  <div className="font-semibold mb-2">หมวด: {group}</div>
-                  <table className="w-full text-sm border border-gray-300 dark:border-slate-600">
-                    <thead className="bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200">
-                      <tr>
-                        <th className="border px-2 py-1 text-left w-1/2">รายการ</th>
-                        <th className="border px-2 py-1 text-center w-14">ผ่าน</th>
-                        <th className="border px-2 py-1 text-right w-20">จำนวน</th>
-                        <th className="border px-2 py-1 text-left w-[40%]">สาเหตุ</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {list.map((r) => (
-                        <tr key={r.id}>
-                          <td className="border px-2 py-1 w-1/2">{r.production_no}</td>
-                          <td className="border px-2 py-1 text-center w-14">{r.pass === true ? '✔' : r.pass === false ? '✘' : '-'}</td>
-                          <td className="border px-2 py-1 text-right w-20">{r.actual_qty ?? '-'}</td>
-                          <td className="border px-2 py-1 w-[40%]">{r.note || '-'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="font-semibold mb-2 text-sm sm:text-base">หมวด: {group}</div>
+                  <div className="overflow-x-auto -mx-4 sm:mx-0">
+                    <div className="inline-block min-w-full align-middle px-4 sm:px-0">
+                      <table className="w-full text-xs sm:text-sm border border-gray-300 dark:border-slate-600">
+                        <thead className="bg-gray-50 dark:bg-slate-700 text-gray-700 dark:text-gray-200">
+                          <tr>
+                            <th className="border px-2 py-1 text-left">รายการ</th>
+                            <th className="border px-2 py-1 text-center">ผ่าน</th>
+                            <th className="border px-2 py-1 text-right">จำนวน</th>
+                            <th className="border px-2 py-1 text-left">สาเหตุ</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {list.map((r) => (
+                            <tr key={r.id}>
+                              <td className="border px-2 py-1">{r.production_no}</td>
+                              <td className="border px-2 py-1 text-center">{r.pass === true ? '✔' : r.pass === false ? '✘' : '-'}</td>
+                              <td className="border px-2 py-1 text-right">{r.actual_qty ?? '-'}</td>
+                              <td className="border px-2 py-1">{r.note || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

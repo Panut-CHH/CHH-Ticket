@@ -24,6 +24,10 @@ export const ROLE_PERMISSIONS = {
     pages: ['qc', 'settings'],
     settingsTabs: ['profile', 'security']
   },
+  Storage: {
+    pages: ['store', 'settings'],
+    settingsTabs: ['profile', 'security']
+  },
   DashboardView: {
     pages: ['dashboard'],
     settingsTabs: ['profile', 'security']
@@ -66,6 +70,8 @@ const normalizeRoleName = (role) => {
       return 'Packing';
     case 'qc':
       return 'QC';
+    case 'storage':
+      return 'Storage';
     case 'dashboardview':
     case 'dashboard(view)':
       return 'DashboardView';

@@ -221,7 +221,7 @@ export default function QCPage() {
       const { data: rows, error: rowsError } = await supabase
         .from('qc_rows')
         .select('pass')
-        .in('qc_session_id', ids);
+        .in('session_id', ids);
       if (rowsError) throw rowsError;
       const pass = (rows || []).filter((r) => r.pass === true).length;
       const fail = (rows || []).filter((r) => r.pass === false).length;
@@ -454,18 +454,18 @@ export default function QCPage() {
       </header>
 
       {/* Tabs */}
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 overflow-x-auto pb-2 -mx-3 sm:mx-0 px-3 sm:px-0">
         <button
           onClick={() => setActiveTab('queue')}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'queue' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${activeTab === 'queue' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
         >{language === 'th' ? 'คิวที่ต้องตรวจ' : 'QC Queue'}</button>
         <button
           onClick={() => setActiveTab('archive')}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'archive' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${activeTab === 'archive' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
         >{language === 'th' ? 'เก็บเอกสาร (ตรวจเสร็จ)' : 'Archive (Completed)'}</button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`px-3 py-1.5 rounded-md text-sm font-medium ${activeTab === 'history' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${activeTab === 'history' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
           >{language === 'th' ? 'ประวัติการตรวจ' : 'QC History'}</button>
       </div>
 
@@ -596,7 +596,7 @@ export default function QCPage() {
             {language === 'th' ? 'เลือกเงื่อนไขที่ต้องการเพื่อลดรายการ' : 'Refine the queue with these controls'}
           </div>
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">
               {language === 'th' ? 'ค้นหา' : 'Search'}
@@ -808,8 +808,8 @@ export default function QCPage() {
         ) : (
           archivedTickets.map((ticket) => (
             <div key={ticket.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-2 sm:gap-3">
-                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 sm:gap-3">
+                <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 w-full sm:w-auto">
                   <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                     <TicketIcon className="w-4 h-4 sm:w-5 sm:h-5" />
                   </div>
@@ -817,12 +817,12 @@ export default function QCPage() {
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm sm:text-base font-semibold text-gray-900 dark:text-gray-100">{ticket.id}</span>
                       <span className={`text-xs px-2 py-0.5 rounded ${ticket.routeClass}`}>{ticket.route}</span>
-                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700">{language === 'th' ? 'ตรวจเสร็จแล้ว' : 'QC Completed'}</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">{language === 'th' ? 'ตรวจเสร็จแล้ว' : 'QC Completed'}</span>
                     </div>
                     <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">{ticket.title}</div>
                   </div>
                 </div>
-                <Link href={`/qc/${String(ticket.id).replace('#','')}`} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs sm:text-sm w-full md:w-auto text-center">
+                <Link href={`/qc/${String(ticket.id).replace('#','')}`} className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-gray-800 dark:text-gray-200 rounded-lg text-xs sm:text-sm w-full sm:w-auto text-center">
                   {language === 'th' ? 'ดูประวัติ QC' : 'View QC History'}
                 </Link>
               </div>
@@ -885,33 +885,35 @@ export default function QCPage() {
             <div className="text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'ไม่พบประวัติ' : 'No history found'}</div>
           )}
           {!historyLoading && historySessions.length > 0 && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead>
-                  <tr className="text-gray-600 dark:text-gray-300">
-                    <th className="py-2">{language === 'th' ? 'เลขตั๋ว' : 'Ticket'}</th>
-                    <th className="py-2">{language === 'th' ? 'สถานี' : 'Station'}</th>
-                    <th className="py-2">{language === 'th' ? 'ผู้ตรวจ' : 'Inspector'}</th>
-                    <th className="py-2">{language === 'th' ? 'วันที่' : 'Date'}</th>
-                    <th className="py-2"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
-                  {historySessions.map((s) => (
-                    <tr key={s.id} className="text-gray-800 dark:text-gray-200">
-                      <td className="py-2">{s.ticket_no}</td>
-                      <td className="py-2">{s.station_name}</td>
-                      <td className="py-2">{s.inspector_name}</td>
-                      <td className="py-2">{new Date(s.created_at).toLocaleString('th-TH', { hour12: false })}</td>
-                      <td className="py-2 text-right">
-                        <Link href={`/qc/history/${s.id}`} className="text-emerald-700 hover:underline">
-                          {language === 'th' ? 'ดูรายละเอียด' : 'View detail'}
-                        </Link>
-                      </td>
+            <div className="overflow-x-auto -mx-3 sm:mx-0">
+              <div className="inline-block min-w-full align-middle px-3 sm:px-0">
+                <table className="min-w-full text-left text-sm">
+                  <thead>
+                    <tr className="text-gray-600 dark:text-gray-300 border-b border-gray-200 dark:border-slate-700">
+                      <th className="py-2 pr-4">{language === 'th' ? 'เลขตั๋ว' : 'Ticket'}</th>
+                      <th className="py-2 pr-4">{language === 'th' ? 'สถานี' : 'Station'}</th>
+                      <th className="py-2 pr-4">{language === 'th' ? 'ผู้ตรวจ' : 'Inspector'}</th>
+                      <th className="py-2 pr-4 whitespace-nowrap">{language === 'th' ? 'วันที่' : 'Date'}</th>
+                      <th className="py-2 text-right"></th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 dark:divide-slate-700">
+                    {historySessions.map((s) => (
+                      <tr key={s.id} className="text-gray-800 dark:text-gray-200">
+                        <td className="py-2 pr-4">{s.ticket_no}</td>
+                        <td className="py-2 pr-4">{s.station_name}</td>
+                        <td className="py-2 pr-4">{s.inspector_name}</td>
+                        <td className="py-2 pr-4 whitespace-nowrap">{new Date(s.created_at).toLocaleString('th-TH', { hour12: false })}</td>
+                        <td className="py-2 text-right">
+                          <Link href={`/qc/history/${s.id}`} className="text-emerald-700 hover:underline text-xs sm:text-sm">
+                            {language === 'th' ? 'ดูรายละเอียด' : 'View detail'}
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 

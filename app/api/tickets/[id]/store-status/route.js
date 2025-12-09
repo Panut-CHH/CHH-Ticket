@@ -70,9 +70,13 @@ export async function POST(request, { params }) {
     
     // Support both old format (role) and new format (roles)
     const userRoles = userRecord?.roles || (userRecord?.role ? [userRecord.role] : []);
-    const hasAdminRole = userRoles.some(r => r === 'Admin' || r === 'SuperAdmin');
-    if (!userRecord || !hasAdminRole) {
-      return NextResponse.json({ success: false, error: 'Forbidden - Admin/SuperAdmin only' }, { status: 403 });
+    const hasPermission = userRoles.some(r => 
+      r === 'Admin' || 
+      r === 'SuperAdmin' || 
+      r === 'Storage'
+    );
+    if (!userRecord || !hasPermission) {
+      return NextResponse.json({ success: false, error: 'Forbidden - Admin/SuperAdmin/Storage only' }, { status: 403 });
     }
 
     // Update store_status in ticket table

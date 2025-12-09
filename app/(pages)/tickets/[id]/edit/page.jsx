@@ -9,7 +9,7 @@ import Modal from "@/components/Modal";
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import { useEffect as useClientEffect } from "react";
-import { getRoleDisplayName } from "@/utils/rolePermissions";
+import { getRoleDisplayName, getAllAvailableRoles } from "@/utils/rolePermissions";
 
 export default function EditTicketPage() {
   const params = useParams();
@@ -1603,7 +1603,7 @@ export default function EditTicketPage() {
                 เลือก Role ที่สามารถ Assign ได้:
               </label>
               <div className="space-y-2 max-h-64 overflow-y-auto border border-gray-200 dark:border-slate-600 rounded-lg p-3">
-                {['Painting', 'Production'].map((role) => {
+                {getAllAvailableRoles().map((role) => {
                   const isChecked = selectedRoles.includes(role);
                   return (
                     <label

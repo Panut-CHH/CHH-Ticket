@@ -667,35 +667,36 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   };
 
   const renderCategory = (categoryKey, categoryName, items) => (
-    <div className="mb-6">
-      <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+    <div className="mb-4 sm:mb-6">
+      <h3 className="text-base sm:text-lg font-semibold mb-2 sm:mb-3 text-gray-800 dark:text-gray-200">
         {categoryName}
         {categoryKey === 'door' && (
           <Link 
             href={`/qc/${id}/structure`} 
-            className="ml-4 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-sm"
+            className="ml-2 sm:ml-4 px-2 sm:px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs sm:text-sm"
           >
             {language === 'th' ? 'ตรวจสอบโครง' : 'Inspect Structure'}
           </Link>
         )}
       </h3>
       
-      <div className="overflow-x-auto">
-        <table className="min-w-full border border-gray-300 dark:border-slate-600">
-          <thead className="bg-gray-50 dark:bg-slate-700">
-            <tr>
-              <th className="px-3 py-2 border text-left text-sm font-medium">รายการ</th>
-              <th className="px-3 py-2 border text-center text-sm font-medium">ผ่าน</th>
-              <th className="px-3 py-2 border text-center text-sm font-medium">ไม่ผ่าน</th>
-              <th className="px-3 py-2 border text-center text-sm font-medium">จำนวน</th>
-              <th className="px-3 py-2 border text-center text-sm font-medium">สาเหตุ</th>
-              <th className="px-3 py-2 border text-center text-sm font-medium">จัดการ</th>
-            </tr>
-          </thead>
+      <div className="overflow-x-auto -mx-3 sm:mx-0">
+        <div className="inline-block min-w-full align-middle px-3 sm:px-0">
+          <table className="min-w-full border border-gray-300 dark:border-slate-600">
+            <thead className="bg-gray-50 dark:bg-slate-700">
+              <tr>
+                <th className="px-2 sm:px-3 py-2 border text-left text-xs sm:text-sm font-medium">รายการ</th>
+                <th className="px-2 sm:px-3 py-2 border text-center text-xs sm:text-sm font-medium">ผ่าน</th>
+                <th className="px-2 sm:px-3 py-2 border text-center text-xs sm:text-sm font-medium">ไม่ผ่าน</th>
+                <th className="px-2 sm:px-3 py-2 border text-center text-xs sm:text-sm font-medium">จำนวน</th>
+                <th className="px-2 sm:px-3 py-2 border text-center text-xs sm:text-sm font-medium">สาเหตุ</th>
+                <th className="px-2 sm:px-3 py-2 border text-center text-xs sm:text-sm font-medium">จัดการ</th>
+              </tr>
+            </thead>
           <tbody>
             {items.map(item => (
               <tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-slate-800">
-                <td className="px-3 py-2 border">
+                <td className="px-2 sm:px-3 py-2 border">
                   {item.name ? (
                     <span className="text-sm">{item.name}</span>
                   ) : (
@@ -709,7 +710,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     />
                   )}
                 </td>
-                <td className="px-3 py-2 border text-center">
+                <td className="px-2 sm:px-3 py-2 border text-center">
                   <input
                     type="radio"
                     name={`pass_${item.id}`}
@@ -726,7 +727,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     disabled={!qcStarted}
                   />
                 </td>
-                <td className="px-3 py-2 border text-center">
+                <td className="px-2 sm:px-3 py-2 border text-center">
                   <input
                     type="radio"
                     name={`pass_${item.id}`}
@@ -742,10 +743,10 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     disabled={!qcStarted}
                   />
                 </td>
-                <td className="px-3 py-2 border">
+                <td className="px-2 sm:px-3 py-2 border">
                   <input
                     type="number"
-                    className="w-full px-2 py-1 text-sm border rounded disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500"
+                    className="w-full px-2 py-1 text-xs sm:text-sm border rounded disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500"
                     value={item.qty}
                     onChange={e => {
                       const raw = e.target.value;
@@ -765,17 +766,17 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     }}
                   />
                 </td>
-                <td className="px-3 py-2 border">
+                <td className="px-2 sm:px-3 py-2 border">
                   <input
                     type="text"
-                    className={`w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-amber-400/60 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500 ${item.pass === false && !item.reason ? 'border-amber-500 bg-amber-50 placeholder-amber-400' : ''}`}
+                    className={`w-full px-2 py-1 text-xs sm:text-sm border rounded focus:outline-none focus:ring-2 focus:ring-amber-400/60 disabled:bg-gray-100 disabled:cursor-not-allowed disabled:text-gray-400 dark:disabled:bg-slate-800 dark:disabled:text-gray-500 ${item.pass === false && !item.reason ? 'border-amber-500 bg-amber-50 placeholder-amber-400' : ''}`}
                     value={item.reason}
                     onChange={e => updateItem(categoryKey, item.id, 'reason', e.target.value)}
                     placeholder={language === 'th' ? 'สาเหตุ' : 'Reason'}
                     disabled={!qcStarted || item.pass !== false}
                   />
                 </td>
-                <td className="px-3 py-2 border text-center">
+                <td className="px-2 sm:px-3 py-2 border text-center">
                   {!item.name && (
                     <button
                       onClick={() => removeCustomItem(categoryKey, item.id)}
@@ -790,6 +791,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
             ))}
           </tbody>
         </table>
+        </div>
       </div>
       
       <button
@@ -900,8 +902,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
             {!ticketNotFound && !ticketLoading && (
             <>
             {/* Header */}
-            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
-              <div className="flex items-center gap-4 mb-4">
+            <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+              <div className="flex items-center gap-4 mb-3 sm:mb-4">
                 <Link 
                   href="/qc" 
                   className="flex items-center gap-2 px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors"
@@ -910,20 +912,20 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                   {language === 'th' ? 'ย้อนกลับ' : 'Back'}
                 </Link>
               </div>
-              <h1 className="text-xl font-bold text-center mb-4 text-gray-800 dark:text-gray-200">
+              <h1 className="text-base sm:text-lg md:text-xl font-bold text-center mb-3 sm:mb-4 text-gray-800 dark:text-gray-200">
                 เอกสารตรวจสอบคุณภาพระหว่างการผลิต/คุณภาพผลิตภัณฑ์
               </h1>
               <div className="text-center text-gray-600 dark:text-gray-400">
-                <p className="text-lg font-medium">ตั๋ว #{id}</p>
+                <p className="text-base sm:text-lg font-medium">ตั๋ว #{id}</p>
                 {ticketData && (
                   <div className="mt-2 space-y-1">
-                    <p className="text-sm">
+                    <p className="text-xs sm:text-sm">
                       <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
                       <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
                         {(((typeof ticketData?.pass_quantity === 'number' && ticketData?.pass_quantity !== null) ? ticketData.pass_quantity : (ticketData?.quantity || 0)) || 0).toLocaleString()} ชิ้น
                       </span>
                     </p>
-                    <p className="text-sm">
+                    <p className="text-xs sm:text-sm">
                       <span className="font-medium">รายการ:</span> 
                       <span className="ml-2">{ticketData?.description || '-'}</span>
                     </p>
@@ -934,30 +936,30 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
             {/* QC Start Button (hide when QC already completed) */}
             {!qcStarted && !qcCompleted && (
-              <div className="relative overflow-hidden rounded-2xl p-6 mb-6 border dark:border-slate-700/60 shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/10 dark:to-yellow-900/10">
+              <div className="relative overflow-hidden rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6 border dark:border-slate-700/60 shadow-sm bg-gradient-to-br from-amber-50 to-yellow-50 dark:from-amber-900/10 dark:to-yellow-900/10">
                 {/* subtle grid pattern */}
                 <div className="pointer-events-none absolute inset-0 opacity-[0.08] [background-image:radial-gradient(theme(colors.yellow.500)_0.5px,transparent_0.5px)] [background-size:16px_16px]" />
-                <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] items-center">
-                  <div className="flex items-start gap-4">
-                    <div className="shrink-0 w-12 h-12 rounded-xl bg-yellow-200/70 dark:bg-yellow-300/20 flex items-center justify-center text-yellow-700 dark:text-yellow-300">
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="relative z-10 flex flex-col sm:grid sm:grid-cols-[1fr_auto] gap-4 items-start sm:items-center">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <div className="shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-yellow-200/70 dark:bg-yellow-300/20 flex items-center justify-center text-yellow-700 dark:text-yellow-300">
+                      <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
                     </div>
                     <div>
-                      <h3 className="text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
+                      <h3 className="text-sm sm:text-base md:text-lg font-semibold text-gray-800 dark:text-gray-100">
                         {language === 'th' ? 'ฟอร์มถูกล็อค' : 'Form is locked'}
                       </h3>
-                      <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                      <p className="mt-1 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
                         {language === 'th' ? 'กดปุ่มเพื่อเริ่มการตรวจสอบ QC ระบบจะอัปเดตสถานะเป็นกำลังดำเนินการ' : 'Press start to begin QC. Status will switch to in progress.'}
                       </p>
                     </div>
                   </div>
-                  <div className="flex md:justify-end">
+                  <div className="flex w-full sm:w-auto sm:justify-end">
                     <button
                       onClick={startQC}
                       disabled={startingQc}
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg text-white font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 transition-colors shadow-sm"
+                      className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg text-white font-medium bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 transition-colors shadow-sm w-full sm:w-auto"
                     >
                       {startingQc ? (
                         <>
@@ -990,37 +992,37 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
             {/* QC Results Summary */}
             {qcStarted && !qcCompleted && (
-              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6">
-                <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
+              <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6">
+                <h3 className="text-base sm:text-lg font-semibold mb-3 sm:mb-4 text-gray-800 dark:text-gray-200">
                   สรุปผลการตรวจสอบ QC
                 </h3>
                 {(() => {
                   const results = calculateQCResults();
                   return (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                      <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                      <div className="text-center p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <div className="text-xl sm:text-2xl font-bold text-blue-600 dark:text-blue-400">
                           {results.totalQuantity.toLocaleString()}
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">จำนวนทั้งหมด</div>
+                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">จำนวนทั้งหมด</div>
                       </div>
-                      <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                      <div className="text-center p-3 sm:p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                        <div className="text-xl sm:text-2xl font-bold text-green-600 dark:text-green-400">
                           {results.passQuantity.toLocaleString()}
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">ผ่าน QC</div>
+                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">ผ่าน QC</div>
                       </div>
-                      <div className="text-center p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                      <div className="text-center p-3 sm:p-4 bg-red-50 dark:bg-red-900/20 rounded-lg">
+                        <div className="text-xl sm:text-2xl font-bold text-red-600 dark:text-red-400">
                           {results.failQuantity.toLocaleString()}
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">ไม่ผ่าน QC</div>
+                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">ไม่ผ่าน QC</div>
                       </div>
-                      <div className="text-center p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
-                        <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                      <div className="text-center p-3 sm:p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg">
+                        <div className="text-xl sm:text-2xl font-bold text-yellow-600 dark:text-yellow-400">
                           {results.passRate}%
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">อัตราการผ่าน</div>
+                        <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400">อัตราการผ่าน</div>
                       </div>
                     </div>
                   );
@@ -1029,7 +1031,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
             )}
 
             {/* Form */}
-            <div className={`bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6 ${(!qcStarted || qcCompleted) ? 'opacity-50 pointer-events-none' : ''}`}>
+            <div className={`bg-white dark:bg-slate-800 rounded-lg shadow-sm p-4 sm:p-6 mb-4 sm:mb-6 ${(!qcStarted || qcCompleted) ? 'opacity-50 pointer-events-none' : ''}`}>
               {renderCategory('frame', 'หมวดวงกบ', checklistItems.frame)}
               {renderCategory('door', 'หมวดประตู', checklistItems.door)}
               {renderCategory('paint', 'หมวดสี', checklistItems.paint)}
@@ -1038,12 +1040,12 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               {/* Footer */}
               <div className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-700">
                 {/* Inspector/date removed: auto-filled from user and current date */}
-                <div className="flex gap-3">
+                <div className="flex flex-col sm:flex-row gap-3">
                   {!qcCompleted && (
                   <button
                     onClick={saveForm}
                     disabled={saving || !qcStarted || qcCompleted}
-                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-md font-medium"
+                    className="px-6 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white rounded-md font-medium w-full sm:w-auto"
                   >
                     {saving ? (language === 'th' ? 'กำลังบันทึก...' : 'Saving...') : (language === 'th' ? 'บันทึก' : 'Save')}
                   </button>
@@ -1051,7 +1053,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                   {!qcCompleted && (
                   <button
                     onClick={clearForm}
-                    className="px-6 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md font-medium"
+                    className="px-6 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded-md font-medium w-full sm:w-auto"
                     disabled={!qcStarted || qcCompleted}
                   >
                     {language === 'th' ? 'ล้างฟอร์ม' : 'Clear Form'}
