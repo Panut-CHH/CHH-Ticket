@@ -36,7 +36,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       { id: 7, name: "รูปแบบตรงตามแบบ", pass: null, qty: "", reason: "" },
       { id: 8, name: "ประตูไม่บิด โก่ง หรือ ห่อ", pass: null, qty: "", reason: "" },
       { id: 9, name: "แผ่นหน้าไม่หลุดจากโครงประตู", pass: null, qty: "", reason: "" },
-      { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" }
+      { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" },
+      { id: 16, name: "ตรวจสอบโครง", pass: null, qty: "", reason: "" }
     ],
     paint: [
       { id: 11, name: "สีถูกต้องตามแบบ", pass: null, qty: "", reason: "" },
@@ -648,7 +649,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
           { id: 7, name: "รูปแบบตรงตามแบบ", pass: null, qty: "", reason: "" },
           { id: 8, name: "ประตูไม่บิด โก่ง หรือ ห่อ", pass: null, qty: "", reason: "" },
           { id: 9, name: "แผ่นหน้าไม่หลุดจากโครงประตู", pass: null, qty: "", reason: "" },
-          { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" }
+          { id: 10, name: "แผ่นหน้าไม่เป็นคลื่น หรือมีรอยอื่นๆ", pass: null, qty: "", reason: "" },
+          { id: 16, name: "ตรวจสอบโครง", pass: null, qty: "", reason: "" }
         ],
         paint: [
           { id: 11, name: "สีถูกต้องตามแบบ", pass: null, qty: "", reason: "" },

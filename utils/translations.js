@@ -454,6 +454,16 @@ export const translations = {
     dueDate: "วันที่ครบกำหนด",
     close: "ปิด",
     manageStation: "จัดการสถานี",
+    
+    // Store
+    store: "คลังสินค้า",
+    storeStatus: "สถานะ Store",
+    itemsWithdrawn: "เบิกของแล้ว",
+    incompleteWithdrawal: "เบิกไม่ครบ",
+    waitingForItems: "รอของ",
+    updateStoreStatus: "อัปเดตสถานะ Store",
+    storeManagement: "จัดการคลังสินค้า",
+    storeManagementDesc: "อัปเดตสถานะการเบิกของสำหรับตั๋วการผลิต",
   },
   
   en: {
@@ -909,6 +919,16 @@ export const translations = {
     dueDate: "Due Date",
     close: "Close",
     manageStation: "Manage Station",
+    
+    // Store
+    store: "Store",
+    storeStatus: "Store Status",
+    itemsWithdrawn: "Items Withdrawn",
+    incompleteWithdrawal: "Incomplete Withdrawal",
+    waitingForItems: "Waiting for Items",
+    updateStoreStatus: "Update Store Status",
+    storeManagement: "Store Management",
+    storeManagementDesc: "Update item withdrawal status for production tickets",
   }
 };
 

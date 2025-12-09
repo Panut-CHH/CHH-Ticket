@@ -6,7 +6,7 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useAuth } from "@/contexts/AuthContext";
-import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info } from "lucide-react";
+import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info, Printer, X } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
@@ -563,13 +563,69 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           >
             {ticket.projectDoc?.file_url ? (
               <div className="relative w-full h-full p-0">
-                {/* Close button */}
-                <button
-                  onClick={() => setIsDocOpen(false)}
-                  className="absolute top-3 right-3 z-10 px-3 py-1.5 bg-black/60 text-white rounded-md hover:bg-black/70 transition-colors"
-                >
-                  ปิด
-                </button>
+                {/* Close button and Print button */}
+                <div className="absolute top-3 right-3 z-10 flex gap-2">
+                  {/* Print button - only show for images */}
+                  {ticket.projectDoc.file_type !== 'pdf' && (
+                    <button
+                      onClick={() => {
+                        // Create a new window with the image and print
+                        const printWindow = window.open('', '_blank');
+                        if (printWindow) {
+                          printWindow.document.write(`
+                            <html>
+                              <head>
+                                <title>${ticket.projectDoc.file_name}</title>
+                                <style>
+                                  @media print {
+                                    body { margin: 0; padding: 0; }
+                                    img { max-width: 100%; height: auto; }
+                                  }
+                                  body {
+                                    display: flex;
+                                    justify-content: center;
+                                    align-items: center;
+                                    min-height: 100vh;
+                                    margin: 0;
+                                    padding: 20px;
+                                  }
+                                  img {
+                                    max-width: 100%;
+                                    max-height: 100vh;
+                                    object-fit: contain;
+                                  }
+                                </style>
+                              </head>
+                              <body>
+                                <img src="${ticket.projectDoc.file_url}" alt="${ticket.projectDoc.file_name}" />
+                                <script>
+                                  window.onload = function() {
+                                    window.print();
+                                  };
+                                </script>
+                              </body>
+                            </html>
+                          `);
+                          printWindow.document.close();
+                        }
+                      }}
+                      className="px-3 py-1.5 bg-black/60 text-white rounded-md hover:bg-black/70 transition-colors inline-flex items-center gap-2"
+                      title="พิมพ์ภาพ"
+                    >
+                      <Printer className="w-4 h-4" />
+                      <span className="hidden sm:inline">พิมพ์</span>
+                    </button>
+                  )}
+                  {/* Close button */}
+                  <button
+                    onClick={() => setIsDocOpen(false)}
+                    className="px-3 py-1.5 bg-black/60 text-white rounded-md hover:bg-black/70 transition-colors inline-flex items-center gap-2"
+                    title="ปิด"
+                  >
+                    <X className="w-4 h-4" />
+                    <span className="hidden sm:inline">ปิด</span>
+                  </button>
+                </div>
 
                 {/* Content */}
                 <div className="w-full h-full">

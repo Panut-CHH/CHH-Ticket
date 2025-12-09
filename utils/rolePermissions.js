@@ -29,11 +29,11 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   Admin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security', 'users']
   },
   SuperAdmin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'settings', 'debug-user-role'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role'],
     settingsTabs: ['profile', 'security', 'users', 'erpTest']
   }
 };

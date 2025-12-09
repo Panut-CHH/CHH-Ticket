@@ -7,7 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions } from "@/utils/rolePermissions";
 
@@ -50,8 +50,9 @@ export default function ProductionPage() {
   const [showFilter, setShowFilter] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState(new Set());
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
+  const [selectedStoreStatuses, setSelectedStoreStatuses] = useState(new Set());
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
-  const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status'
+  const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
 
   // Function to load batches
@@ -98,7 +99,7 @@ export default function ProductionPage() {
       // 1) Load tickets from DB (base info)
       const { data: ticketData, error: ticketError } = await supabase
         .from('ticket')
-        .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity')
+        .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status')
         .order('created_at', { ascending: false });
       if (ticketError) throw ticketError;
 
@@ -184,7 +185,8 @@ export default function ProductionPage() {
           description2: t.description_2 || '',
           stations: [],
           roadmap: [],
-          customerName: t.customer_name || ''
+          customerName: t.customer_name || '',
+          storeStatus: t.store_status || null
         };
       });
       
@@ -315,7 +317,8 @@ export default function ProductionPage() {
           statusClass,
           priority: t.priority,
           priorityClass: t.priorityClass,
-          customerName: dbTicket?.customer_name || t.customerName
+          customerName: dbTicket?.customer_name || t.customerName,
+          storeStatus: dbTicket?.store_status || t.storeStatus
         };
       });
       
@@ -578,9 +581,10 @@ export default function ProductionPage() {
     let count = 0;
     if (selectedStatuses.size > 0) count += 1;
     if (selectedPriorities.size > 0) count += 1;
+    if (selectedStoreStatuses.size > 0) count += 1;
     if (hasDueDateOnly) count += 1;
     return count;
-  }, [selectedStatuses, selectedPriorities, hasDueDateOnly]);
+  }, [selectedStatuses, selectedPriorities, selectedStoreStatuses, hasDueDateOnly]);
 
   const matchSearch = (t) => {
     if (!searchTerm) return true;
@@ -598,6 +602,11 @@ export default function ProductionPage() {
   const passFilters = (t) => {
     if (selectedStatuses.size > 0 && !selectedStatuses.has(t.status)) return false;
     if (selectedPriorities.size > 0 && !selectedPriorities.has(t.priority)) return false;
+    if (selectedStoreStatuses.size > 0) {
+      // ถ้าเลือก filter store status และ ticket ไม่มี store status หรือไม่ตรงกับที่เลือก ให้ filter ออก
+      const ticketStoreStatus = t.storeStatus || 'ยังไม่มีสถานะ';
+      if (!selectedStoreStatuses.has(ticketStoreStatus)) return false;
+    }
     if (hasDueDateOnly && !t.dueDate) return false;
     return true;
   };
@@ -643,6 +652,20 @@ export default function ProductionPage() {
           };
           av = statusRank(a.status);
           bv = statusRank(b.status);
+          break;
+        }
+        case 'storeStatus': {
+          // Create store status rank for sorting
+          const storeStatusRank = (s) => {
+            if (!s || s === null) return 4; // ไม่มีสถานะ - ไว้ท้ายสุด
+            const status = String(s);
+            if (status === 'เบิกของแล้ว') return 0;
+            if (status === 'เบิกไม่ครบ') return 1;
+            if (status === 'รอของ') return 2;
+            return 3; // Unknown store status
+          };
+          av = storeStatusRank(a.storeStatus);
+          bv = storeStatusRank(b.storeStatus);
           break;
         }
         case 'id':
@@ -805,6 +828,7 @@ export default function ProductionPage() {
                       <option value="value">{language === 'th' ? 'มูลค่า' : 'Value'}</option>
                       <option value="id">{language === 'th' ? 'เลขตั๋ว' : 'Ticket No.'}</option>
                       <option value="status">{language === 'th' ? 'สถานะ' : 'Status'}</option>
+                      <option value="storeStatus">{language === 'th' ? 'สถานะ Store' : 'Store Status'}</option>
                     </select>
                     <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -925,6 +949,23 @@ export default function ProductionPage() {
                           {ticketBatches.length > 0 && (
                             <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
                               {ticketBatches.length} {language === 'th' ? 'Batch' : 'Batch'}
+                            </span>
+                          )}
+                          {/* Store status pill */}
+                          {ticket.storeStatus && (
+                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs font-medium ${
+                              ticket.storeStatus === 'เบิกของแล้ว' 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
+                                : ticket.storeStatus === 'เบิกไม่ครบ'
+                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
+                                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
+                            }`}>
+                              {ticket.storeStatus === 'เบิกของแล้ว' 
+                                ? t('itemsWithdrawn', language)
+                                : ticket.storeStatus === 'เบิกไม่ครบ'
+                                ? t('incompleteWithdrawal', language)
+                                : t('waitingForItems', language)
+                              }
                             </span>
                           )}
                         </div>
