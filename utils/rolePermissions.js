@@ -16,6 +16,14 @@ export const ROLE_PERMISSIONS = {
     pages: ['production', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
   },
+  'Supervisor Painting': {
+    pages: ['production', 'debug-user-role'],
+    settingsTabs: ['profile', 'security']
+  },
+  'Supervisor Production': {
+    pages: ['production', 'debug-user-role'],
+    settingsTabs: ['profile', 'security']
+  },
   Packing: {
     pages: ['production', 'debug-user-role'],
     settingsTabs: ['profile', 'security']
@@ -66,6 +74,10 @@ const normalizeRoleName = (role) => {
       return 'Production';
     case 'painting':
       return 'Painting';
+    case 'supervisor painting':
+      return 'Supervisor Painting';
+    case 'supervisor production':
+      return 'Supervisor Production';
     case 'packing':
       return 'Packing';
     case 'qc':
@@ -229,5 +241,38 @@ export const getAllAvailableRoles = () => {
   return Object.keys(ROLE_PERMISSIONS).filter(role => {
     // Exclude Admin and SuperAdmin from assignable roles (they shouldn't be assigned to stations)
     return role !== 'Admin' && role !== 'SuperAdmin';
+  });
+};
+
+// Helper function to get the role that a supervisor manages
+export const getSupervisorManagedRole = (supervisorRole) => {
+  if (!supervisorRole) return null;
+  const normalizedRole = normalizeRoleName(supervisorRole);
+  
+  const supervisorMapping = {
+    'Supervisor Painting': 'Painting',
+    'Supervisor Production': 'Production'
+  };
+  
+  return supervisorMapping[normalizedRole] || null;
+};
+
+// Helper function to check if a supervisor can act for a technician
+export const canSupervisorActForTechnician = (supervisorRole, technicianRole) => {
+  if (!supervisorRole || !technicianRole) return false;
+  
+  const managedRole = getSupervisorManagedRole(supervisorRole);
+  if (!managedRole) return false;
+  
+  const normalizedTechnicianRole = normalizeRoleName(technicianRole);
+  return managedRole === normalizedTechnicianRole;
+};
+
+// Helper function to check if a user is a supervisor
+export const isSupervisor = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  return roles.some(role => {
+    const normalizedRole = normalizeRoleName(role);
+    return normalizedRole === 'Supervisor Painting' || normalizedRole === 'Supervisor Production';
   });
 };

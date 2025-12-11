@@ -10,8 +10,9 @@ import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, 
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
+import { isSupervisor, canSupervisorActForTechnician } from "@/utils/rolePermissions";
 
-function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null }) {
+function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
   console.log('🚀 [DetailCard] Component RENDERED');
   // Debug: Check ticket data
   console.log('[DetailCard] Ticket received:', ticket ? { id: ticket.id, hasStations: !!ticket.stations, stationsLength: ticket.stations?.length } : 'null');
@@ -51,9 +52,41 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
       .some((name) => name === meNorm);
   };
   
-  // Check if current user is assigned to the step
-  const isAssignedToCurrent = isAdmin || isUserAssigned(currentTechnician, me);
-  const isAssignedToPending = isAdmin || isUserAssigned(firstPendingTechnician, me);
+  // Check if supervisor can act for assigned technician
+  const canSupervisorActForStep = useCallback((stepIndex, stationData) => {
+    if (!isSupervisor(userRoles) || !stationData || stepIndex < 0) return false;
+    
+    const stationId = stationData.station_id || stationData.id;
+    if (!stationId) return false;
+    
+    const ticketNo = ticket.id.replace('#', '');
+    const stepOrder = stepIndex + 1;
+    
+    // Find assignment for this step
+    const assignment = assignments.find(a => 
+      a.ticket_no === ticketNo &&
+      a.station_id === stationId &&
+      a.step_order === stepOrder
+    );
+    
+    if (!assignment || !assignment.technician) return false;
+    
+    // Check if assigned technician has role that supervisor manages
+    const technicianRoles = assignment.technician.roles || (assignment.technician.role ? [assignment.technician.role] : []);
+    return userRoles.some(supervisorRole => 
+      technicianRoles.some(technicianRole => 
+        canSupervisorActForTechnician(supervisorRole, technicianRole)
+      )
+    );
+  }, [userRoles, assignments, ticket.id]);
+  
+  // Check if current user is assigned to the step (including supervisor delegation)
+  const isAssignedToCurrent = isAdmin || 
+    isUserAssigned(currentTechnician, me) || 
+    canSupervisorActForStep(currentIndex, currentStationData);
+  const isAssignedToPending = isAdmin || 
+    isUserAssigned(firstPendingTechnician, me) || 
+    canSupervisorActForStep(firstPendingIndex, firstPendingStationData);
 
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
@@ -83,8 +116,10 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const [qcSessions, setQcSessions] = useState([]);
   // Store activity logs to find who started QC
   const [activityLogs, setActivityLogs] = useState([]);
+  // Store assignments for supervisor checks
+  const [assignments, setAssignments] = useState([]);
 
-  // Load work sessions from database
+  // Load work sessions and assignments from database
   const loadWorkSessions = useCallback(async () => {
     if (!ticket.id) return;
     
@@ -110,6 +145,41 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
         `)
         .eq('ticket_no', ticketNo)
         .order('started_at', { ascending: true });
+      
+      // Load assignments for supervisor checks
+      try {
+        const { data: assignmentData, error: assignmentError } = await supabase
+          .from('ticket_assignments')
+          .select(`
+            ticket_no,
+            station_id,
+            step_order,
+            technician_id
+          `)
+          .eq('ticket_no', ticketNo);
+        
+        if (!assignmentError && assignmentData && assignmentData.length > 0) {
+          // Load technician roles separately
+          const technicianIds = [...new Set(assignmentData.map(a => a.technician_id))];
+          const { data: technicianData } = await supabase
+            .from('users')
+            .select('id, role, roles')
+            .in('id', technicianIds);
+          
+          // Merge assignment data with technician roles
+          const assignmentsWithRoles = assignmentData.map(assignment => ({
+            ...assignment,
+            technician: technicianData?.find(t => t.id === assignment.technician_id) || null
+          }));
+          
+          setAssignments(assignmentsWithRoles);
+        } else {
+          setAssignments([]);
+        }
+      } catch (e) {
+        console.warn('Failed to load assignments:', e);
+        setAssignments([]);
+      }
 
       if (error) {
         console.error('Error loading work sessions:', error);
@@ -2088,6 +2158,7 @@ export default function ProductionDetailPage() {
             isAdmin={(user?.roles || (user?.role ? [user.role] : [])).some(r => r.toLowerCase() === 'admin' || r.toLowerCase() === 'superadmin')}
             userId={user?.id || null}
             batches={batches}
+            userRoles={user?.roles || (user?.role ? [user.role] : [])}
           />
         )}
       </div>

@@ -162,6 +162,8 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
     QC: "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800",
     Production: "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800",
     Painting: "bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800",
+    "Supervisor Painting": "bg-rose-100 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800",
+    "Supervisor Production": "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800",
     Packing: "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800",
     CNC: "bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800",
     Drawing: "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800",
@@ -320,7 +322,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                 
                 {/* Role Badges Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {["SuperAdmin", "Admin", "QC", "DashboardView", "Production", "Painting", "Packing", "CNC", "Drawing", "Storage"].map((role) => {
+                  {["SuperAdmin", "Admin", "QC", "DashboardView", "Production", "Painting", "Supervisor Painting", "Supervisor Production", "Packing", "CNC", "Drawing", "Storage"].map((role) => {
                     const isSelected = formData.roles.includes(role);
                     return (
                       <button

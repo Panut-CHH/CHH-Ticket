@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { logApiCall, logError } from '@/utils/activityLogger';
+import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole } from '@/utils/rolePermissions';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -52,6 +53,7 @@ export async function POST(request, { params }) {
 
     // Admin bypass: allow admin/superadmin to operate any step
     let isAdmin = false;
+    let userRoles = [];
     try {
       const { data: userRow } = await supabaseAdmin
         .from('users')
@@ -59,7 +61,7 @@ export async function POST(request, { params }) {
         .eq('id', user_id)
         .maybeSingle();
       // Support both old format (role) and new format (roles)
-      const userRoles = userRow?.roles || (userRow?.role ? [userRow.role] : []);
+      userRoles = userRow?.roles || (userRow?.role ? [userRow.role] : []);
       const normalizedRoles = userRoles.map(r => String(r).toLowerCase());
       if (normalizedRoles.some(r => r === 'admin' || r === 'superadmin')) {
         isAdmin = true;
@@ -78,7 +80,55 @@ export async function POST(request, { params }) {
       .eq('technician_id', user_id)
       .single();
 
+    // Check if user is a supervisor and can act for the assigned technician
+    let canSupervisorAct = false;
+    let actualTechnicianId = user_id; // Default to user_id, will be updated if supervisor acts
+    
     if (!isAdmin && (assignmentError || !assignment)) {
+      // User is not directly assigned, check if they're a supervisor
+      if (isSupervisor(userRoles)) {
+        console.log('[API] User is a supervisor, checking if they can act for assigned technician');
+        
+        // Find the actual assignment for this station/step (any technician assigned)
+        const { data: actualAssignment, error: actualAssignmentError } = await supabaseAdmin
+          .from('ticket_assignments')
+          .select('technician_id')
+          .eq('ticket_no', ticketNo)
+          .eq('station_id', station_id)
+          .eq('step_order', step_order)
+          .maybeSingle();
+
+        if (!actualAssignmentError && actualAssignment && actualAssignment.technician_id) {
+          // Get the assigned technician's role
+          const { data: technicianRow } = await supabaseAdmin
+            .from('users')
+            .select('role, roles')
+            .eq('id', actualAssignment.technician_id)
+            .maybeSingle();
+
+          if (technicianRow) {
+            const technicianRoles = technicianRow.roles || (technicianRow.role ? [technicianRow.role] : []);
+            // Check if supervisor can act for any of the technician's roles
+            canSupervisorAct = userRoles.some(supervisorRole => 
+              technicianRoles.some(technicianRole => 
+                canSupervisorActForTechnician(supervisorRole, technicianRole)
+              )
+            );
+
+            if (canSupervisorAct) {
+              actualTechnicianId = actualAssignment.technician_id;
+              console.log('[API] Supervisor can act for technician:', {
+                supervisorRoles: userRoles,
+                technicianId: actualTechnicianId,
+                technicianRoles: technicianRoles
+              });
+            }
+          }
+        }
+      }
+    }
+
+    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct) {
           return NextResponse.json(
             { success: false, error: 'You are not assigned to this station' },
             { status: 403 }
@@ -159,13 +209,16 @@ export async function POST(request, { params }) {
         }
       }
 
+      // actualTechnicianId is already determined above in the authorization check
+
       // Create technician work session record
       console.log('[API] Creating work session with:', {
         ticket_no: ticketNo,
         station_id: station_id,
         step_order: step_order,
-        technician_id: user_id,
-        started_at: startedAt
+        technician_id: actualTechnicianId,
+        started_at: startedAt,
+        supervisor_id: canSupervisorAct ? user_id : null
       });
 
       const { data: workSession, error: sessionError } = await supabaseAdmin
@@ -174,7 +227,7 @@ export async function POST(request, { params }) {
           ticket_no: ticketNo,
           station_id: station_id,
           step_order: step_order,
-          technician_id: user_id,
+          technician_id: actualTechnicianId,
           started_at: startedAt
         })
         .select()
@@ -284,6 +337,9 @@ export async function POST(request, { params }) {
         }
       }
 
+      // actualTechnicianId is already determined above in the authorization check
+      const actualTechnicianIdForUpdate = actualTechnicianId;
+
       // Update technician work session record with completion data
       const { data: workSession, error: sessionError } = await supabaseAdmin
         .from('technician_work_sessions')
@@ -291,7 +347,7 @@ export async function POST(request, { params }) {
         .eq('ticket_no', ticketNo)
         .eq('station_id', station_id)
         .eq('step_order', step_order)
-        .eq('technician_id', user_id)
+        .eq('technician_id', actualTechnicianIdForUpdate)
         .is('completed_at', null) // Only update incomplete sessions
         .single();
 
@@ -313,7 +369,7 @@ export async function POST(request, { params }) {
           .eq('ticket_no', ticketNo)
           .eq('station_id', station_id)
           .eq('step_order', step_order)
-          .eq('technician_id', user_id)
+          .eq('technician_id', actualTechnicianIdForUpdate)
           .is('completed_at', null);
 
         if (updateSessionError) {
