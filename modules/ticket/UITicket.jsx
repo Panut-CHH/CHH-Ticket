@@ -1817,10 +1817,12 @@ export default function UITicket() {
                               <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
                                   {(() => {
-                                    const relevantCount = activeTab === "open"
-                                      ? g.items.filter(ticket => ticket.status !== "Finish").length
-                                      : g.items.filter(ticket => ticket.status === "Finish").length;
-                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                    const relevantTickets = activeTab === "open"
+                                      ? g.items.filter(ticket => ticket.status !== "Finish")
+                                      : g.items.filter(ticket => ticket.status === "Finish");
+                                    const relevantCount = relevantTickets.length;
+                                    const totalQuantity = relevantTickets.reduce((sum, ticket) => sum + (Number(ticket.quantity) || 0), 0);
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${language === 'th' ? 'ชิ้น' : 'pcs'}` : ''}`;
                                   })()}
                                 </span>
                                 {(() => {
@@ -1956,10 +1958,12 @@ export default function UITicket() {
                               <div className="flex items-center gap-2">
                                 <span className="inline-flex items-center justify-center text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300">
                                   {(() => {
-                                    const relevantCount = activeTab === "open"
-                                      ? g.items.filter(ticket => ticket.status !== "Finish").length
-                                      : g.items.filter(ticket => ticket.status === "Finish").length;
-                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}`;
+                                    const relevantTickets = activeTab === "open"
+                                      ? g.items.filter(ticket => ticket.status !== "Finish")
+                                      : g.items.filter(ticket => ticket.status === "Finish");
+                                    const relevantCount = relevantTickets.length;
+                                    const totalQuantity = relevantTickets.reduce((sum, ticket) => sum + (Number(ticket.quantity) || 0), 0);
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${language === 'th' ? 'ชิ้น' : 'pcs'}` : ''}`;
                                   })()}
                                 </span>
                                 {(() => {
