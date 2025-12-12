@@ -310,7 +310,90 @@ export default function UITicket() {
             };
           });
 
-        if (active) setErpTickets(mapped);
+        // 6. เพิ่มตั๋วจาก DB ที่ไม่มีใน ERP (เช่น RPD2510-029)
+        const erpTicketNumbers = new Set(
+          erpTickets
+            .map(r => r?.No || r?.no || r?.RPD_No)
+            .filter(Boolean)
+        );
+        
+        const dbOnlyTickets = Array.from(dbTicketMap.values())
+          .filter(dbTicket => {
+            const ticketNo = dbTicket.no;
+            // ไม่รวม tickets ที่สร้างจาก project_id (TICKET-%) และไม่รวมที่อยู่ใน ERP แล้ว
+            return ticketNo && 
+                   !ticketNo.startsWith('TICKET-') && 
+                   !erpTicketNumbers.has(ticketNo);
+          })
+          .map(dbTicket => {
+            const rpdNo = dbTicket.no;
+            const itemCode = dbTicket.source_no || '';
+            
+            // หา project จาก projectMap
+            const project = itemCode ? projectMap.get(itemCode) : null;
+            const dbProjectName =
+              dbTicket.projects?.project_name ||
+              dbTicket.projects?.description ||
+              project?.project_name ||
+              project?.description ||
+              null;
+            
+            // สร้าง ticket object ในรูปแบบเดียวกับ ERP tickets
+            return {
+              id: rpdNo,
+              rpd: rpdNo,
+              title: dbTicket.description || '',
+              priority: dbTicket.priority || 'ยังไม่ได้กำหนด Priority',
+              priorityClass: dbTicket.priority === "High" || dbTicket.priority === "High Priority"
+                ? "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400"
+                : dbTicket.priority === "Medium" || dbTicket.priority === "Medium Priority"
+                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
+                : dbTicket.priority === "Low" || dbTicket.priority === "Low Priority"
+                ? "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400"
+                : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+              status: dbTicket.status || 'Pending',
+              statusClass: dbTicket.status === 'Finish' 
+                ? 'text-green-600'
+                : dbTicket.status === 'In Progress'
+                ? 'text-blue-600'
+                : 'text-blue-600',
+              assignee: '-',
+              time: '',
+              route: itemCode || rpdNo,
+              routeClass: 'bg-blue-100 text-blue-800',
+              dueDate: dbTicket.due_date || '',
+              quantity: typeof dbTicket.pass_quantity === 'number' && dbTicket.pass_quantity !== null
+                ? dbTicket.pass_quantity
+                : (dbTicket.quantity || 0),
+              itemCode: itemCode,
+              projectCode: itemCode || rpdNo,
+              projectName: dbProjectName || dbTicket.description || rpdNo,
+              description: dbTicket.description || '',
+              description2: dbTicket.description_2 || '',
+              customerName: dbTicket.customer_name || '',
+              project_id: dbTicket.project_id,
+              started_at: dbTicket.started_at,
+              finished_at: dbTicket.finished_at,
+              roadmap: [],
+              stations: [],
+              bom: [],
+              // Flags
+              isNew: false,
+              inDatabase: true,
+              isDbOnly: true // Flag เพื่อระบุว่าเป็นตั๋วจาก DB เท่านั้น
+            };
+          });
+        
+        // รวมตั๋วจาก ERP และตั๋วจาก DB ที่ไม่มีใน ERP
+        const allTickets = [...mapped, ...dbOnlyTickets];
+        
+        // Debug: แสดงจำนวนตั๋วที่รวม
+        if (dbOnlyTickets.length > 0) {
+          console.log(`✅ เพิ่มตั๋วจาก DB ที่ไม่มีใน ERP: ${dbOnlyTickets.length} ตั๋ว`, 
+            dbOnlyTickets.map(t => t.id));
+        }
+
+        if (active) setErpTickets(allTickets);
       } catch (e) {
         console.error('Load tickets failed', e);
         if (active) setErrorMessage(typeof e === 'object' ? (e?.message || JSON.stringify(e)) : String(e));
