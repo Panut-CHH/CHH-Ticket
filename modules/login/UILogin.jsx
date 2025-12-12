@@ -113,11 +113,15 @@ export default function UILogin() {
       // Only trim password (remove leading/trailing spaces) but don't sanitize
       const password = formData.password.trim();
 
-      console.log('Login attempt:', { email: sanitizedEmail, passwordLength: password.length });
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Login attempt:', { email: sanitizedEmail, passwordLength: password.length });
+      }
 
       const result = await login({ email: sanitizedEmail, password: password });
 
-      console.log('Login result:', result);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Login result:', result);
+      }
 
       if (result && result.success) {
         clearRateLimit(formData.email);
@@ -125,11 +129,16 @@ export default function UILogin() {
       } else {
         // Show the actual error message from Supabase
         const errorMessage = result?.error || t('loginFailed', language);
-        console.error('Login failed:', errorMessage);
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('Login failed:', errorMessage);
+        }
         throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error('Login error:', error);
+      // Only log in development - invalid credentials is expected
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('Login error:', error.message);
+      }
       const newAttempts = attempts + 1;
       setAttempts(newAttempts);
 

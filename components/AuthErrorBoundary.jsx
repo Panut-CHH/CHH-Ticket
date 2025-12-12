@@ -19,23 +19,31 @@ class AuthErrorBoundary extends Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // Log error details
+    // Check if it's a refresh token error first
+    const isRefreshTokenError = error.message && (
+      error.message.includes('refresh_token_not_found') || 
+      error.message.includes('Invalid Refresh Token') ||
+      error.message.includes('Refresh Token Not Found') ||
+      (error.name === 'AuthApiError' && error.message?.includes('refresh'))
+    );
+
+    if (isRefreshTokenError) {
+      // Handle refresh token errors silently - don't show error UI
+      if (process.env.NODE_ENV === 'development') {
+        console.warn('AuthErrorBoundary: Refresh token error detected, clearing auth data');
+      }
+      this.clearAuthData();
+      // Don't set error state for refresh token errors - handle them silently
+      return;
+    }
+
+    // Log other error details
     console.error('AuthErrorBoundary caught an error:', error, errorInfo);
     
     this.setState({
       error: error,
       errorInfo: errorInfo
     });
-
-    // Check if it's a refresh token error
-    if (error.message && (
-      error.message.includes('refresh_token_not_found') || 
-      error.message.includes('Invalid Refresh Token') ||
-      error.message.includes('AuthApiError')
-    )) {
-      console.warn('Refresh token error detected, clearing auth data');
-      this.clearAuthData();
-    }
   }
 
   clearAuthData = () => {

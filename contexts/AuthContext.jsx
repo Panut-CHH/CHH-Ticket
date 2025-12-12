@@ -45,13 +45,19 @@ export const AuthProvider = ({ children }) => {
 
         const { data, error } = await supabase.auth.getSession();
         if (error) {
-          console.error("Failed to get session:", error.message);
-          // Handle specific refresh token errors
-          if (error.message.includes('refresh_token_not_found') || 
-              error.message.includes('Invalid Refresh Token')) {
-            console.warn('Refresh token invalid, clearing session data');
+          // Handle specific refresh token errors silently
+          if (error.message?.includes('refresh_token_not_found') || 
+              error.message?.includes('Invalid Refresh Token') ||
+              error.message?.includes('Refresh Token Not Found')) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('Refresh token invalid, clearing session data');
+            }
             clearAuthData();
             return;
+          }
+          // Only log non-refresh-token errors
+          if (process.env.NODE_ENV === 'development') {
+            console.error("Failed to get session:", error.message);
           }
         }
         const session = data?.session ?? null;
@@ -101,15 +107,40 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state change:', event, session ? 'Session exists' : 'No session');
       
       // Handle specific auth events
       if (event === 'TOKEN_REFRESHED') {
         if (!session) {
-          console.warn('Token refresh failed, user will need to re-authenticate');
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('Token refresh failed, user will need to re-authenticate');
+          }
           clearAuthData();
           return;
+        }
+      }
+      
+      // Handle token refresh errors
+      if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // Check if session is invalid due to refresh token error
+        if (!session) {
+          try {
+            const { error: sessionError } = await supabase.auth.getSession();
+            if (sessionError && (
+              sessionError.message?.includes('refresh_token_not_found') ||
+              sessionError.message?.includes('Invalid Refresh Token') ||
+              sessionError.message?.includes('Refresh Token Not Found')
+            )) {
+              if (process.env.NODE_ENV === 'development') {
+                console.warn('Refresh token invalid during auth state change');
+              }
+              clearAuthData();
+              return;
+            }
+          } catch (err) {
+            // Ignore errors during cleanup
+          }
         }
       }
       
@@ -223,7 +254,11 @@ export const AuthProvider = ({ children }) => {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       
       if (error) {
-        console.error('AuthContext: Login error:', error);
+        // Only log in development mode - invalid credentials is expected behavior
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('AuthContext: Login failed:', error.message);
+        }
+        
         // Log failed login attempt
         await logAuthEvent('login_failed', false, {
           email,
@@ -245,7 +280,9 @@ export const AuthProvider = ({ children }) => {
       
       const supaUser = data?.user;
       if (!supaUser) {
-        console.error('AuthContext: No user returned from login');
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('AuthContext: No user returned from login');
+        }
         await logAuthEvent('login_failed', false, {
           email,
           errorMessage: "No user returned"
@@ -253,7 +290,9 @@ export const AuthProvider = ({ children }) => {
         return { success: false, error: "ไม่พบข้อมูลผู้ใช้" };
       }
       
-      console.log('AuthContext: Login successful, user:', supaUser.email);
+      if (process.env.NODE_ENV === 'development') {
+        console.log('AuthContext: Login successful, user:', supaUser.email);
+      }
       
       // Normalize roles: support both old format (role) and new format (roles)
       const roles = supaUser.user_metadata?.roles || 
