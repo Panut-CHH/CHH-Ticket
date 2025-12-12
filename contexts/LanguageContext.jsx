@@ -18,9 +18,15 @@ export const LanguageProvider = ({ children }) => {
 
   // Load language preference from localStorage on mount
   useEffect(() => {
-    const savedLanguage = localStorage.getItem("language");
-    if (savedLanguage && (savedLanguage === "th" || savedLanguage === "en")) {
-      setLanguage(savedLanguage);
+    if (typeof window !== 'undefined') {
+      try {
+        const savedLanguage = localStorage.getItem("language");
+        if (savedLanguage && (savedLanguage === "th" || savedLanguage === "en")) {
+          setLanguage(savedLanguage);
+        }
+      } catch (error) {
+        console.warn('Failed to load language from localStorage:', error);
+      }
     }
     setIsLoading(false);
   }, []);
@@ -28,7 +34,13 @@ export const LanguageProvider = ({ children }) => {
   const changeLanguage = (newLanguage) => {
     if (newLanguage === "th" || newLanguage === "en") {
       setLanguage(newLanguage);
-      localStorage.setItem("language", newLanguage);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem("language", newLanguage);
+        } catch (error) {
+          console.warn('Failed to save language to localStorage:', error);
+        }
+      }
     }
   };
 

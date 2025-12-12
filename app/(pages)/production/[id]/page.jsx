@@ -42,6 +42,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const currentTechnician = currentStationData?.technician || "";
   const firstPendingTechnician = firstPendingStationData?.technician || "";
   
+  // Store assignments for supervisor checks (must be declared before useCallback)
+  const [assignments, setAssignments] = useState([]);
+  
   // Helper: exact-match against comma-separated names (case-insensitive)
   const isUserAssigned = (technicianList, meName) => {
     if (!technicianList || !meName) return false;
@@ -116,8 +119,6 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const [qcSessions, setQcSessions] = useState([]);
   // Store activity logs to find who started QC
   const [activityLogs, setActivityLogs] = useState([]);
-  // Store assignments for supervisor checks
-  const [assignments, setAssignments] = useState([]);
 
   // Load work sessions and assignments from database
   const loadWorkSessions = useCallback(async () => {
