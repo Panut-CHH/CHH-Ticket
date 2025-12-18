@@ -54,6 +54,7 @@ export async function POST(request, { params }) {
     // Admin bypass: allow admin/superadmin to operate any step
     let isAdmin = false;
     let userRoles = [];
+    let normalizedRoles = [];
     try {
       const { data: userRow } = await supabaseAdmin
         .from('users')
@@ -62,7 +63,7 @@ export async function POST(request, { params }) {
         .maybeSingle();
       // Support both old format (role) and new format (roles)
       userRoles = userRow?.roles || (userRow?.role ? [userRow.role] : []);
-      const normalizedRoles = userRoles.map(r => String(r).toLowerCase());
+      normalizedRoles = userRoles.map(r => String(r).toLowerCase());
       if (normalizedRoles.some(r => r === 'admin' || r === 'superadmin')) {
         isAdmin = true;
       }
@@ -128,11 +129,35 @@ export async function POST(request, { params }) {
       }
     }
 
-    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct) {
-          return NextResponse.json(
-            { success: false, error: 'You are not assigned to this station' },
-            { status: 403 }
-          );
+    // Special case: allow Packing role to start Packing station even without explicit assignment
+    let isPackingStation = false;
+    let hasPackingRole = false;
+    try {
+      const { data: stationData } = await supabaseAdmin
+        .from('stations')
+        .select('name_th, code')
+        .eq('id', station_id)
+        .maybeSingle();
+      const stationName = (stationData?.name_th || stationData?.code || '').toLowerCase().trim();
+      isPackingStation =
+        stationName === 'packing' ||
+        stationName.includes('packing') ||
+        stationName.includes('แพ็ค');
+      hasPackingRole = normalizedRoles.some(r =>
+        r === 'packing' || r.includes('packing') || r.includes('แพ็ค')
+      );
+    } catch (e) {
+      console.warn('[API] Failed to resolve station/role for packing bypass:', e?.message);
+    }
+
+    // Allow Packing role to start/complete Packing station without explicit assignment
+    const allowPackingByRole = !isAdmin && hasPackingRole && isPackingStation;
+
+    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct && !allowPackingByRole) {
+      return NextResponse.json(
+        { success: false, error: 'You are not assigned to this station' },
+        { status: 403 }
+      );
     }
 
     console.log('[API] Assignment check passed (admin bypass =', isAdmin, ') proceeding');
