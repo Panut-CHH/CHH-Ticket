@@ -82,14 +82,25 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
       )
     );
   }, [userRoles, assignments, ticket.id]);
-  
+
+  // Role helpers (Packing can act on Packing station even if not explicitly assigned)
+  const hasPackingRole = Array.isArray(userRoles)
+    ? userRoles.some(role => String(role).toLowerCase() === 'packing')
+    : false;
+  const isFirstPendingPackingStep = (() => {
+    const name = (firstPendingStep || '').toLowerCase().trim();
+    return name === 'packing' || name.includes('packing') || (firstPendingStep || '').includes('แพ็ค');
+  })();
+
   // Check if current user is assigned to the step (including supervisor delegation)
   const isAssignedToCurrent = isAdmin || 
     isUserAssigned(currentTechnician, me) || 
     canSupervisorActForStep(currentIndex, currentStationData);
-  const isAssignedToPending = isAdmin || 
+  const isAssignedToPendingBase = isAdmin || 
     isUserAssigned(firstPendingTechnician, me) || 
     canSupervisorActForStep(firstPendingIndex, firstPendingStationData);
+  // Allow Packing role to start Packing step at Packing station without explicit assignment
+  const isAssignedToPending = isAssignedToPendingBase || (hasPackingRole && isFirstPendingPackingStep);
 
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
