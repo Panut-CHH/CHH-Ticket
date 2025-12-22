@@ -129,9 +129,11 @@ export async function POST(request, { params }) {
       }
     }
 
-    // Special case: allow Packing role to start Packing station even without explicit assignment
+    // Special case: allow Packing/CNC role to start/complete their respective stations even without explicit assignment
     let isPackingStation = false;
     let hasPackingRole = false;
+    let isCNCStation = false;
+    let hasCNCRole = false;
     try {
       const { data: stationData } = await supabaseAdmin
         .from('stations')
@@ -146,14 +148,18 @@ export async function POST(request, { params }) {
       hasPackingRole = normalizedRoles.some(r =>
         r === 'packing' || r.includes('packing') || r.includes('แพ็ค')
       );
+      isCNCStation = stationName === 'cnc' || stationName.includes('cnc');
+      hasCNCRole = normalizedRoles.some(r => r === 'cnc' || r.includes('cnc'));
     } catch (e) {
-      console.warn('[API] Failed to resolve station/role for packing bypass:', e?.message);
+      console.warn('[API] Failed to resolve station/role for role-based bypass:', e?.message);
     }
 
-    // Allow Packing role to start/complete Packing station without explicit assignment
+    // Allow Packing/CNC role to start/complete their respective stations without explicit assignment
     const allowPackingByRole = !isAdmin && hasPackingRole && isPackingStation;
+    const allowCNCByRole = !isAdmin && hasCNCRole && isCNCStation;
+    const allowRoleBasedBypass = allowPackingByRole || allowCNCByRole;
 
-    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct && !allowPackingByRole) {
+    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct && !allowRoleBasedBypass) {
       return NextResponse.json(
         { success: false, error: 'You are not assigned to this station' },
         { status: 403 }

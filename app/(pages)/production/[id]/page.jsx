@@ -83,11 +83,17 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     );
   }, [userRoles, assignments, ticket.id]);
 
-  // Role helpers (Packing can act on Packing station even if not explicitly assigned)
+  // Role helpers (Packing and CNC can act on their respective stations even if not explicitly assigned)
   const hasPackingRole = Array.isArray(userRoles)
     ? userRoles.some(role => {
         const r = String(role).toLowerCase().trim();
         return r === 'packing' || r.includes('packing') || r.includes('แพ็ค');
+      })
+    : false;
+  const hasCNCRole = Array.isArray(userRoles)
+    ? userRoles.some(role => {
+        const r = String(role).toLowerCase().trim();
+        return r === 'cnc' || r.includes('cnc');
       })
     : false;
   const isFirstPendingPackingStep = (() => {
@@ -98,6 +104,14 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     const name = (currentStep || '').toLowerCase().trim();
     return name === 'packing' || name.includes('packing') || (currentStep || '').includes('แพ็ค');
   })();
+  const isFirstPendingCNCStep = (() => {
+    const name = (firstPendingStep || '').toLowerCase().trim();
+    return name === 'cnc' || name.includes('cnc');
+  })();
+  const isCurrentCNCStep = (() => {
+    const name = (currentStep || '').toLowerCase().trim();
+    return name === 'cnc' || name.includes('cnc');
+  })();
 
   // Check if current user is assigned to the step (including supervisor delegation)
   const isAssignedToCurrentBase = isAdmin || 
@@ -106,9 +120,13 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const isAssignedToPendingBase = isAdmin || 
     isUserAssigned(firstPendingTechnician, me) || 
     canSupervisorActForStep(firstPendingIndex, firstPendingStationData);
-  // Allow Packing role to start/complete Packing step at Packing station without explicit assignment
-  const isAssignedToCurrent = isAssignedToCurrentBase || (hasPackingRole && isCurrentPackingStep);
-  const isAssignedToPending = isAssignedToPendingBase || (hasPackingRole && isFirstPendingPackingStep);
+  // Allow Packing/CNC role to start/complete their respective stations without explicit assignment
+  const isAssignedToCurrent = isAssignedToCurrentBase || 
+    (hasPackingRole && isCurrentPackingStep) || 
+    (hasCNCRole && isCurrentCNCStep);
+  const isAssignedToPending = isAssignedToPendingBase || 
+    (hasPackingRole && isFirstPendingPackingStep) || 
+    (hasCNCRole && isFirstPendingCNCStep);
 
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
