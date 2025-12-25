@@ -352,9 +352,12 @@ export default function UIProject() {
   };
 
   // ตรวจสอบสิทธิ์สร้างโปรเจ็ค: SuperAdmin, Admin, Drawing, CNC (ไม่สนตัวพิมพ์ใหญ่/เล็ก)
+  // Storage role cannot create/delete projects (view-only)
   const userRoles = user?.roles || (user?.role ? [user.role] : []);
   const normalizedRoles = userRoles.map(r => String(r).trim().toLowerCase());
-  const canCreateProject = normalizedRoles.some(r => ["superadmin", "admin", "drawing", "cnc"].includes(r));
+  const hasStorageRole = normalizedRoles.some(r => r === 'storage');
+  const canCreateProject = !hasStorageRole && normalizedRoles.some(r => ["superadmin", "admin", "drawing", "cnc"].includes(r));
+  const canDeleteProject = !hasStorageRole && isAdminOrAbove();
 
   // Helper function to check if date is within range
   const isDateInRange = (date, range) => {
@@ -840,15 +843,17 @@ export default function UIProject() {
                         <span className="hidden sm:inline">เปิดโฟลเดอร์</span>
                         <span className="sm:hidden">เปิด</span>
                       </button>
-                      <button
-                        onClick={() => handleDeleteProject(project)}
-                        className="pressable inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/10 transition-colors text-xs font-medium w-full sm:w-auto min-h-[44px]"
-                        title="ลบโฟลเดอร์"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                        <span className="hidden sm:inline">ลบโฟลเดอร์</span>
-                        <span className="sm:hidden">ลบ</span>
-                      </button>
+                      {canDeleteProject && (
+                        <button
+                          onClick={() => handleDeleteProject(project)}
+                          className="pressable inline-flex items-center justify-center gap-2 px-3 py-1.5 rounded-lg border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900/40 dark:text-red-300 dark:hover:bg-red-900/10 transition-colors text-xs font-medium w-full sm:w-auto min-h-[44px]"
+                          title="ลบโฟลเดอร์"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          <span className="hidden sm:inline">ลบโฟลเดอร์</span>
+                          <span className="sm:hidden">ลบ</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -991,7 +996,7 @@ export default function UIProject() {
                         <span>{language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}</span>
                       </div>
                     )}
-                    {isAdminOrAbove() && (
+                    {isAdminOrAbove() && !hasStorageRole && (
                       <button
                         type="button"
                         onClick={() => setShowAddUnitModal(true)}

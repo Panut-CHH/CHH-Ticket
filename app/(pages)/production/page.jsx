@@ -31,6 +31,7 @@ export default function ProductionPage() {
   
   const hasCNCRole = hasRole('CNC');
   const hasPackingRole = hasRole('Packing');
+  const hasStorageRole = hasRole('Storage');
 
   // Load ERP tickets and merge with DB station assignments
   const [tickets, setTickets] = useState([]);
@@ -442,8 +443,8 @@ export default function ProductionPage() {
   const myTickets = useMemo(() => {
     if (!myName) return [];
     let filtered = [];
-    if (isAdmin) {
-      // Admins see all tickets
+    if (isAdmin || hasStorageRole) {
+      // Admins and Storage see all tickets
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
@@ -491,7 +492,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, user]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {

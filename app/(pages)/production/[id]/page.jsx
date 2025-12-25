@@ -10,7 +10,7 @@ import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, 
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
-import { isSupervisor, canSupervisorActForTechnician } from "@/utils/rolePermissions";
+import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction } from "@/utils/rolePermissions";
 
 function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
   console.log('🚀 [DetailCard] Component RENDERED');
@@ -127,6 +127,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const isAssignedToPending = isAssignedToPendingBase || 
     (hasPackingRole && isFirstPendingPackingStep) || 
     (hasCNCRole && isFirstPendingCNCStep);
+
+  // Check if user can perform actions in production (Storage role cannot)
+  const canActionInProduction = canPerformActionsInProduction(userRoles);
 
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
@@ -810,9 +813,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             <div className="flex flex-col sm:flex-row items-stretch gap-3">
               <button
                 onClick={onStartClick}
-                disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC}
+                disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC || !canActionInProduction}
                 className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${
-                  !canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC 
+                  !canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC || !canActionInProduction
                     ? "bg-gray-400 text-gray-600 dark:bg-gray-600 dark:text-gray-400 cursor-not-allowed" 
                     : "bg-blue-600 hover:bg-blue-700"
                 }`}
@@ -821,15 +824,20 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
               </button>
               <button
                 onClick={onDoneClick}
-                disabled={!canDone || isCoolingDown}
-                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${!canDone || isCoolingDown ? "bg-gray-300 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}
+                disabled={!canDone || isCoolingDown || !canActionInProduction}
+                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${!canDone || isCoolingDown || !canActionInProduction ? "bg-gray-300 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}
               >
                 <Check className="w-5 h-5" /> DONE (ทำขั้นตอนนี้เสร็จแล้ว)
               </button>
             </div>
             
-            {/* Warning message when user is not assigned to current step */}
-              {!isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && (
+            {/* Warning message when user is not assigned to current step or cannot perform actions */}
+              {!canActionInProduction && (
+                <div className="mt-3 p-3 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-sm">
+                  ℹ️ คุณสามารถดูรายละเอียดได้แต่ไม่สามารถเริ่มต้นหรือทำเสร็จสถานีได้ (Role: Storage)
+                </div>
+              )}
+              {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && (
                 <div className="mt-3 p-3 rounded-lg border bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-900 dark:text-orange-300 text-sm">
                   ⚠️ คุณไม่ได้รับมอบหมายให้ทำในสถานีนี้
                 </div>

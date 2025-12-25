@@ -33,7 +33,7 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   Storage: {
-    pages: ['store', 'settings'],
+    pages: ['store', 'settings', 'production', 'project'],
     settingsTabs: ['profile', 'security']
   },
   DashboardView: {
@@ -209,6 +209,7 @@ export const canPerformActions = (userRoles) => {
     }
     
     // QC, CNC, and DashboardView roles can only view, not perform actions
+    // Storage can perform actions in store page but not in production page
     if (normalizedRole === 'QC' || normalizedRole === 'CNC' || normalizedRole === 'DashboardView') {
       continue;
     }
@@ -275,4 +276,25 @@ export const isSupervisor = (userRoles) => {
     const normalizedRole = normalizeRoleName(role);
     return normalizedRole === 'Supervisor Painting' || normalizedRole === 'Supervisor Production';
   });
+};
+
+// Helper function to check if user can perform actions in production page
+// Storage role can perform actions in store but not in production
+export const canPerformActionsInProduction = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  
+  if (roles.length === 0) {
+    return false;
+  }
+  
+  // Storage role cannot perform actions in production page
+  for (const role of roles) {
+    const normalizedRole = normalizeRoleName(role);
+    if (normalizedRole === 'Storage') {
+      return false;
+    }
+  }
+  
+  // Use the same logic as canPerformActions for other roles
+  return canPerformActions(userRoles);
 };
