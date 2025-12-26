@@ -7,7 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2 } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions } from "@/utils/rolePermissions";
 
@@ -52,6 +52,9 @@ export default function ProductionPage() {
   const [selectedStatuses, setSelectedStatuses] = useState(new Set());
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
   const [selectedStoreStatuses, setSelectedStoreStatuses] = useState(new Set());
+  const [selectedStation, setSelectedStation] = useState(""); // Filter by station name
+  const [selectedTechnician, setSelectedTechnician] = useState(""); // Filter by technician name
+  const [selectedProject, setSelectedProject] = useState(""); // Filter by project name
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
@@ -578,14 +581,76 @@ export default function ProductionPage() {
     return "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-100";
   };
 
+  // Get all unique station names from tickets (current or next step)
+  // Use myTickets to show all available stations regardless of tab filter
+  const availableStations = useMemo(() => {
+    const stations = new Set();
+    myTickets.forEach(ticket => {
+      const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+      // Get current step
+      const currentStep = roadmap.find(step => step.status === 'current');
+      if (currentStep?.step) {
+        stations.add(currentStep.step);
+      }
+      // Get next pending step
+      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      if (nextPendingStep?.step) {
+        stations.add(nextPendingStep.step);
+      }
+    });
+    return Array.from(stations).sort();
+  }, [myTickets]);
+
+  // Get all unique technician names from tickets (current or next step)
+  const availableTechnicians = useMemo(() => {
+    const technicians = new Set();
+    myTickets.forEach(ticket => {
+      const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+      // Get current step technician
+      const currentStep = roadmap.find(step => step.status === 'current');
+      if (currentStep?.technician) {
+        // Handle comma-separated technicians
+        const techs = currentStep.technician.split(',').map(t => t.trim()).filter(t => t);
+        techs.forEach(tech => technicians.add(tech));
+      }
+      // Get next pending step technician
+      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      if (nextPendingStep?.technician) {
+        // Handle comma-separated technicians
+        const techs = nextPendingStep.technician.split(',').map(t => t.trim()).filter(t => t);
+        techs.forEach(tech => technicians.add(tech));
+      }
+      // Also check assignee field
+      if (ticket.assignee && ticket.assignee !== '-') {
+        const techs = ticket.assignee.split(',').map(t => t.trim()).filter(t => t);
+        techs.forEach(tech => technicians.add(tech));
+      }
+    });
+    return Array.from(technicians).sort();
+  }, [myTickets]);
+
+  // Get all unique project names from tickets
+  const availableProjects = useMemo(() => {
+    const projects = new Set();
+    myTickets.forEach(ticket => {
+      if (ticket.projectName && ticket.projectName.trim()) {
+        projects.add(ticket.projectName);
+      }
+    });
+    return Array.from(projects).sort();
+  }, [myTickets]);
+
   const activeFilterCount = useMemo(() => {
     let count = 0;
     if (selectedStatuses.size > 0) count += 1;
     if (selectedPriorities.size > 0) count += 1;
     if (selectedStoreStatuses.size > 0) count += 1;
+    if (selectedStation) count += 1;
+    if (selectedTechnician) count += 1;
+    if (selectedProject) count += 1;
     if (hasDueDateOnly) count += 1;
     return count;
-  }, [selectedStatuses, selectedPriorities, selectedStoreStatuses, hasDueDateOnly]);
+  }, [selectedStatuses, selectedPriorities, selectedStoreStatuses, selectedStation, selectedTechnician, selectedProject, hasDueDateOnly]);
 
   const matchSearch = (t) => {
     if (!searchTerm) return true;
@@ -607,6 +672,54 @@ export default function ProductionPage() {
       // ถ้าเลือก filter store status และ ticket ไม่มี store status หรือไม่ตรงกับที่เลือก ให้ filter ออก
       const ticketStoreStatus = t.storeStatus || 'ยังไม่มีสถานะ';
       if (!selectedStoreStatuses.has(ticketStoreStatus)) return false;
+    }
+    if (selectedStation) {
+      // Filter by station name (current or next step)
+      const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
+      const currentStep = roadmap.find(step => step.status === 'current');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      const currentStation = currentStep?.step || '';
+      const nextStation = nextPendingStep?.step || '';
+      // Check if selected station matches current or next station
+      if (currentStation !== selectedStation && nextStation !== selectedStation) {
+        return false;
+      }
+    }
+    if (selectedTechnician) {
+      // Filter by technician name (current or next step, or assignee)
+      const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
+      const currentStep = roadmap.find(step => step.status === 'current');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      
+      // Get technicians from current step
+      const currentTechnicians = currentStep?.technician 
+        ? currentStep.technician.split(',').map(tech => tech.trim())
+        : [];
+      
+      // Get technicians from next pending step
+      const nextTechnicians = nextPendingStep?.technician
+        ? nextPendingStep.technician.split(',').map(tech => tech.trim())
+        : [];
+      
+      // Get technicians from assignee
+      const assigneeTechnicians = t.assignee && t.assignee !== '-'
+        ? t.assignee.split(',').map(tech => tech.trim())
+        : [];
+      
+      // Combine all technicians
+      const allTechnicians = [...currentTechnicians, ...nextTechnicians, ...assigneeTechnicians];
+      
+      // Check if selected technician matches any of the technicians
+      if (!allTechnicians.some(tech => tech === selectedTechnician)) {
+        return false;
+      }
+    }
+    if (selectedProject) {
+      // Filter by project name
+      const ticketProjectName = t.projectName || '';
+      if (ticketProjectName !== selectedProject) {
+        return false;
+      }
     }
     if (hasDueDateOnly && !t.dueDate) return false;
     return true;
@@ -681,7 +794,7 @@ export default function ProductionPage() {
     });
 
     return sorted;
-  }, [filteredTickets, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, sortKey, sortDir]);
+  }, [filteredTickets, searchTerm, selectedStatuses, selectedPriorities, selectedStation, selectedTechnician, selectedProject, hasDueDateOnly, sortKey, sortDir]);
 
   const stats = useMemo(() => {
     const total = myTickets.length;
@@ -801,64 +914,203 @@ export default function ProductionPage() {
             </div>
 
             {/* Search / Filter / Sort */}
-            <div className="mt-4 sm:mt-6">
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                {/* Search */}
-                <div className="flex-1 relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Search className="w-4 h-4 sm:w-5 sm:h-5 text-gray-400" />
-                  </div>
-                  <input
-                    type="text"
-                    className="w-full pl-9 sm:pl-10 pr-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-sm sm:text-base text-gray-900 dark:text-gray-100"
-                    placeholder={t('searchTickets', language)}
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                  />
+            <div className="mt-4 sm:mt-6 space-y-3">
+              {/* Search Bar - Full width on mobile */}
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                  <Search className="w-5 h-5 text-gray-400" />
                 </div>
-                {/* Sort controls */}
-                <div className="flex flex-row items-stretch gap-2">
-                  <div className="relative flex-1 sm:flex-initial sm:min-w-[160px]">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <ArrowUpDown className="w-4 h-4 text-gray-400" />
-                    </div>
-                    <select
-                      value={sortKey}
-                      onChange={(e) => setSortKey(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg text-sm sm:text-base text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700"
-                    >
-                      <option value="dueDate">{language === 'th' ? 'กำหนดส่ง' : 'Due Date'}</option>
-                      <option value="priority">{language === 'th' ? 'ความสำคัญ' : 'Priority'}</option>
-                      <option value="value">{language === 'th' ? 'มูลค่า' : 'Value'}</option>
-                      <option value="id">{language === 'th' ? 'เลขตั๋ว' : 'Ticket No.'}</option>
-                      <option value="status">{language === 'th' ? 'สถานะ' : 'Status'}</option>
-                      <option value="storeStatus">{language === 'th' ? 'สถานะ Store' : 'Store Status'}</option>
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </div>
+                <input
+                  type="text"
+                  className="w-full pl-11 pr-4 py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 text-sm sm:text-base text-gray-900 dark:text-gray-100 shadow-sm"
+                  placeholder={t('searchTickets', language)}
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+
+              {/* Filters and Sort - Grid layout for better mobile support */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
+                {/* Station Filter */}
+                <div className="relative col-span-2 sm:col-span-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                    <Settings2 className={`w-4 h-4 ${selectedStation ? 'text-blue-500' : 'text-gray-400'}`} />
                   </div>
-                  <button
-                    onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
-                    className={`px-3 sm:px-4 py-2 sm:py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg hover:bg-gray-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5 min-w-[48px] ${
-                      sortDir === 'asc' 
-                        ? 'text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20' 
-                        : 'text-gray-700 dark:text-gray-300'
+                  <select
+                    value={selectedStation}
+                    onChange={(e) => setSelectedStation(e.target.value)}
+                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                      selectedStation 
+                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
                     }`}
-                    title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก (คลิกเพื่อเปลี่ยน)' : 'เรียงจากมากไปน้อย (คลิกเพื่อเปลี่ยน)') : (sortDir === 'asc' ? 'Ascending (click to change)' : 'Descending (click to change)')}
                   >
-                    {sortDir === 'asc' ? (
-                      <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
-                    ) : (
-                      <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5" />
-                    )}
-                    <span className="text-xs hidden sm:inline">
-                      {sortDir === 'asc' ? (language === 'th' ? 'น้อย→มาก' : 'A→Z') : (language === 'th' ? 'มาก→น้อย' : 'Z→A')}
-                    </span>
-                  </button>
+                    <option value="">{language === 'th' ? '📍 สถานี' : '📍 Station'}</option>
+                    {availableStations.map(station => (
+                      <option key={station} value={station}>{station}</option>
+                    ))}
+                  </select>
+                  {selectedStation && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedStation("");
+                      }}
+                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
+                    >
+                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
+                    </button>
+                  )}
+                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
                 </div>
+
+                {/* Technician Filter */}
+                <div className="relative col-span-2 sm:col-span-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                    <User className={`w-4 h-4 ${selectedTechnician ? 'text-blue-500' : 'text-gray-400'}`} />
+                  </div>
+                  <select
+                    value={selectedTechnician}
+                    onChange={(e) => setSelectedTechnician(e.target.value)}
+                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                      selectedTechnician 
+                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <option value="">{language === 'th' ? '👤 ช่าง' : '👤 Tech'}</option>
+                    {availableTechnicians.map(technician => (
+                      <option key={technician} value={technician}>{technician}</option>
+                    ))}
+                  </select>
+                  {selectedTechnician && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedTechnician("");
+                      }}
+                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
+                    >
+                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
+                    </button>
+                  )}
+                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Project Filter */}
+                <div className="relative col-span-2 sm:col-span-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                    <Building2 className={`w-4 h-4 ${selectedProject ? 'text-blue-500' : 'text-gray-400'}`} />
+                  </div>
+                  <select
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                      selectedProject 
+                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                    }`}
+                  >
+                    <option value="">{language === 'th' ? '🏢 โครงการ' : '🏢 Project'}</option>
+                    {availableProjects.map(project => (
+                      <option key={project} value={project}>{project}</option>
+                    ))}
+                  </select>
+                  {selectedProject && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProject("");
+                      }}
+                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
+                    >
+                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
+                    </button>
+                  )}
+                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Sort Key */}
+                <div className="relative col-span-1 sm:col-span-1">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <ArrowUpDown className="w-4 h-4 text-gray-400" />
+                  </div>
+                  <select
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value)}
+                    className="w-full pl-9 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm"
+                  >
+                    <option value="dueDate">{language === 'th' ? '📅 กำหนดส่ง' : '📅 Due'}</option>
+                    <option value="priority">{language === 'th' ? '⚡ ความสำคัญ' : '⚡ Priority'}</option>
+                    <option value="value">{language === 'th' ? '💰 มูลค่า' : '💰 Value'}</option>
+                    <option value="id">{language === 'th' ? '🔢 เลขตั๋ว' : '🔢 ID'}</option>
+                    <option value="status">{language === 'th' ? '📊 สถานะ' : '📊 Status'}</option>
+                    <option value="storeStatus">{language === 'th' ? '📦 Store' : '📦 Store'}</option>
+                  </select>
+                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {/* Sort Direction */}
+                <button
+                  onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                  className={`col-span-1 px-3 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1 shadow-sm ${
+                    sortDir === 'asc' 
+                      ? 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
+                      : 'text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700'
+                  }`}
+                  title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก (คลิกเพื่อเปลี่ยน)' : 'เรียงจากมากไปน้อย (คลิกเพื่อเปลี่ยน)') : (sortDir === 'asc' ? 'Ascending (click to change)' : 'Descending (click to change)')}
+                >
+                  {sortDir === 'asc' ? (
+                    <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
+                  ) : (
+                    <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5" />
+                  )}
+                  <span className="text-xs hidden lg:inline ml-1">
+                    {sortDir === 'asc' ? (language === 'th' ? 'น้อย→มาก' : 'A→Z') : (language === 'th' ? 'มาก→น้อย' : 'Z→A')}
+                  </span>
+                </button>
+
+                {/* Clear All Filters Button */}
+                {activeFilterCount > 0 && (
+                  <button
+                    onClick={() => {
+                      setSelectedStation("");
+                      setSelectedTechnician("");
+                      setSelectedProject("");
+                      setSearchTerm("");
+                      setSelectedStatuses(new Set());
+                      setSelectedPriorities(new Set());
+                      setSelectedStoreStatuses(new Set());
+                      setHasDueDateOnly(false);
+                    }}
+                    className="col-span-2 sm:col-span-1 lg:col-span-1 px-3 sm:px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm"
+                  >
+                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                    <span className="hidden sm:inline">{language === 'th' ? 'ล้างทั้งหมด' : 'Clear'}</span>
+                    <span className="sm:hidden">{language === 'th' ? 'ล้าง' : 'Clear'}</span>
+                    {activeFilterCount > 0 && (
+                      <span className="px-1.5 py-0.5 bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-300 rounded-full text-xs font-semibold">
+                        {activeFilterCount}
+                      </span>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
 
