@@ -699,10 +699,13 @@ export default function ProductionPage() {
       return dueDate >= today && dueDate <= sevenDaysLater;
     }).length;
     
-    // Calculate high priority count
+    // Calculate high priority count (exclude finished tickets)
     const highPriorityCount = myTickets.filter((t) => {
       const priority = (t.priority || "").toString();
-      return priority === "High Priority" || priority.toLowerCase() === "high";
+      const status = (t.status || "").toString();
+      const isHighPriority = priority === "High Priority" || priority.toLowerCase() === "high";
+      const isFinished = status === "Finish" || status === "Finished";
+      return isHighPriority && !isFinished;
     }).length;
     
     return { 
