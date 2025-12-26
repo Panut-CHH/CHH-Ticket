@@ -46,7 +46,7 @@ export const ROLE_PERMISSIONS = {
   },
   SuperAdmin: {
     pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role'],
-    settingsTabs: ['profile', 'security', 'users', 'erpTest']
+    settingsTabs: ['profile', 'security', 'users', 'erpTest', 'ticketReset']
   }
 };
 

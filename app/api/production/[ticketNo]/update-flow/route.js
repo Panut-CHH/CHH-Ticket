@@ -35,18 +35,29 @@ export async function POST(request, { params }) {
     console.log('[API] Update flow request:', { ticketNo, action, station_id, step_order, user_id });
 
     // Validate inputs
-    if (!ticketNo || !action || !station_id || !user_id) {
-      console.error('[API] Missing required parameters:', { ticketNo, action, station_id, step_order, user_id });
-      return NextResponse.json(
-        { success: false, error: 'Missing required parameters' },
-        { status: 400 }
-      );
+    // For reset action, station_id and step_order are not required
+    if (action === 'reset') {
+      if (!ticketNo || !action || !user_id) {
+        console.error('[API] Missing required parameters for reset:', { ticketNo, action, user_id });
+        return NextResponse.json(
+          { success: false, error: 'Missing required parameters' },
+          { status: 400 }
+        );
+      }
+    } else {
+      if (!ticketNo || !action || !station_id || !user_id) {
+        console.error('[API] Missing required parameters:', { ticketNo, action, station_id, step_order, user_id });
+        return NextResponse.json(
+          { success: false, error: 'Missing required parameters' },
+          { status: 400 }
+        );
+      }
     }
 
-    if (!['start', 'complete'].includes(action)) {
+    if (!['start', 'complete', 'reset'].includes(action)) {
       console.error('[API] Invalid action:', action);
       return NextResponse.json(
-        { success: false, error: 'Invalid action. Must be "start" or "complete"' },
+        { success: false, error: 'Invalid action. Must be "start", "complete", or "reset"' },
         { status: 400 }
       );
     }
@@ -68,6 +79,17 @@ export async function POST(request, { params }) {
       normalizedRoles = userRoles.map(r => String(r).toLowerCase());
       if (normalizedRoles.some(r => r === 'admin' || r === 'superadmin')) {
         isAdmin = true;
+      }
+      
+      // For reset action, only SuperAdmin is allowed
+      if (action === 'reset') {
+        const isSuperAdmin = normalizedRoles.some(r => r === 'superadmin');
+        if (!isSuperAdmin) {
+          return NextResponse.json(
+            { success: false, error: 'Only SuperAdmin can reset tickets' },
+            { status: 403 }
+          );
+        }
       }
       if (isSupervisorProduction(userRoles)) {
         isSupervisorProd = true;
@@ -465,6 +487,95 @@ export async function POST(request, { params }) {
         user_id,
         user_name: userName
       }, 'success', null, userData ? { id: user_id, email: userData?.email, name: userName } : null);
+      return response;
+
+    } else if (action === 'reset') {
+      // Reset all stations back to pending (start from station 1)
+      console.log('[API] Resetting ticket to station 1:', ticketNo);
+      
+      // 1) Reset all flows to pending and clear timestamps
+      const { data: resetFlows, error: resetError } = await supabaseAdmin
+        .from('ticket_station_flow')
+        .update({ 
+          status: 'pending',
+          started_at: null,
+          completed_at: null
+        })
+        .eq('ticket_no', ticketNo)
+        .select();
+
+      if (resetError) {
+        console.error('[API] Reset flows error:', resetError);
+        throw resetError;
+      }
+
+      console.log('[API] Reset flows to pending:', resetFlows?.length || 0, 'flows');
+
+      // 2) Close all incomplete work sessions
+      const { data: incompleteSessions, error: sessionsError } = await supabaseAdmin
+        .from('technician_work_sessions')
+        .select('id, started_at')
+        .eq('ticket_no', ticketNo)
+        .is('completed_at', null);
+
+      if (!sessionsError && incompleteSessions && incompleteSessions.length > 0) {
+        const now = new Date().toISOString();
+        for (const session of incompleteSessions) {
+          const startTime = new Date(session.started_at);
+          const endTime = new Date(now);
+          const durationMs = endTime.getTime() - startTime.getTime();
+          const durationMinutes = Math.round(((durationMs / 60000)) * 100) / 100;
+
+          await supabaseAdmin
+            .from('technician_work_sessions')
+            .update({
+              completed_at: now,
+              duration_minutes: durationMinutes
+            })
+            .eq('id', session.id);
+        }
+        console.log('[API] Closed', incompleteSessions.length, 'incomplete work sessions');
+      }
+
+      // 3) Reset ticket status and timestamps
+      try {
+        await supabaseAdmin
+          .from('ticket')
+          .update({ 
+            status: 'Released',
+            started_at: null,
+            finished_at: null
+          })
+          .eq('no', ticketNo);
+        console.log('[API] Reset ticket status and timestamps');
+      } catch (e) {
+        console.warn('[API] Failed to reset ticket status:', e?.message);
+      }
+
+      // Get user info for log
+      let userName = null;
+      let userEmail = null;
+      try {
+        const { data: userData } = await supabaseAdmin
+          .from('users')
+          .select('name, email')
+          .eq('id', user_id)
+          .single();
+        userName = userData?.name || userData?.email || null;
+        userEmail = userData?.email || null;
+      } catch (e) {
+        console.warn('Failed to get user info for log:', e?.message);
+      }
+
+      const response = NextResponse.json({
+        success: true,
+        message: 'Ticket reset to station 1 successfully',
+        data: resetFlows
+      });
+      await logApiCall(request, 'ticket_reset', 'production_flow', ticketNo, {
+        user_id,
+        user_name: userName
+      }, 'success', null, userEmail ? { id: user_id, email: userEmail, name: userName } : null);
       return response;
     }
 

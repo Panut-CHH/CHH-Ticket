@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
-import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database } from "lucide-react";
+import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database, RotateCcw } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
@@ -114,6 +114,209 @@ function ProfileForm({ user, onSave }) {
         )}
       </div>
     </form>
+  );
+}
+
+function TicketResetManagement({ user }) {
+  const { language } = useLanguage();
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedTicket, setSelectedTicket] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
+
+  // Fetch tickets from database
+  useEffect(() => {
+    fetchTickets();
+  }, []);
+
+  const fetchTickets = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('ticket')
+        .select('no, description, status, source_no')
+        .order('no', { ascending: false })
+        .limit(500); // Limit to prevent too many results
+      
+      if (error) {
+        console.error('Error fetching tickets:', error);
+        return;
+      }
+      
+      setTickets(data || []);
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter tickets
+  const filteredTickets = tickets.filter(ticket => {
+    const matchSearch = (ticket.no || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                       (ticket.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+    return matchSearch;
+  });
+
+  const handleReset = async () => {
+    if (!selectedTicket) {
+      alert(language === 'th' ? 'กรุณาเลือกตั๋วที่ต้องการรีเซ็ต' : 'Please select a ticket to reset');
+      return;
+    }
+
+    const confirmMessage = language === 'th' 
+      ? `คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตตั๋ว ${selectedTicket}?\n\nการดำเนินการนี้จะ:\n- ล้างสถานะทั้งหมดกลับเป็น pending\n- ปิด work sessions ที่ยังไม่เสร็จ\n- รีเซ็ต ticket status กลับเป็น Released\n\nการดำเนินการนี้ไม่สามารถยกเลิกได้!`
+      : `Are you sure you want to reset ticket ${selectedTicket}?\n\nThis will:\n- Reset all statuses to pending\n- Close incomplete work sessions\n- Reset ticket status to Released\n\nThis action cannot be undone!`;
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    setResetting(true);
+    setResetMessage("");
+
+    try {
+      const ticketNo = selectedTicket.replace('#', '');
+      const apiResponse = await fetch(`/api/production/${ticketNo}/update-flow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'reset',
+          user_id: user?.id
+        })
+      });
+
+      const apiResult = await apiResponse.json();
+
+      if (!apiResponse.ok || !apiResult.success) {
+        throw new Error(apiResult.error || (language === 'th' ? 'ไม่สามารถรีเซ็ตตั๋วได้' : 'Failed to reset ticket'));
+      }
+
+      setResetMessage(language === 'th' ? 'รีเซ็ตตั๋วสำเร็จ!' : 'Ticket reset successfully!');
+      setSelectedTicket("");
+      
+      // Refresh tickets list
+      setTimeout(() => {
+        fetchTickets();
+        setResetMessage("");
+      }, 2000);
+    } catch (e) {
+      console.error('[RESET] Failed:', e);
+      setResetMessage(language === 'th' 
+        ? 'เกิดข้อผิดพลาด: ' + (e?.message || 'Unknown error')
+        : 'Error: ' + (e?.message || 'Unknown error'));
+    } finally {
+      setResetting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+      <div className="mb-6">
+        <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-1">
+          {language === 'th' ? 'รีเซ็ตตั๋วกลับไปสถานี 1' : 'Reset Ticket to Station 1'}
+        </h3>
+        <p className="text-gray-500 dark:text-gray-400 text-sm">
+          {language === 'th' 
+            ? 'รีเซ็ตตั๋วที่ทำผิดกลับไปเริ่มใหม่ตั้งแต่สถานี 1 (เฉพาะ SuperAdmin)'
+            : 'Reset tickets that were done incorrectly back to station 1 (SuperAdmin only)'}
+        </p>
+      </div>
+
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder={language === 'th' ? 'ค้นหาตั๋ว (Ticket No. หรือ Description)...' : 'Search tickets (Ticket No. or Description)...'}
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm"
+          />
+        </div>
+      </div>
+
+      {/* Ticket Selection */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+          {language === 'th' ? 'เลือกตั๋วที่ต้องการรีเซ็ต' : 'Select ticket to reset'}
+        </label>
+        <select
+          value={selectedTicket}
+          onChange={(e) => setSelectedTicket(e.target.value)}
+          className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-600 focus:outline-none focus:ring-2 focus:ring-emerald-300 text-sm"
+        >
+          <option value="">{language === 'th' ? '-- เลือกตั๋ว --' : '-- Select Ticket --'}</option>
+          {loading ? (
+            <option disabled>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</option>
+          ) : (
+            filteredTickets.map((ticket) => (
+              <option key={ticket.no} value={ticket.no}>
+                {ticket.no} - {ticket.description || '-'} ({ticket.status || 'N/A'})
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+
+      {/* Reset Button */}
+      <div className="mb-4">
+        <button
+          onClick={handleReset}
+          disabled={!selectedTicket || resetting}
+          className={`w-full px-4 py-3 rounded-xl text-white font-medium transition-colors ${
+            !selectedTicket || resetting
+              ? 'bg-gray-400 cursor-not-allowed'
+              : 'bg-red-600 hover:bg-red-700'
+          }`}
+        >
+          {resetting 
+            ? (language === 'th' ? 'กำลังรีเซ็ต...' : 'Resetting...')
+            : (language === 'th' ? 'รีเซ็ตตั๋วกลับไปสถานี 1' : 'Reset Ticket to Station 1')
+          }
+        </button>
+      </div>
+
+      {/* Message */}
+      {resetMessage && (
+        <div className={`p-3 rounded-lg text-sm ${
+          resetMessage.includes('สำเร็จ') || resetMessage.includes('successfully')
+            ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300'
+            : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300'
+        }`}>
+          {resetMessage}
+        </div>
+      )}
+
+      {/* Warning */}
+      <div className="mt-4 p-4 rounded-lg bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
+        <div className="flex items-start gap-2">
+          <X className="w-5 h-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-yellow-800 dark:text-yellow-300">
+            <div className="font-medium mb-1">
+              {language === 'th' ? 'คำเตือน' : 'Warning'}
+            </div>
+            <div>
+              {language === 'th' 
+                ? 'การรีเซ็ตตั๋วจะล้างความคืบหน้าทั้งหมดและไม่สามารถยกเลิกได้ กรุณาตรวจสอบให้แน่ใจก่อนดำเนินการ'
+                : 'Resetting a ticket will clear all progress and cannot be undone. Please verify before proceeding.'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary */}
+      {!loading && (
+        <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700 text-sm text-gray-600 dark:text-gray-400">
+          {language === 'th' 
+            ? `แสดง ${filteredTickets.length} จาก ${tickets.length} ตั๋ว`
+            : `Showing ${filteredTickets.length} of ${tickets.length} tickets`}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -374,6 +577,7 @@ export default function SettingsPage() {
     { key: "security", label: t('changePassword', language), icon: <Shield className="w-4 h-4" /> },
     { key: "users", label: t('manageUsers', language), icon: <Users className="w-4 h-4" /> },
     { key: "erpTest", label: t('erpTest', language), icon: <Database className="w-4 h-4" /> },
+    { key: "ticketReset", label: language === 'th' ? 'รีเซ็ตตั๋ว' : 'Reset Ticket', icon: <RotateCcw className="w-4 h-4" /> },
   ];
 
   // Filter tabs based on user roles
@@ -455,6 +659,8 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {activeTab === "ticketReset" && <TicketResetManagement user={user} />}
 
         {/* Removed 'ทั่วไป' tab per request */}
           </div>
