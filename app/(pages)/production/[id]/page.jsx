@@ -2190,7 +2190,14 @@ export default function ProductionDetailPage() {
     <ProtectedRoute>
       <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <button onClick={() => router.push('/production')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-gray-100">
+          <button 
+            onClick={() => router.push('/production')} 
+            onContextMenu={(e) => {
+              e.preventDefault();
+              window.open('/production', '_blank');
+            }}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-gray-100"
+          >
             <ArrowLeft className="w-4 h-4" /> กลับหน้า Production
           </button>
           {isClosed && (

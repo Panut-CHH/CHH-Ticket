@@ -3,7 +3,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { supabase } from "@/utils/supabaseClient";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
 import { GripVertical, Save, Plus, Trash2, User, DollarSign, Calendar, ChevronDown, ArrowLeft, FileText, Info, Loader, Settings } from "lucide-react";
 import Modal from "@/components/Modal";
 import DatePicker from 'react-datepicker';
@@ -1094,9 +1093,16 @@ export default function EditTicketPage() {
       {/* Top Bar */}
         <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
-          <Link href="/tickets" className="px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 inline-flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100">
+          <button 
+            onClick={() => router.push('/tickets')}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              window.open('/tickets', '_blank');
+            }}
+            className="px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 inline-flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 dark:text-gray-100"
+          >
             <ArrowLeft className="w-4 h-4" /> กลับรายการตั๋ว
-          </Link>
+          </button>
           <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">เลขตั๋ว</div>
           <div className="text-xl font-semibold text-gray-900 dark:text-gray-100">#{ticketId}</div>
         </div>

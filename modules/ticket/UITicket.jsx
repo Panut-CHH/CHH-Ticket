@@ -1590,6 +1590,14 @@ export default function UITicket() {
           </div>
           <button 
             onClick={() => canAction && onEdit(ticket)}
+            onContextMenu={(e) => {
+              if (canAction) {
+                e.preventDefault();
+                const rpdNo = ticket.rpd || ticket.id || "";
+                const cleanedRpd = rpdNo.replace(/^#/,'');
+                window.open(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`, '_blank');
+              }
+            }}
             disabled={!canAction}
             className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 w-full lg:w-auto lg:flex-shrink-0 ${
               canAction 

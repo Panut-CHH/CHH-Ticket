@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2 } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions } from "@/utils/rolePermissions";
 
@@ -15,6 +15,7 @@ export default function ProductionPage() {
   const { user } = useAuth();
   const { language } = useLanguage();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const canAction = canPerformActions(user?.roles || user?.role);
 
   const myName = (user?.name || user?.email || "").trim();
@@ -44,7 +45,9 @@ export default function ProductionPage() {
   const [hasAnyStations, setHasAnyStations] = useState(true);
   
   // Tab state for completed/incomplete tickets
-  const [activeTab, setActiveTab] = useState('incomplete'); // 'completed' or 'incomplete'
+  // Initialize from URL parameter if present, otherwise default to 'incomplete'
+  const initialTab = searchParams.get('tab') === 'completed' ? 'completed' : 'incomplete';
+  const [activeTab, setActiveTab] = useState(initialTab); // 'completed' or 'incomplete'
 
   // Search / Filter / Sort state
   const [searchTerm, setSearchTerm] = useState("");
@@ -58,6 +61,7 @@ export default function ProductionPage() {
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
+  const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track which project groups are expanded
 
   // Function to load batches
   const loadBatchData = async () => {
@@ -335,6 +339,14 @@ export default function ProductionPage() {
       setLoadingTickets(false);
     }
   };
+
+  // Sync activeTab with URL parameter changes
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam === 'completed' || tabParam === 'incomplete') {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
 
   // Initial load
   useEffect(() => {
@@ -796,6 +808,38 @@ export default function ProductionPage() {
     return sorted;
   }, [filteredTickets, searchTerm, selectedStatuses, selectedPriorities, selectedStation, selectedTechnician, selectedProject, hasDueDateOnly, sortKey, sortDir]);
 
+  // Group tickets by project name
+  const groupedTickets = useMemo(() => {
+    const groups = new Map();
+    
+    displayedTickets.forEach(ticket => {
+      const projectName = ticket.projectName || (language === 'th' ? 'ไม่มีชื่อโครงการ' : 'No Project Name');
+      if (!groups.has(projectName)) {
+        groups.set(projectName, []);
+      }
+      groups.get(projectName).push(ticket);
+    });
+    
+    // Convert to array of { projectName, tickets } objects
+    return Array.from(groups.entries()).map(([projectName, tickets]) => ({
+      projectName,
+      tickets
+    })).sort((a, b) => a.projectName.localeCompare(b.projectName));
+  }, [displayedTickets, language]);
+
+  // Toggle group expansion
+  const toggleGroup = (projectName) => {
+    setExpandedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projectName)) {
+        newSet.delete(projectName);
+      } else {
+        newSet.add(projectName);
+      }
+      return newSet;
+    });
+  };
+
   const stats = useMemo(() => {
     const total = myTickets.length;
     
@@ -871,7 +915,15 @@ export default function ProductionPage() {
             <div className="mt-6 sm:mt-8">
               <div className="flex gap-2 sm:gap-3 border-b border-gray-200 dark:border-slate-700 overflow-x-auto pb-1 -mx-2 px-2 sm:mx-0 sm:px-0">
                 <button
-                  onClick={() => setActiveTab('incomplete')}
+                  onClick={() => {
+                    setActiveTab('incomplete');
+                    router.push(`${window.location.pathname}?tab=incomplete`, { scroll: false });
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    const url = `${window.location.pathname}?tab=incomplete`;
+                    window.open(url, '_blank');
+                  }}
                   className={`px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium transition-all duration-200 border-b-2 ${
                     activeTab === 'incomplete'
                       ? 'border-blue-600 text-blue-600 dark:text-blue-400 dark:border-blue-400'
@@ -891,7 +943,15 @@ export default function ProductionPage() {
                   </div>
                 </button>
                 <button
-                  onClick={() => setActiveTab('completed')}
+                  onClick={() => {
+                    setActiveTab('completed');
+                    router.push(`${window.location.pathname}?tab=completed`, { scroll: false });
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    const url = `${window.location.pathname}?tab=completed`;
+                    window.open(url, '_blank');
+                  }}
                   className={`px-4 sm:px-6 py-2 sm:py-3 text-sm sm:text-base font-medium transition-all duration-200 border-b-2 ${
                     activeTab === 'completed'
                       ? 'border-emerald-600 text-emerald-600 dark:text-emerald-400 dark:border-emerald-400'
@@ -1145,7 +1205,43 @@ export default function ProductionPage() {
                 </>
               )}
 
-              {displayedTickets.map((ticket) => {
+              {groupedTickets.map((group) => {
+                const isExpanded = expandedGroups.has(group.projectName);
+                
+                return (
+                  <div key={group.projectName} className="space-y-2">
+                    {/* Group Header - Clickable to expand/collapse */}
+                    <button
+                      onClick={() => toggleGroup(group.projectName)}
+                      className="w-full flex items-center justify-between p-3 sm:p-4 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl hover:from-blue-100 hover:to-indigo-100 dark:hover:from-blue-900/30 dark:hover:to-indigo-900/30 transition-all duration-200 shadow-sm hover:shadow-md"
+                    >
+                      <div className="flex items-center gap-3 flex-1">
+                        {isExpanded ? (
+                          <ChevronDown className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        )}
+                        <Building2 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        <div className="text-left flex-1">
+                          <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                            {group.projectName}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center px-2.5 py-1 bg-blue-600 dark:bg-blue-500 text-white rounded-lg text-xs sm:text-sm font-semibold shadow-sm min-w-[2.5rem]">
+                          {group.tickets.length}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 hidden sm:inline">
+                          {language === 'th' ? 'ตั๋ว' : 'tickets'}
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Group Tickets - Only show when expanded */}
+                    {isExpanded && (
+                      <div className="space-y-3 sm:space-y-4 pl-4 sm:pl-6 border-l-2 border-blue-200 dark:border-blue-800">
+                        {group.tickets.map((ticket) => {
                 const total = sumTicketAmount(ticket);
                 const cleanedId = (ticket.id || "").replace(/^#/, "");
                 
@@ -1293,6 +1389,12 @@ export default function ProductionPage() {
                       <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                         <button
                           onClick={() => canAction && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
+                          onContextMenu={(e) => {
+                            if (canAction) {
+                              e.preventDefault();
+                              window.open(`/production/${encodeURIComponent(cleanedId)}`, '_blank');
+                            }
+                          }}
                           disabled={!canAction}
                           className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto ${
                             canAction 
@@ -1304,6 +1406,11 @@ export default function ProductionPage() {
                         </button>
                       </div>
                     </div>
+                  </div>
+                        );
+                      })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
