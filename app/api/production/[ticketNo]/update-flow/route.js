@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { logApiCall, logError } from '@/utils/activityLogger';
-import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole } from '@/utils/rolePermissions';
+import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole, isSupervisorProduction, isSupervisorPainting } from '@/utils/rolePermissions';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -52,7 +52,9 @@ export async function POST(request, { params }) {
     }
 
     // Admin bypass: allow admin/superadmin to operate any step
+    // Supervisor Production bypass: allow Supervisor Production to operate any step
     let isAdmin = false;
+    let isSupervisorProd = false;
     let userRoles = [];
     let normalizedRoles = [];
     try {
@@ -66,6 +68,9 @@ export async function POST(request, { params }) {
       normalizedRoles = userRoles.map(r => String(r).toLowerCase());
       if (normalizedRoles.some(r => r === 'admin' || r === 'superadmin')) {
         isAdmin = true;
+      }
+      if (isSupervisorProduction(userRoles)) {
+        isSupervisorProd = true;
       }
     } catch {}
 
@@ -129,11 +134,13 @@ export async function POST(request, { params }) {
       }
     }
 
-    // Special case: allow Packing/CNC role to start/complete their respective stations even without explicit assignment
+    // Special case: allow Packing/CNC/Painting role to start/complete their respective stations even without explicit assignment
     let isPackingStation = false;
     let hasPackingRole = false;
     let isCNCStation = false;
     let hasCNCRole = false;
+    let isPaintingStation = false;
+    let hasSupervisorPaintingRole = false;
     try {
       const { data: stationData } = await supabaseAdmin
         .from('stations')
@@ -150,23 +157,29 @@ export async function POST(request, { params }) {
       );
       isCNCStation = stationName === 'cnc' || stationName.includes('cnc');
       hasCNCRole = normalizedRoles.some(r => r === 'cnc' || r.includes('cnc'));
+      isPaintingStation = stationName.includes('สี') || stationName.includes('color') || stationName.includes('paint');
+      hasSupervisorPaintingRole = isSupervisorPainting(userRoles);
     } catch (e) {
       console.warn('[API] Failed to resolve station/role for role-based bypass:', e?.message);
     }
 
     // Allow Packing/CNC role to start/complete their respective stations without explicit assignment
-    const allowPackingByRole = !isAdmin && hasPackingRole && isPackingStation;
-    const allowCNCByRole = !isAdmin && hasCNCRole && isCNCStation;
-    const allowRoleBasedBypass = allowPackingByRole || allowCNCByRole;
+    const allowPackingByRole = !isAdmin && !isSupervisorProd && hasPackingRole && isPackingStation;
+    const allowCNCByRole = !isAdmin && !isSupervisorProd && hasCNCRole && isCNCStation;
+    // Allow Supervisor Painting to start/complete painting stations without explicit assignment
+    const allowPaintingByRole = !isAdmin && !isSupervisorProd && hasSupervisorPaintingRole && isPaintingStation;
+    const allowRoleBasedBypass = allowPackingByRole || allowCNCByRole || allowPaintingByRole;
 
-    if (!isAdmin && (assignmentError || !assignment) && !canSupervisorAct && !allowRoleBasedBypass) {
+    // Supervisor Production can operate any station without assignment check
+    // Supervisor Painting can operate painting stations without assignment check
+    if (!isAdmin && !isSupervisorProd && (assignmentError || !assignment) && !canSupervisorAct && !allowRoleBasedBypass) {
       return NextResponse.json(
         { success: false, error: 'You are not assigned to this station' },
         { status: 403 }
       );
     }
 
-    console.log('[API] Assignment check passed (admin bypass =', isAdmin, ') proceeding');
+    console.log('[API] Assignment check passed (admin bypass =', isAdmin, ', supervisor production bypass =', isSupervisorProd, ', supervisor painting bypass =', allowPaintingByRole, ') proceeding');
 
     if (action === 'start') {
       // Get all flows for this ticket

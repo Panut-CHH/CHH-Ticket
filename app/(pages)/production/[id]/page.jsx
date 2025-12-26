@@ -10,7 +10,7 @@ import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, 
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
-import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction } from "@/utils/rolePermissions";
+import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction, isSupervisorProduction, isSupervisorPainting } from "@/utils/rolePermissions";
 
 function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
   console.log('🚀 [DetailCard] Component RENDERED');
@@ -112,12 +112,29 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     const name = (currentStep || '').toLowerCase().trim();
     return name === 'cnc' || name.includes('cnc');
   })();
+  const isFirstPendingPaintingStep = (() => {
+    const name = (firstPendingStep || '').toLowerCase().trim();
+    return name.includes('สี') || name.includes('color') || name.includes('paint');
+  })();
+  const isCurrentPaintingStep = (() => {
+    const name = (currentStep || '').toLowerCase().trim();
+    return name.includes('สี') || name.includes('color') || name.includes('paint');
+  })();
 
+  // Check if user has Supervisor Production role (can act on all stations)
+  const hasSupervisorProductionRole = isSupervisorProduction(userRoles);
+  // Check if user has Supervisor Painting role (can act on painting stations)
+  const hasSupervisorPaintingRole = isSupervisorPainting(userRoles);
+  
   // Check if current user is assigned to the step (including supervisor delegation)
   const isAssignedToCurrentBase = isAdmin || 
+    hasSupervisorProductionRole ||
+    (hasSupervisorPaintingRole && isCurrentPaintingStep) ||
     isUserAssigned(currentTechnician, me) || 
     canSupervisorActForStep(currentIndex, currentStationData);
   const isAssignedToPendingBase = isAdmin || 
+    hasSupervisorProductionRole ||
+    (hasSupervisorPaintingRole && isFirstPendingPaintingStep) ||
     isUserAssigned(firstPendingTechnician, me) || 
     canSupervisorActForStep(firstPendingIndex, firstPendingStationData);
   // Allow Packing/CNC role to start/complete their respective stations without explicit assignment

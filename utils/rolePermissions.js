@@ -278,6 +278,24 @@ export const isSupervisor = (userRoles) => {
   });
 };
 
+// Helper function to check if a user is Supervisor Production
+export const isSupervisorProduction = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  return roles.some(role => {
+    const normalizedRole = normalizeRoleName(role);
+    return normalizedRole === 'Supervisor Production';
+  });
+};
+
+// Helper function to check if a user is Supervisor Painting
+export const isSupervisorPainting = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  return roles.some(role => {
+    const normalizedRole = normalizeRoleName(role);
+    return normalizedRole === 'Supervisor Painting';
+  });
+};
+
 // Helper function to check if user can perform actions in production page
 // Storage role can perform actions in store but not in production
 export const canPerformActionsInProduction = (userRoles) => {

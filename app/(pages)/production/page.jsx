@@ -897,6 +897,17 @@ export default function ProductionPage() {
                 // Get batches for this ticket
                 const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
                 
+                // Find current station and assigned technician
+                const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+                const currentStep = roadmap.find(step => step.status === 'current');
+                const currentStation = currentStep?.step || null;
+                const currentTechnician = currentStep?.technician || null;
+                
+                // If no current step, find first pending step
+                const firstPendingStep = roadmap.find(step => step.status === 'pending');
+                const pendingStation = firstPendingStep?.step || null;
+                const pendingTechnician = firstPendingStep?.technician || null;
+                
                 return (
                   <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
                     <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-4">
@@ -917,6 +928,38 @@ export default function ProductionPage() {
                             </span>
                           )}
                         </div>
+
+                        {/* Current Station and Assigned Technician Info - Minimal */}
+                        {(currentStation || pendingStation) && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                            {currentStation ? (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] sm:text-xs font-medium border border-amber-200/50 dark:border-amber-800/50 hover:bg-amber-200/80 dark:hover:bg-amber-900/40 transition-colors duration-200">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse"></span>
+                                  {language === 'th' ? 'สถานี:' : 'Station:'} {currentStation}
+                                </span>
+                                {currentTechnician && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
+                                    <span className="text-[8px]">👤</span>
+                                    {currentTechnician}
+                                  </span>
+                                )}
+                              </>
+                            ) : (
+                              <>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 text-[10px] sm:text-xs font-medium border border-gray-200/50 dark:border-gray-700/50 hover:bg-gray-200/80 dark:hover:bg-gray-700/50 transition-colors duration-200">
+                                  {language === 'th' ? 'ถัดไป:' : 'Next:'} {pendingStation}
+                                </span>
+                                {pendingTechnician && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
+                                    <span className="text-[8px]">👤</span>
+                                    {pendingTechnician}
+                                  </span>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
 
                         {/* Meta row */}
                         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
