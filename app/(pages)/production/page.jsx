@@ -698,31 +698,26 @@ export default function ProductionPage() {
       }
     }
     if (selectedTechnician) {
-      // Filter by technician name (current or next step, or assignee)
+      // Filter by technician name (only current or next pending step, not all steps)
       const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
       const currentStep = roadmap.find(step => step.status === 'current');
       const nextPendingStep = roadmap.find(step => step.status === 'pending');
       
-      // Get technicians from current step
+      // Get technicians from current step only
       const currentTechnicians = currentStep?.technician 
-        ? currentStep.technician.split(',').map(tech => tech.trim())
+        ? currentStep.technician.split(',').map(tech => tech.trim()).filter(tech => tech)
         : [];
       
-      // Get technicians from next pending step
+      // Get technicians from next pending step only
       const nextTechnicians = nextPendingStep?.technician
-        ? nextPendingStep.technician.split(',').map(tech => tech.trim())
+        ? nextPendingStep.technician.split(',').map(tech => tech.trim()).filter(tech => tech)
         : [];
       
-      // Get technicians from assignee
-      const assigneeTechnicians = t.assignee && t.assignee !== '-'
-        ? t.assignee.split(',').map(tech => tech.trim())
-        : [];
+      // Only check current and next pending steps (not assignee or other steps)
+      const relevantTechnicians = [...currentTechnicians, ...nextTechnicians];
       
-      // Combine all technicians
-      const allTechnicians = [...currentTechnicians, ...nextTechnicians, ...assigneeTechnicians];
-      
-      // Check if selected technician matches any of the technicians
-      if (!allTechnicians.some(tech => tech === selectedTechnician)) {
+      // Check if selected technician matches any of the relevant technicians
+      if (relevantTechnicians.length === 0 || !relevantTechnicians.some(tech => tech === selectedTechnician)) {
         return false;
       }
     }
