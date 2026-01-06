@@ -25,7 +25,8 @@ import {
   Edit,
   Save,
   Pencil,
-  DollarSign
+  DollarSign,
+  CheckCircle
 } from "lucide-react";
 import Modal from "@/components/Modal";
 
@@ -105,6 +106,15 @@ export default function UIProjectDetail({ projectId }) {
   const [newUnitForm, setNewUnitForm] = useState({ code: '', name_th: '', name_en: '' });
   const [isAddingUnit, setIsAddingUnit] = useState(false);
   const [addUnitError, setAddUnitError] = useState('');
+
+  // Toast state
+  const [toast, setToast] = useState({ open: false, type: "info", message: "" });
+  const showToast = (message, type = "info", timeoutMs = 3000) => {
+    setToast({ open: true, type, message });
+    if (timeoutMs > 0) {
+      setTimeout(() => setToast((t) => ({ ...t, open: false })), timeoutMs);
+    }
+  };
 
   // Load project data
   useEffect(() => {
@@ -494,12 +504,22 @@ export default function UIProjectDetail({ projectId }) {
         await loadItemCodes();
         setShowDeleteItemModal(false);
         setSelectedItem(null);
+        showToast(
+          language === 'th' ? 'ลบ Subfolder สำเร็จ' : 'Subfolder deleted successfully',
+          'success'
+        );
       } else {
-        alert(result.error);
+        showToast(
+          result.error || (language === 'th' ? 'ลบล้มเหลว' : 'Delete failed'),
+          'error'
+        );
       }
     } catch (error) {
       console.error('Error deleting item:', error);
-      alert(language === 'th' ? 'ลบล้มเหลว' : 'Delete failed');
+      showToast(
+        language === 'th' ? 'ลบล้มเหลว' : 'Delete failed',
+        'error'
+      );
     }
   };
 
@@ -717,6 +737,25 @@ export default function UIProjectDetail({ projectId }) {
   return (
     <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900">
       <div className="max-w-7xl mx-auto px-2 sm:px-4 md:px-6 py-4 sm:py-6 container-safe">
+        {/* Toast */}
+        {toast.open && (
+          <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-md shadow-lg flex items-center gap-2 ${
+            toast.type === 'success' ? 'bg-emerald-600 text-white' :
+            toast.type === 'error' ? 'bg-red-600 text-white' :
+            toast.type === 'warning' ? 'bg-yellow-500 text-black' : 'bg-slate-700 text-white'
+          }`}>
+            {toast.type === 'success' && <CheckCircle className="w-5 h-5" />}
+            {toast.type === 'error' && <AlertCircle className="w-5 h-5" />}
+            <span>{toast.message}</span>
+            <button
+              onClick={() => setToast({ ...toast, open: false })}
+              className="ml-2 hover:opacity-70"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Header */}
         <div className="mb-4 sm:mb-6">
             <button

@@ -9,6 +9,7 @@ export const translations = {
     production: "การผลิต",
     qc: "QC",
     log: "บันทึก",
+    report: "รายงาน",
     reports: "รายงาน",
     erpTest: "ทดสอบ ERP",
     settings: "ตั้งค่า",
@@ -455,6 +456,14 @@ export const translations = {
     close: "ปิด",
     manageStation: "จัดการสถานี",
     
+    // Payment Report
+    paymentReport: "รายงานการจ่ายเงิน",
+    unpaidItems: "รอจ่าย",
+    paidItems: "จ่ายแล้ว",
+    confirmPayment: "ยืนยันการจ่าย",
+    cancelPayment: "ยกเลิกการจ่าย",
+    round: "รอบ",
+
     // Store
     store: "คลังสินค้า",
     storeStatus: "สถานะ Store",
@@ -474,6 +483,7 @@ export const translations = {
     production: "Production",
     qc: "QC",
     log: "Log",
+    report: "Report",
     reports: "Reports",
     erpTest: "ERP Test",
     settings: "Settings",
@@ -920,6 +930,14 @@ export const translations = {
     close: "Close",
     manageStation: "Manage Station",
     
+    // Payment Report
+    paymentReport: "Payment Report",
+    unpaidItems: "Unpaid",
+    paidItems: "Paid",
+    confirmPayment: "Confirm Payment",
+    cancelPayment: "Cancel Payment",
+    round: "Round",
+
     // Store
     store: "Store",
     storeStatus: "Store Status",

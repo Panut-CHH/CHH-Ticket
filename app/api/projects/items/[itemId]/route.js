@@ -235,7 +235,7 @@ export async function DELETE(request, ctx) {
     const { itemId } = await ctx.params;
 
     // ดึงรายการไฟล์ก่อนลบ เพื่อลบจาก Storage
-    const { data: files, error: fetchError } = await supabase
+    const { data: files, error: fetchError } = await supabaseServer
       .from('project_files')
       .select('file_path')
       .eq('project_item_id', itemId);
@@ -245,7 +245,7 @@ export async function DELETE(request, ctx) {
       const filePaths = files.map(f => f.file_path).filter(p => p);
       
       if (filePaths.length > 0) {
-        const { error: storageError } = await supabase.storage
+        const { error: storageError } = await supabaseServer.storage
           .from('project-files')
           .remove(filePaths);
 

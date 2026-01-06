@@ -111,19 +111,24 @@ export default function QCPage() {
     try {
       setHistoryLoading(true);
       setHistoryError("");
-      const fromIdx = (historyPage - 1) * pageSize;
+      
+      // If filtering by station or inspector (client-side), load all data first
+      // Otherwise, use pagination
+      const needsClientSideFilter = historyFilters.stationId || historyFilters.inspector;
+      const fromIdx = needsClientSideFilter ? 0 : (historyPage - 1) * pageSize;
+      const toIdx = needsClientSideFilter ? 9999 : (fromIdx + pageSize - 1);
+      
       let query = supabase
         .from('qc_sessions')
         .select('id,ticket_no,station_id,station,qc_task_uuid,created_at,inspector_id,inspector', { count: 'exact' })
         .order('created_at', { ascending: false })
-        .range(fromIdx, fromIdx + pageSize - 1);
+        .range(fromIdx, toIdx);
 
       if (historyFilters.ticketNo) {
         query = query.ilike('ticket_no', `%${historyFilters.ticketNo}%`);
       }
-      if (historyFilters.stationId) {
-        query = query.eq('station_id', historyFilters.stationId);
-      }
+      // Note: station filter is applied client-side after loading previous station data
+      // because we need to filter by previous station (the one that sent to QC), not QC station itself
       if (historyFilters.from) {
         const fromIso = new Date(historyFilters.from).toISOString();
         query = query.gte('created_at', fromIso);
@@ -155,7 +160,8 @@ export default function QCPage() {
 
       // Compute target station (previous step before QC) using flows
       const ticketNos = Array.from(new Set((data || []).map((d) => d.ticket_no))).filter(Boolean);
-      let prevStationByQcTask = {};
+      let prevStationByQcTask = {}; // qc_task_uuid -> station name
+      let prevStationIdByQcTask = {}; // qc_task_uuid -> station_id
       if (ticketNos.length > 0) {
         const { data: flows } = await supabase
           .from('ticket_station_flow')
@@ -176,6 +182,7 @@ export default function QCPage() {
             const prev = i > 0 ? list[i - 1] : null;
             const name = prev?.stations?.name_th || prev?.stations?.code || null;
             if (name) prevStationByQcTask[f.qc_task_uuid] = name;
+            if (prev?.station_id) prevStationIdByQcTask[f.qc_task_uuid] = prev.station_id;
           }
         });
       }
@@ -184,8 +191,21 @@ export default function QCPage() {
       let rows = (data || []).map((d) => ({
         ...d,
         station_name: prevStationByQcTask[d.qc_task_uuid] || stationMap[d.station_id] || d.station || d.station_id || '-',
+        prev_station_id: prevStationIdByQcTask[d.qc_task_uuid] || null, // previous station ID for filtering
         inspector_name: inspectorMapLocal[d.inspector_id] || inspectorMap[d.inspector_id] || d.inspector || d.inspector_id || '-',
       }));
+
+      // Filter by previous station (the station that sent to QC)
+      if (historyFilters.stationId) {
+        const stationIdStr = String(historyFilters.stationId).trim();
+        if (stationIdStr) {
+          rows = rows.filter((r) => {
+            // Match by previous station_id (the station that sent to QC)
+            const prevId = r.prev_station_id;
+            return prevId && String(prevId) === stationIdStr;
+          });
+        }
+      }
 
       // client-side filter by inspector text
       if (historyFilters.inspector) {
@@ -193,8 +213,15 @@ export default function QCPage() {
         rows = rows.filter((r) => String(r.inspector_name || '').toLowerCase().includes(q));
       }
 
-      setHistorySessions(rows);
-      setHistoryTotal(count || 0);
+      // Apply pagination if client-side filters are used
+      const totalFiltered = rows.length;
+      const paginatedRows = needsClientSideFilter 
+        ? rows.slice((historyPage - 1) * pageSize, historyPage * pageSize)
+        : rows;
+
+      setHistorySessions(paginatedRows);
+      // Use filtered rows count if client-side filters are applied, otherwise use DB count
+      setHistoryTotal(needsClientSideFilter ? totalFiltered : (count || 0));
     } catch (e) {
       setHistoryError(e?.message || 'Failed to load history');
     } finally {

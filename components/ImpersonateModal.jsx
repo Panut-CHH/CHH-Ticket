@@ -15,6 +15,8 @@ const ROLE_COLORS = {
   admin: "bg-blue-100 text-blue-700 border-blue-200",
   QC: "bg-amber-100 text-amber-700 border-amber-200",
   qc: "bg-amber-100 text-amber-700 border-amber-200",
+  Viewer: "bg-slate-100 text-slate-700 border-slate-200",
+  viewer: "bg-slate-100 text-slate-700 border-slate-200",
   DashboardView: "bg-slate-100 text-slate-700 border-slate-200",
   dashboardview: "bg-slate-100 text-slate-700 border-slate-200",
   Production: "bg-emerald-100 text-emerald-700 border-emerald-200",

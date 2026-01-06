@@ -9,7 +9,7 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2, ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
-import { canPerformActions } from "@/utils/rolePermissions";
+import { canPerformActions, hasPageAccess } from "@/utils/rolePermissions";
 
 export default function ProductionPage() {
   const { user } = useAuth();
@@ -17,6 +17,7 @@ export default function ProductionPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const canAction = canPerformActions(user?.roles || user?.role);
+  const canViewProductionDetail = hasPageAccess(user?.roles || user?.role, '/production');
 
   const myName = (user?.name || user?.email || "").trim();
   const myRole = (user?.role || '').toLowerCase();
@@ -33,6 +34,7 @@ export default function ProductionPage() {
   const hasCNCRole = hasRole('CNC');
   const hasPackingRole = hasRole('Packing');
   const hasStorageRole = hasRole('Storage');
+  const hasViewerRole = hasRole('Viewer');
 
   // Load ERP tickets and merge with DB station assignments
   const [tickets, setTickets] = useState([]);
@@ -458,8 +460,8 @@ export default function ProductionPage() {
   const myTickets = useMemo(() => {
     if (!myName) return [];
     let filtered = [];
-    if (isAdmin || hasStorageRole) {
-      // Admins and Storage see all tickets
+    if (isAdmin || hasStorageRole || hasViewerRole) {
+      // Admins, Storage, and Viewer see all tickets
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
@@ -507,7 +509,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, user]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, hasViewerRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {
@@ -1383,16 +1385,16 @@ export default function ProductionPage() {
                       </div>
                       <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                         <button
-                          onClick={() => canAction && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
+                          onClick={() => canViewProductionDetail && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
                           onContextMenu={(e) => {
-                            if (canAction) {
+                            if (canViewProductionDetail) {
                               e.preventDefault();
                               window.open(`/production/${encodeURIComponent(cleanedId)}`, '_blank');
                             }
                           }}
-                          disabled={!canAction}
+                          disabled={!canViewProductionDetail}
                           className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto ${
-                            canAction 
+                            canViewProductionDetail 
                               ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
                               : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
                           }`}

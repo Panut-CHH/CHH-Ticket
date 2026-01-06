@@ -36,16 +36,20 @@ export const ROLE_PERMISSIONS = {
     pages: ['store', 'settings', 'production', 'project'],
     settingsTabs: ['profile', 'security']
   },
-  DashboardView: {
-    pages: ['dashboard'],
+  Viewer: {
+    pages: ['dashboard', 'production'],
+    settingsTabs: ['profile', 'security']
+  },
+  Manager: {
+    pages: ['report'],
     settingsTabs: ['profile', 'security']
   },
   Admin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
     settingsTabs: ['profile', 'security', 'users']
   },
   SuperAdmin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
     settingsTabs: ['profile', 'security', 'users', 'erpTest', 'ticketReset']
   }
 };
@@ -84,9 +88,10 @@ const normalizeRoleName = (role) => {
       return 'QC';
     case 'storage':
       return 'Storage';
+    case 'viewer':
     case 'dashboardview':
     case 'dashboard(view)':
-      return 'DashboardView';
+      return 'Viewer';
     default:
       return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   }
@@ -193,7 +198,7 @@ export const getAllowedSettingsTabs = (userRoles) => {
 };
 
 // Helper function to check if user can perform actions (not just view)
-// QC, CNC, and DashboardView roles can view pages but cannot perform actions
+// QC, CNC, and Viewer roles can view pages but cannot perform actions
 export const canPerformActions = (userRoles) => {
   const roles = normalizeRoles(userRoles);
   
@@ -201,16 +206,16 @@ export const canPerformActions = (userRoles) => {
     return false;
   }
   
-  // If user has any role that can perform actions (not QC, CNC, or DashboardView), return true
+  // If user has any role that can perform actions (not QC, CNC, or Viewer), return true
   for (const role of roles) {
     const normalizedRole = normalizeRoleName(role);
     if (!normalizedRole) {
       continue;
     }
     
-    // QC, CNC, and DashboardView roles can only view, not perform actions
+    // QC, CNC, and Viewer roles can only view, not perform actions
     // Storage can perform actions in store page but not in production page
-    if (normalizedRole === 'QC' || normalizedRole === 'CNC' || normalizedRole === 'DashboardView') {
+    if (normalizedRole === 'QC' || normalizedRole === 'CNC' || normalizedRole === 'Viewer') {
       continue;
     }
     
@@ -218,7 +223,7 @@ export const canPerformActions = (userRoles) => {
     return true;
   }
   
-  // If all roles are QC, CNC, or DashboardView, cannot perform actions
+  // If all roles are QC, CNC, or Viewer, cannot perform actions
   return false;
 };
 
@@ -229,9 +234,11 @@ export const getRoleDisplayName = (role) => {
   
   // Map internal role names to display names
   const displayNames = {
-    'DashboardView': 'Dashboard (View)',
-    'dashboardview': 'Dashboard (View)',
-    'dashboard(view)': 'Dashboard (View)',
+    'Viewer': 'Viewer',
+    'viewer': 'Viewer',
+    'DashboardView': 'Viewer',
+    'dashboardview': 'Viewer',
+    'dashboard(view)': 'Viewer',
   };
   
   return displayNames[roleStr] || roleStr;

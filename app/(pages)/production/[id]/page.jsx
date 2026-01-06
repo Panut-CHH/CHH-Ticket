@@ -5,6 +5,7 @@ console.log('✅ PRODUCTION DETAIL PAGE LOADED - File version with price calcula
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
+import RoleGuard from "@/components/RoleGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info, Printer, X } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
@@ -851,7 +852,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             {/* Warning message when user is not assigned to current step or cannot perform actions */}
               {!canActionInProduction && (
                 <div className="mt-3 p-3 rounded-lg border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-900 dark:text-blue-300 text-sm">
-                  ℹ️ คุณสามารถดูรายละเอียดได้แต่ไม่สามารถเริ่มต้นหรือทำเสร็จสถานีได้ (Role: Storage)
+                  ℹ️ คุณสามารถดูรายละเอียดได้แต่ไม่สามารถเริ่มต้นหรือทำเสร็จสถานีได้ 
                 </div>
               )}
               {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && (
@@ -2188,7 +2189,8 @@ export default function ProductionDetailPage() {
 
   return (
     <ProtectedRoute>
-      <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
+      <RoleGuard pagePath="/production">
+        <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <button 
             onClick={() => router.push('/production')} 
@@ -2232,6 +2234,7 @@ export default function ProductionDetailPage() {
           />
         )}
       </div>
+      </RoleGuard>
     </ProtectedRoute>
   );
 }
