@@ -44,6 +44,10 @@ export const ROLE_PERMISSIONS = {
     pages: ['report'],
     settingsTabs: ['profile', 'security']
   },
+  HR: {
+    pages: ['report'],
+    settingsTabs: ['profile', 'security']
+  },
   Admin: {
     pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
     settingsTabs: ['profile', 'security', 'users']
@@ -92,6 +96,8 @@ const normalizeRoleName = (role) => {
     case 'dashboardview':
     case 'dashboard(view)':
       return 'Viewer';
+    case 'hr':
+      return 'HR';
     default:
       return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   }

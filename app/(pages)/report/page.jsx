@@ -33,7 +33,9 @@ const formatRound = (dateInput) => {
 
 const isAdminOrManager = (roles) => {
   const arr = Array.isArray(roles) ? roles : roles ? [roles] : [];
-  return arr.map((r) => String(r).toLowerCase()).some((r) => r === "admin" || r === "superadmin" || r === "manager");
+  return arr
+    .map((r) => String(r).toLowerCase())
+    .some((r) => r === "admin" || r === "superadmin" || r === "manager" || r === "hr");
 };
 
 export default function ReportPage() {

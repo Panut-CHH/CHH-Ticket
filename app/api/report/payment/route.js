@@ -42,7 +42,7 @@ const normalizeRoles = (roles) => {
 
 const isAdminOrManager = (roles) => {
   const lower = normalizeRoles(roles);
-  return lower.some((r) => r === 'admin' || r === 'superadmin' || r === 'manager');
+  return lower.some((r) => r === 'admin' || r === 'superadmin' || r === 'manager' || r === 'hr');
 };
 
 export async function POST(request) {

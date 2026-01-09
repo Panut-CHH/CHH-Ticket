@@ -329,6 +329,41 @@ export default function EditTicketPage() {
     }
   };
 
+// Preset station configurations
+const STATION_PRESETS = {
+  'วงกบ': [
+    'ประกอบวงกบ',
+    'QC',
+    'สี',
+    'QC',
+    'Packing'
+  ],
+  'ประตู': [
+    'ประกอบโครง',
+    'QC',
+    'อัดบาน',
+    'QC',
+    'CNC',
+    'QC',
+    'สี',
+    'QC',
+    'Packing'
+  ],
+  'ชุดชาร์ป': [
+    'ประกอบโครง',
+    'QC',
+    'อัดบาน',
+    'QC',
+    'CNC',
+    'QC',
+    'สี',
+    'QC',
+    'ประกอบชุดชาร์ป',
+    'QC',
+    'Packing'
+  ]
+};
+
   // โหลดข้อมูลจาก localStorage เมื่อ component mount (ก่อนโหลดจาก database)
   // ใช้เฉพาะเมื่อยังไม่มีข้อมูลใน database
   useEffect(() => {
@@ -771,6 +806,37 @@ export default function EditTicketPage() {
     } catch (error) {
       console.error('[LABOR_PRICE] Error populating labor prices:', error);
       // ไม่ throw error เพราะเป็น feature เพิ่มเติม
+    }
+  };
+
+  // Apply preset stations with confirmation when existing stations present
+  const applyPreset = (presetName) => {
+    const steps = STATION_PRESETS[presetName] || [];
+    if (steps.length === 0) return;
+
+    const hasExistingStations = Array.isArray(stations) && stations.length > 0;
+    if (hasExistingStations) {
+      const confirmed = window.confirm('ต้องการแทนที่สถานีทั้งหมดที่มีอยู่ด้วย Preset นี้หรือไม่?');
+      if (!confirmed) return;
+    }
+
+    const newStations = steps.map((name, idx) => ({
+      id: String(idx + 1),
+      name,
+      technician: "",
+      technicianId: "",
+      priceType: "flat",
+      price: '',
+      completionTime: "",
+    }));
+
+    setStations(newStations);
+
+    // Populate labor prices for relevant stations right after preset is applied
+    if (ticketView?.itemCode) {
+      setTimeout(() => {
+        populateLaborPricesFromDatabase(newStations, ticketView.itemCode);
+      }, 0);
     }
   };
 
@@ -1289,6 +1355,28 @@ export default function EditTicketPage() {
               <Plus className="w-4 h-4" /> เพิ่มเส้นทางสถานี
             </button>
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <span className="text-sm text-gray-600 dark:text-gray-400">Preset สถานี:</span>
+          <button
+            onClick={() => applyPreset('วงกบ')}
+            className="px-3 py-2 border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg text-sm font-medium"
+          >
+            วงกบ
+          </button>
+          <button
+            onClick={() => applyPreset('ประตู')}
+            className="px-3 py-2 border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg text-sm font-medium"
+          >
+            ประตู
+          </button>
+          <button
+            onClick={() => applyPreset('ชุดชาร์ป')}
+            className="px-3 py-2 border border-emerald-200 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/30 rounded-lg text-sm font-medium"
+          >
+            ชุดชาร์ป
+          </button>
         </div>
 
         <div className="space-y-3">

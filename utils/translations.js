@@ -457,7 +457,7 @@ export const translations = {
     manageStation: "จัดการสถานี",
     
     // Payment Report
-    paymentReport: "รายงานการจ่ายเงิน",
+    paymentReport: "รายงานมูลค่างาน",
     unpaidItems: "รอจ่าย",
     paidItems: "จ่ายแล้ว",
     confirmPayment: "ยืนยันการจ่าย",
