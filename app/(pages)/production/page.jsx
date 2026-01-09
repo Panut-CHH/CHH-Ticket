@@ -596,10 +596,10 @@ export default function ProductionPage() {
   };
 
   // Get all unique station names from tickets (current or next step)
-  // Use myTickets to show all available stations regardless of tab filter
+  // Use 'tickets' instead of 'myTickets' to show all available stations in the system
   const availableStations = useMemo(() => {
     const stations = new Set();
-    myTickets.forEach(ticket => {
+    tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
       // Get current step
       const currentStep = roadmap.find(step => step.status === 'current');
@@ -613,12 +613,13 @@ export default function ProductionPage() {
       }
     });
     return Array.from(stations).sort();
-  }, [myTickets]);
+  }, [tickets]);
 
   // Get all unique technician names from tickets (current or next step)
+  // Use 'tickets' instead of 'myTickets' to show all technicians in the system
   const availableTechnicians = useMemo(() => {
     const technicians = new Set();
-    myTickets.forEach(ticket => {
+    tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
       // Get current step technician
       const currentStep = roadmap.find(step => step.status === 'current');
@@ -641,18 +642,19 @@ export default function ProductionPage() {
       }
     });
     return Array.from(technicians).sort();
-  }, [myTickets]);
+  }, [tickets]);
 
   // Get all unique project names from tickets
+  // Use 'tickets' instead of 'myTickets' to show all available projects in the system
   const availableProjects = useMemo(() => {
     const projects = new Set();
-    myTickets.forEach(ticket => {
+    tickets.forEach(ticket => {
       if (ticket.projectName && ticket.projectName.trim()) {
         projects.add(ticket.projectName);
       }
     });
     return Array.from(projects).sort();
-  }, [myTickets]);
+  }, [tickets]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
