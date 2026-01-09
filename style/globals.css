@@ -885,6 +885,57 @@ svg.lucide {
   color: #e5e7eb; /* gray-200 */
 }
 
+/* Select dropdown scrollbar styling - Make scrollbar visible */
+select {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+select::-webkit-scrollbar {
+  width: 8px;
+}
+
+select::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+select::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+  border: 1px solid #f8fafc;
+}
+
+select::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+select::-webkit-scrollbar-thumb:active {
+  background: #64748b;
+}
+
+/* Dark mode select scrollbar */
+.dark select {
+  scrollbar-color: #475569 #1e293b;
+}
+
+.dark select::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark select::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-color: #334155;
+}
+
+.dark select::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.dark select::-webkit-scrollbar-thumb:active {
+  background: #94a3b8;
+}
+
 /* Enhanced roadmap scrollbar for ticket cards */
 .roadmap-scroll {
   scrollbar-width: thin;

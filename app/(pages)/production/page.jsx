@@ -46,6 +46,9 @@ export default function ProductionPage() {
   // Global gate: hide tickets when no stations exist yet
   const [hasAnyStations, setHasAnyStations] = useState(true);
   
+  // All technicians from users table
+  const [allTechnicians, setAllTechnicians] = useState([]);
+  
   // Tab state for completed/incomplete tickets
   // Initialize from URL parameter if present, otherwise default to 'incomplete'
   const initialTab = searchParams.get('tab') === 'completed' ? 'completed' : 'incomplete';
@@ -82,6 +85,64 @@ export default function ProductionPage() {
       setBatches(batchData || []);
     } catch (error) {
       console.error('Error loading batch data:', error);
+    }
+  };
+
+  // Function to load all technicians from users table and ticket_assignments
+  const loadAllTechnicians = async () => {
+    try {
+      const technicianNames = new Set();
+      
+      // Method 1: Load from users table with production-related roles
+      try {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select('id, name, role, roles, status')
+          .eq('status', 'active')
+          .order('name', { ascending: true });
+        
+        if (!usersError && Array.isArray(usersData)) {
+          usersData.forEach(user => {
+            // Check if user has production-related role
+            const userRoles = user.roles || (user.role ? [user.role] : []);
+            const hasProductionRole = userRoles.some(r => {
+              const role = String(r).toLowerCase();
+              return role === 'production' || role === 'painting' || role === 'packing' || 
+                     role === 'cnc' || role === 'storage' || role === 'viewer';
+            });
+            
+            if (hasProductionRole && user.name && user.name.trim()) {
+              technicianNames.add(user.name.trim());
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to load technicians from users table:', e);
+      }
+      
+      // Method 2: Also load from ticket_assignments to catch any technicians that might be missing
+      try {
+        const { data: assignmentData, error: assignmentError } = await supabase
+          .from('ticket_assignments')
+          .select(`
+            technician_id,
+            users(name)
+          `);
+        
+        if (!assignmentError && Array.isArray(assignmentData)) {
+          assignmentData.forEach(assignment => {
+            if (assignment.users?.name && assignment.users.name.trim()) {
+              technicianNames.add(assignment.users.name.trim());
+            }
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to load technicians from ticket_assignments:', e);
+      }
+      
+      setAllTechnicians(Array.from(technicianNames).sort());
+    } catch (err) {
+      console.error('Failed to load technicians:', err);
     }
   };
 
@@ -354,6 +415,7 @@ export default function ProductionPage() {
   useEffect(() => {
     loadTickets();
     loadBatchData();
+    loadAllTechnicians();
   }, []);
 
   // Realtime subscription for ticket updates: flows + assignments
@@ -615,10 +677,15 @@ export default function ProductionPage() {
     return Array.from(stations).sort();
   }, [tickets]);
 
-  // Get all unique technician names from tickets (current or next step)
-  // Use 'tickets' instead of 'myTickets' to show all technicians in the system
+  // Get all unique technician names - combine from users table and tickets
+  // Priority: Use allTechnicians from users table, then add any from tickets that might be missing
   const availableTechnicians = useMemo(() => {
     const technicians = new Set();
+    
+    // First, add all technicians from users table
+    allTechnicians.forEach(tech => technicians.add(tech));
+    
+    // Then, also add technicians from tickets (in case some are in tickets but not in users table with proper role)
     tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
       // Get current step technician
@@ -641,8 +708,9 @@ export default function ProductionPage() {
         techs.forEach(tech => technicians.add(tech));
       }
     });
+    
     return Array.from(technicians).sort();
-  }, [tickets]);
+  }, [allTechnicians, tickets]);
 
   // Get all unique project names from tickets
   // Use 'tickets' instead of 'myTickets' to show all available projects in the system
@@ -998,6 +1066,7 @@ export default function ProductionPage() {
                   <select
                     value={selectedStation}
                     onChange={(e) => setSelectedStation(e.target.value)}
+                    title={availableStations.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อสถานีทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all stations') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedStation 
                         ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
@@ -1009,6 +1078,11 @@ export default function ProductionPage() {
                       <option key={station} value={station}>{station}</option>
                     ))}
                   </select>
+                  {availableStations.length > 5 && (
+                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
+                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
+                    </div>
+                  )}
                   {selectedStation && (
                     <button
                       onClick={(e) => {
@@ -1035,6 +1109,7 @@ export default function ProductionPage() {
                   <select
                     value={selectedTechnician}
                     onChange={(e) => setSelectedTechnician(e.target.value)}
+                    title={availableTechnicians.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อช่างทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all technicians') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedTechnician 
                         ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
@@ -1046,6 +1121,11 @@ export default function ProductionPage() {
                       <option key={technician} value={technician}>{technician}</option>
                     ))}
                   </select>
+                  {availableTechnicians.length > 5 && (
+                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
+                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
+                    </div>
+                  )}
                   {selectedTechnician && (
                     <button
                       onClick={(e) => {
@@ -1072,6 +1152,7 @@ export default function ProductionPage() {
                   <select
                     value={selectedProject}
                     onChange={(e) => setSelectedProject(e.target.value)}
+                    title={availableProjects.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อโครงการทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all projects') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedProject 
                         ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
@@ -1083,6 +1164,11 @@ export default function ProductionPage() {
                       <option key={project} value={project}>{project}</option>
                     ))}
                   </select>
+                  {availableProjects.length > 5 && (
+                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
+                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
+                    </div>
+                  )}
                   {selectedProject && (
                     <button
                       onClick={(e) => {
