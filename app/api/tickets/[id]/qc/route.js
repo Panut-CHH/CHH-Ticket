@@ -194,44 +194,72 @@ export async function POST(request, context) {
       }
     }
     
-    // ดึงข้อมูล user จาก session (จาก cookies)
+    // ดึงข้อมูล user จาก session (จาก cookies หรือ Bearer token)
     let currentUser = null;
     let inspectorName = null;
     let inspectorId = null;
     try {
       const supabase = await createSupabaseClient(request);
-      // ดึง session จาก cookies (Next.js ส่ง cookies อัตโนมัติ)
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      const authHeader = request.headers.get('authorization');
+      const bearerToken = authHeader?.startsWith('Bearer ')
+        ? authHeader.slice('Bearer '.length)
+        : null;
       
-      // ตรวจสอบ session error
-      if (sessionError) {
-        console.error('Session error:', sessionError);
-        // ถ้าเป็น refresh token error หรือ session invalid ให้ return error
-        if (sessionError.message?.includes('refresh_token_not_found') ||
-            sessionError.message?.includes('Invalid Refresh Token') ||
-            sessionError.message?.includes('Refresh Token Not Found') ||
-            sessionError.message?.includes('JWT expired') ||
-            sessionError.message?.includes('Invalid JWT')) {
+      console.log('QC API: Auth header present:', !!authHeader, 'Bearer token present:', !!bearerToken);
+      
+      // ถ้ามี Bearer token ให้ใช้ getUser แทน getSession
+      if (bearerToken) {
+        const { data: userData, error: userError } = await supabase.auth.getUser(bearerToken);
+        if (userError) {
+          console.error('User error (Bearer token):', userError);
           return NextResponse.json({ 
             error: "Session expired or invalid. Please log out and log in again.",
             code: "SESSION_INVALID"
           }, { status: 401 });
         }
-        return NextResponse.json({ 
-          error: "Failed to authenticate. Please log in again.",
-          code: "AUTH_ERROR"
-        }, { status: 401 });
+        if (!userData?.user) {
+          console.error('No user data returned from getUser');
+          return NextResponse.json({ 
+            error: "No active session. Please log in again.",
+            code: "NO_SESSION"
+          }, { status: 401 });
+        }
+        currentUser = userData.user;
+        console.log('QC API: Authenticated user via Bearer token:', currentUser.email);
+      } else {
+        // ดึง session จาก cookies (Next.js ส่ง cookies อัตโนมัติ)
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        // ตรวจสอบ session error
+        if (sessionError) {
+          console.error('Session error:', sessionError);
+          // ถ้าเป็น refresh token error หรือ session invalid ให้ return error
+          if (sessionError.message?.includes('refresh_token_not_found') ||
+              sessionError.message?.includes('Invalid Refresh Token') ||
+              sessionError.message?.includes('Refresh Token Not Found') ||
+              sessionError.message?.includes('JWT expired') ||
+              sessionError.message?.includes('Invalid JWT')) {
+            return NextResponse.json({ 
+              error: "Session expired or invalid. Please log out and log in again.",
+              code: "SESSION_INVALID"
+            }, { status: 401 });
+          }
+          return NextResponse.json({ 
+            error: "Failed to authenticate. Please log in again.",
+            code: "AUTH_ERROR"
+          }, { status: 401 });
+        }
+        
+        // ตรวจสอบว่า session มีอยู่จริง
+        if (!session || !session.user) {
+          return NextResponse.json({ 
+            error: "No active session. Please log in again.",
+            code: "NO_SESSION"
+          }, { status: 401 });
+        }
+        
+        currentUser = session.user;
       }
-      
-      // ตรวจสอบว่า session มีอยู่จริง
-      if (!session || !session.user) {
-        return NextResponse.json({ 
-          error: "No active session. Please log in again.",
-          code: "NO_SESSION"
-        }, { status: 401 });
-      }
-      
-      currentUser = session.user;
       
       if (currentUser) {
         inspectorId = currentUser.id;

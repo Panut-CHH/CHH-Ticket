@@ -298,7 +298,19 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   const loadHistory = async () => {
     try {
       setLoading(true);
-      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`);
+      // Get session token for authorization
+      let authHeader = {};
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession?.access_token) {
+          authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+        }
+      } catch (sessionError) {
+        console.warn('Failed to get session token:', sessionError);
+      }
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
+        headers: authHeader
+      });
       if (resp.ok) {
         const json = await resp.json();
         setHistory(json.data?.sessions || []);
@@ -330,9 +342,23 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       setStartingQc(true);
       console.log('Starting QC for ticket:', id);
       
+      // Get session token for authorization
+      let authHeader = {};
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession?.access_token) {
+          authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+        }
+      } catch (sessionError) {
+        console.warn('Failed to get session token:', sessionError);
+      }
+
       const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc/start`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeader
+        }
       });
       
       if (resp.ok) {
@@ -556,9 +582,30 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       console.log('Payload:', payload);
       console.log('Checklist Items:', checklistItems);
 
+      // Get session token for authorization
+      let authHeader = {};
+      try {
+        const { data: { session: currentSession }, error: sessionErr } = await supabase.auth.getSession();
+        if (sessionErr) {
+          console.error('Session error before save:', sessionErr);
+        }
+        if (currentSession?.access_token) {
+          authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+          console.log('Using Bearer token for authentication');
+        } else {
+          console.warn('No access token available in session');
+        }
+      } catch (sessionError) {
+        console.error('Failed to get session token:', sessionError);
+      }
+
       const resp = await fetch(`/api/tickets/${encodeURIComponent(id)}/qc`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...authHeader
+        },
+        credentials: 'include', // Ensure cookies are sent
         body: JSON.stringify(payload)
       });
 

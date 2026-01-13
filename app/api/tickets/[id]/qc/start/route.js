@@ -95,10 +95,16 @@ export async function POST(request, context) {
       let userName = null;
       try {
         const cookieStore = cookies();
+        const authHeader = request.headers.get('authorization');
+        const bearerToken = authHeader?.startsWith('Bearer ')
+          ? authHeader.slice('Bearer '.length)
+          : null;
+        
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
           {
+            global: bearerToken ? { headers: { Authorization: `Bearer ${bearerToken}` } } : undefined,
             cookies: {
               get(name) {
                 return cookieStore.get(name)?.value;
@@ -106,32 +112,52 @@ export async function POST(request, context) {
             },
           }
         );
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
         
-        // ตรวจสอบ session error
-        if (sessionError) {
-          console.error('Session error in QC start:', sessionError);
-          if (sessionError.message?.includes('refresh_token_not_found') ||
-              sessionError.message?.includes('Invalid Refresh Token') ||
-              sessionError.message?.includes('Refresh Token Not Found') ||
-              sessionError.message?.includes('JWT expired') ||
-              sessionError.message?.includes('Invalid JWT')) {
+        // ถ้ามี Bearer token ให้ใช้ getUser แทน getSession
+        if (bearerToken) {
+          const { data: userData, error: userError } = await supabase.auth.getUser(bearerToken);
+          if (userError) {
+            console.error('User error in QC start (Bearer token):', userError);
             return NextResponse.json({ 
               error: "Session expired or invalid. Please log out and log in again.",
               code: "SESSION_INVALID"
             }, { status: 401 });
           }
+          if (!userData?.user) {
+            return NextResponse.json({ 
+              error: "No active session. Please log in again.",
+              code: "NO_SESSION"
+            }, { status: 401 });
+          }
+          currentUser = userData.user;
+        } else {
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          // ตรวจสอบ session error
+          if (sessionError) {
+            console.error('Session error in QC start:', sessionError);
+            if (sessionError.message?.includes('refresh_token_not_found') ||
+                sessionError.message?.includes('Invalid Refresh Token') ||
+                sessionError.message?.includes('Refresh Token Not Found') ||
+                sessionError.message?.includes('JWT expired') ||
+                sessionError.message?.includes('Invalid JWT')) {
+              return NextResponse.json({ 
+                error: "Session expired or invalid. Please log out and log in again.",
+                code: "SESSION_INVALID"
+              }, { status: 401 });
+            }
+          }
+          
+          // ตรวจสอบว่า session มีอยู่จริง
+          if (!session || !session.user) {
+            return NextResponse.json({ 
+              error: "No active session. Please log in again.",
+              code: "NO_SESSION"
+            }, { status: 401 });
+          }
+          
+          currentUser = session.user;
         }
-        
-        // ตรวจสอบว่า session มีอยู่จริง
-        if (!session || !session.user) {
-          return NextResponse.json({ 
-            error: "No active session. Please log in again.",
-            code: "NO_SESSION"
-          }, { status: 401 });
-        }
-        
-        currentUser = session.user;
         
         if (currentUser) {
           try {
