@@ -488,6 +488,17 @@ export default function ProductionPage() {
     loadTickets();
     loadBatchData();
     loadAllTechnicians();
+    
+    // Restore search params from sessionStorage if URL doesn't have them
+    // This handles cases where user navigates back via browser back button
+    if (typeof window !== 'undefined') {
+      const savedParams = sessionStorage.getItem('productionPageParams');
+      if (savedParams && !searchParams.toString()) {
+        // Only restore if current URL has no params
+        router.replace(`/production?${savedParams}`, { scroll: false });
+        sessionStorage.removeItem('productionPageParams');
+      }
+    }
   }, []);
 
   // Realtime subscription for ticket updates: flows + assignments
@@ -1562,7 +1573,16 @@ export default function ProductionPage() {
                       </div>
                       <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
                         <button
-                          onClick={() => canViewProductionDetail && router.push(`/production/${encodeURIComponent(cleanedId)}`)}
+                          onClick={() => {
+                            if (canViewProductionDetail) {
+                              // Store current search params before navigating to detail
+                              const currentParams = searchParams.toString();
+                              if (currentParams) {
+                                sessionStorage.setItem('productionPageParams', currentParams);
+                              }
+                              router.push(`/production/${encodeURIComponent(cleanedId)}`);
+                            }
+                          }}
                           onContextMenu={(e) => {
                             if (canViewProductionDetail) {
                               e.preventDefault();
