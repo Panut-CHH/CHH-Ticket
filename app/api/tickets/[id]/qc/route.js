@@ -201,8 +201,37 @@ export async function POST(request, context) {
     try {
       const supabase = await createSupabaseClient(request);
       // ดึง session จาก cookies (Next.js ส่ง cookies อัตโนมัติ)
-      const { data: { session } } = await supabase.auth.getSession();
-      currentUser = session?.user ?? null;
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      // ตรวจสอบ session error
+      if (sessionError) {
+        console.error('Session error:', sessionError);
+        // ถ้าเป็น refresh token error หรือ session invalid ให้ return error
+        if (sessionError.message?.includes('refresh_token_not_found') ||
+            sessionError.message?.includes('Invalid Refresh Token') ||
+            sessionError.message?.includes('Refresh Token Not Found') ||
+            sessionError.message?.includes('JWT expired') ||
+            sessionError.message?.includes('Invalid JWT')) {
+          return NextResponse.json({ 
+            error: "Session expired or invalid. Please log out and log in again.",
+            code: "SESSION_INVALID"
+          }, { status: 401 });
+        }
+        return NextResponse.json({ 
+          error: "Failed to authenticate. Please log in again.",
+          code: "AUTH_ERROR"
+        }, { status: 401 });
+      }
+      
+      // ตรวจสอบว่า session มีอยู่จริง
+      if (!session || !session.user) {
+        return NextResponse.json({ 
+          error: "No active session. Please log in again.",
+          code: "NO_SESSION"
+        }, { status: 401 });
+      }
+      
+      currentUser = session.user;
       
       if (currentUser) {
         inspectorId = currentUser.id;
@@ -215,7 +244,11 @@ export async function POST(request, context) {
         inspectorName = userRecord?.name || userRecord?.email || currentUser.email || null;
       }
     } catch (e) {
-      console.warn('Failed to get current user:', e?.message);
+      console.error('Failed to get current user:', e?.message);
+      return NextResponse.json({ 
+        error: "Authentication failed. Please log out and log in again.",
+        code: "AUTH_EXCEPTION"
+      }, { status: 401 });
     }
     
     // ใช้วันที่ปัจจุบัน

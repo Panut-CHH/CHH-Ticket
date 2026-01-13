@@ -125,9 +125,11 @@ export default function UserProfile() {
               
               <hr className="my-2 border-gray-200 dark:border-gray-700" />
               <button
-                onClick={() => {
+                onClick={async () => {
                   setShowDropdown(false);
-                  logout();
+                  await logout();
+                  // Force redirect to login page and clear any cached state
+                  window.location.href = '/login';
                 }}
                 className="w-full flex items-center gap-2 sm:gap-3 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
               >

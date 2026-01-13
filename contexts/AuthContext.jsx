@@ -327,6 +327,10 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     const currentUser = user; // Store before clearing
     try {
+      // Clear auth data first to ensure immediate cleanup
+      clearAuthData();
+      
+      // Then sign out from Supabase
       await supabase.auth.signOut();
       
       // Log successful logout
@@ -346,8 +350,7 @@ export const AuthProvider = ({ children }) => {
           errorMessage: error.message
         });
       }
-    } finally {
-      // Ensure cleanup even if signOut fails
+      // Still clear data even if signOut fails
       clearAuthData();
     }
   };
@@ -409,6 +412,18 @@ export const AuthProvider = ({ children }) => {
       Object.keys(localStorage).forEach(key => {
         if (key.startsWith('sb-') && key.includes('auth-token')) {
           localStorage.removeItem(key);
+        }
+      });
+      // Clear all Supabase-related storage
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('sb-')) {
+          localStorage.removeItem(key);
+        }
+      });
+      // Clear sessionStorage as well
+      Object.keys(sessionStorage).forEach(key => {
+        if (key.startsWith('sb-')) {
+          sessionStorage.removeItem(key);
         }
       });
     }

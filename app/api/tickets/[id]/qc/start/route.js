@@ -106,8 +106,32 @@ export async function POST(request, context) {
             },
           }
         );
-        const { data: { session } } = await supabase.auth.getSession();
-        currentUser = session?.user ?? null;
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        // ตรวจสอบ session error
+        if (sessionError) {
+          console.error('Session error in QC start:', sessionError);
+          if (sessionError.message?.includes('refresh_token_not_found') ||
+              sessionError.message?.includes('Invalid Refresh Token') ||
+              sessionError.message?.includes('Refresh Token Not Found') ||
+              sessionError.message?.includes('JWT expired') ||
+              sessionError.message?.includes('Invalid JWT')) {
+            return NextResponse.json({ 
+              error: "Session expired or invalid. Please log out and log in again.",
+              code: "SESSION_INVALID"
+            }, { status: 401 });
+          }
+        }
+        
+        // ตรวจสอบว่า session มีอยู่จริง
+        if (!session || !session.user) {
+          return NextResponse.json({ 
+            error: "No active session. Please log in again.",
+            code: "NO_SESSION"
+          }, { status: 401 });
+        }
+        
+        currentUser = session.user;
         
         if (currentUser) {
           const { data: userRecord } = await supabaseServer
@@ -118,7 +142,11 @@ export async function POST(request, context) {
           userName = userRecord?.name || userRecord?.email || currentUser.email || null;
         }
       } catch (e) {
-        console.warn('Failed to get current user for log:', e?.message);
+        console.error('Failed to get current user for log:', e?.message);
+        return NextResponse.json({ 
+          error: "Authentication failed. Please log out and log in again.",
+          code: "AUTH_EXCEPTION"
+        }, { status: 401 });
       }
       
       const response = NextResponse.json({ 

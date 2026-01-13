@@ -297,6 +297,21 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       if (resp.ok) {
         const json = await resp.json();
         setHistory(json.data?.sessions || []);
+      } else if (resp.status === 401) {
+        // Session expired, redirect to login
+        const errorData = await resp.json().catch(() => ({}));
+        if (errorData?.code === 'SESSION_INVALID' || errorData?.code === 'NO_SESSION') {
+          showToast(
+            language === 'th' 
+              ? 'Session หมดอายุ กรุณาออกจากระบบและเข้าสู่ระบบใหม่' 
+              : 'Session expired. Please log out and log in again.',
+            'error',
+            5000
+          );
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 2000);
+        }
       }
     } catch (e) {
       console.error('Load history failed:', e);
@@ -319,15 +334,28 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         const json = await resp.json();
         console.log('QC Start response:', json);
         setQcStarted(true);
-        alert(language === 'th' ? 'เริ่ม QC แล้ว' : 'QC Started');
+        showToast(language === 'th' ? 'เริ่ม QC แล้ว' : 'QC Started', 'success');
       } else {
         const errorData = await resp.json().catch(() => ({}));
         console.error('QC Start failed:', errorData);
-        alert(`Failed to start QC: ${errorData?.error || resp.status}`);
+        
+        // Handle session errors
+        if (resp.status === 401 || errorData?.code === 'SESSION_INVALID' || errorData?.code === 'NO_SESSION') {
+          const errorMsg = language === 'th' 
+            ? 'Session หมดอายุหรือไม่ถูกต้อง กรุณาออกจากระบบและเข้าสู่ระบบใหม่' 
+            : 'Session expired or invalid. Please log out and log in again.';
+          showToast(errorMsg, 'error', 5000);
+          // Redirect to login after 2 seconds
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 2000);
+        } else {
+          showToast(`Failed to start QC: ${errorData?.error || resp.status}`, 'error', 4000);
+        }
       }
     } catch (e) {
       console.error('QC Start error:', e);
-      alert(`Error: ${e.message}`);
+      showToast(`Error: ${e.message}`, 'error', 4000);
     } finally {
       setStartingQc(false);
     }
@@ -544,7 +572,20 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       } else {
         const json = await resp.json().catch(() => ({}));
         console.log('Error Response:', json);
-        showToast(`Save failed: ${json?.error || resp.status}`, 'error', 4000);
+        
+        // Handle session errors
+        if (resp.status === 401 || json?.code === 'SESSION_INVALID' || json?.code === 'NO_SESSION' || json?.code === 'AUTH_EXCEPTION') {
+          const errorMsg = language === 'th' 
+            ? 'Session หมดอายุหรือไม่ถูกต้อง กรุณาออกจากระบบและเข้าสู่ระบบใหม่' 
+            : 'Session expired or invalid. Please log out and log in again.';
+          showToast(errorMsg, 'error', 5000);
+          // Redirect to login after 2 seconds
+          setTimeout(() => {
+            window.location.href = '/login';
+          }, 2000);
+        } else {
+          showToast(`Save failed: ${json?.error || resp.status}`, 'error', 4000);
+        }
       }
     } catch (e) {
       console.error('=== QC Form Error ===');
