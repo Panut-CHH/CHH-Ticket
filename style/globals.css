@@ -9,6 +9,16 @@
 
 @config "../tailwind.config.js";
 
+/* Ensure spin animation works */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Line clamp utility */
 .line-clamp-2 {
   display: -webkit-box;

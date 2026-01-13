@@ -17,8 +17,16 @@ export default function page() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-8 h-8 border-4 border-primary/30 border-top-primary rounded-full animate-spin" />
+      <div className="flex items-center justify-center min-h-screen bg-white dark:bg-slate-900">
+        <div className="flex flex-col items-center gap-4">
+          <div 
+            className="w-8 h-8 border-4 border-emerald-300 dark:border-emerald-600 border-t-emerald-600 dark:border-t-emerald-400 rounded-full animate-spin"
+            style={{
+              transformOrigin: 'center'
+            }}
+          />
+          <p className="text-gray-600 dark:text-gray-400">กำลังโหลด...</p>
+        </div>
       </div>
     );
   }

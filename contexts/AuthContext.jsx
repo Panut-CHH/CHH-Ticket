@@ -25,25 +25,90 @@ export const AuthProvider = ({ children }) => {
   // Initialize Supabase session listener and load current session
   useEffect(() => {
     let isMounted = true;
+    let timeoutId = null;
 
     const initSession = async () => {
       try {
+        // Set a timeout to prevent infinite loading (10 seconds)
+        timeoutId = setTimeout(() => {
+          if (isMounted) {
+            console.warn('Session initialization timeout, setting loading to false');
+            setIsLoading(false);
+            // Try to load from localStorage as fallback
+            const savedUserData = localStorage.getItem('userData');
+            if (savedUserData) {
+              try {
+                const userData = JSON.parse(savedUserData);
+                setUser(userData);
+                setIsAuthenticated(true);
+              } catch (e) {
+                console.error('Failed to parse saved user data:', e);
+                setUser(null);
+                setIsAuthenticated(false);
+              }
+            } else {
+              setUser(null);
+              setIsAuthenticated(false);
+            }
+          }
+        }, 10000); // 10 second timeout
+
         // Load impersonation state from localStorage first
         const savedImpersonation = localStorage.getItem('impersonationState');
         let shouldRestoreImpersonation = false;
         let savedOriginalUser = null;
         
         if (savedImpersonation) {
-          const parsed = JSON.parse(savedImpersonation);
-          if (parsed.originalUser && parsed.isImpersonating) {
-            savedOriginalUser = parsed.originalUser;
-            shouldRestoreImpersonation = true;
-            setOriginalUser(savedOriginalUser);
-            setIsImpersonating(true);
+          try {
+            const parsed = JSON.parse(savedImpersonation);
+            if (parsed.originalUser && parsed.isImpersonating) {
+              savedOriginalUser = parsed.originalUser;
+              shouldRestoreImpersonation = true;
+              setOriginalUser(savedOriginalUser);
+              setIsImpersonating(true);
+            }
+          } catch (e) {
+            console.warn('Failed to parse impersonation state:', e);
           }
         }
 
-        const { data, error } = await supabase.auth.getSession();
+        // Wrap getSession in Promise.race with timeout
+        const sessionPromise = supabase.auth.getSession();
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Session timeout')), 8000)
+        );
+
+        let sessionResult;
+        try {
+          sessionResult = await Promise.race([sessionPromise, timeoutPromise]);
+        } catch (timeoutError) {
+          console.warn('Session fetch timeout, using fallback');
+          // Clear timeout since we're handling it
+          if (timeoutId) clearTimeout(timeoutId);
+          
+          // Fallback to localStorage
+          const savedUserData = localStorage.getItem('userData');
+          if (savedUserData && isMounted) {
+            try {
+              const userData = JSON.parse(savedUserData);
+              setUser(userData);
+              setIsAuthenticated(true);
+            } catch (e) {
+              setUser(null);
+              setIsAuthenticated(false);
+            }
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+          setIsLoading(false);
+          return;
+        }
+
+        // Clear timeout since we got a result
+        if (timeoutId) clearTimeout(timeoutId);
+
+        const { data, error } = sessionResult;
         if (error) {
           // Handle specific refresh token errors silently
           if (error.message?.includes('refresh_token_not_found') || 
@@ -53,6 +118,7 @@ export const AuthProvider = ({ children }) => {
               console.warn('Refresh token invalid, clearing session data');
             }
             clearAuthData();
+            if (isMounted) setIsLoading(false);
             return;
           }
           // Only log non-refresh-token errors
@@ -85,8 +151,12 @@ export const AuthProvider = ({ children }) => {
             // Keep the impersonated user data from localStorage
             const savedUserData = localStorage.getItem('userData');
             if (savedUserData) {
-              const impersonatedUser = JSON.parse(savedUserData);
-              setUser(impersonatedUser);
+              try {
+                const impersonatedUser = JSON.parse(savedUserData);
+                setUser(impersonatedUser);
+              } catch (e) {
+                setUser(profile);
+              }
             } else {
               setUser(profile);
             }
@@ -102,7 +172,27 @@ export const AuthProvider = ({ children }) => {
           setIsAuthenticated(false);
           localStorage.removeItem("userData");
         }
+      } catch (error) {
+        console.error('Error in initSession:', error);
+        // Fallback to localStorage on any error
+        if (isMounted) {
+          const savedUserData = localStorage.getItem('userData');
+          if (savedUserData) {
+            try {
+              const userData = JSON.parse(savedUserData);
+              setUser(userData);
+              setIsAuthenticated(true);
+            } catch (e) {
+              setUser(null);
+              setIsAuthenticated(false);
+            }
+          } else {
+            setUser(null);
+            setIsAuthenticated(false);
+          }
+        }
       } finally {
+        if (timeoutId) clearTimeout(timeoutId);
         if (isMounted) setIsLoading(false);
       }
     };
@@ -242,7 +332,9 @@ export const AuthProvider = ({ children }) => {
     
     return () => {
       isMounted = false;
-      authListener.subscription.unsubscribe();
+      if (authListener?.subscription) {
+        authListener.subscription.unsubscribe();
+      }
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       window.removeEventListener('focus', handlePageFocus);
     };
