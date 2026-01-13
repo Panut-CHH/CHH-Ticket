@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -55,18 +55,64 @@ export default function ProductionPage() {
   const [activeTab, setActiveTab] = useState(initialTab); // 'completed' or 'incomplete'
 
   // Search / Filter / Sort state
+  // Initialize from URL parameters to persist filters when navigating back
   const [searchTerm, setSearchTerm] = useState("");
   const [showFilter, setShowFilter] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState(new Set());
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
   const [selectedStoreStatuses, setSelectedStoreStatuses] = useState(new Set());
-  const [selectedStation, setSelectedStation] = useState(""); // Filter by station name
-  const [selectedTechnician, setSelectedTechnician] = useState(""); // Filter by technician name
-  const [selectedProject, setSelectedProject] = useState(""); // Filter by project name
+  const [selectedStation, setSelectedStation] = useState(searchParams.get('station') || ""); // Filter by station name
+  const [selectedTechnician, setSelectedTechnician] = useState(searchParams.get('technician') || ""); // Filter by technician name
+  const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || ""); // Filter by project name
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
   const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track which project groups are expanded
+
+  // Function to update URL params when filters change
+  const updateURLParams = (updates) => {
+    isUpdatingFromURL.current = true; // Mark that we're updating URL
+    const params = new URLSearchParams(searchParams.toString());
+    
+    // Update tab
+    if (updates.tab !== undefined) {
+      if (updates.tab) {
+        params.set('tab', updates.tab);
+      } else {
+        params.delete('tab');
+      }
+    }
+    
+    // Update station filter
+    if (updates.station !== undefined) {
+      if (updates.station) {
+        params.set('station', updates.station);
+      } else {
+        params.delete('station');
+      }
+    }
+    
+    // Update technician filter
+    if (updates.technician !== undefined) {
+      if (updates.technician) {
+        params.set('technician', updates.technician);
+      } else {
+        params.delete('technician');
+      }
+    }
+    
+    // Update project filter
+    if (updates.project !== undefined) {
+      if (updates.project) {
+        params.set('project', updates.project);
+      } else {
+        params.delete('project');
+      }
+    }
+    
+    // Update URL without reloading page
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+  };
 
   // Function to load batches
   const loadBatchData = async () => {
@@ -403,11 +449,37 @@ export default function ProductionPage() {
     }
   };
 
-  // Sync activeTab with URL parameter changes
+  // Track if we're updating from URL to prevent loops
+  const isUpdatingFromURL = useRef(false);
+  
+  // Sync activeTab and filters with URL parameter changes
   useEffect(() => {
+    // Only sync if we're not currently updating URL (to prevent loops)
+    if (isUpdatingFromURL.current) {
+      isUpdatingFromURL.current = false;
+      return;
+    }
+    
     const tabParam = searchParams.get('tab');
     if (tabParam === 'completed' || tabParam === 'incomplete') {
-      setActiveTab(tabParam);
+      if (tabParam !== activeTab) {
+        setActiveTab(tabParam);
+      }
+    }
+    
+    // Sync filters from URL params (only update if different to avoid loops)
+    const stationParam = searchParams.get('station') || '';
+    const technicianParam = searchParams.get('technician') || '';
+    const projectParam = searchParams.get('project') || '';
+    
+    if (stationParam !== selectedStation) {
+      setSelectedStation(stationParam);
+    }
+    if (technicianParam !== selectedTechnician) {
+      setSelectedTechnician(technicianParam);
+    }
+    if (projectParam !== selectedProject) {
+      setSelectedProject(projectParam);
     }
   }, [searchParams]);
 
@@ -984,7 +1056,7 @@ export default function ProductionPage() {
                 <button
                   onClick={() => {
                     setActiveTab('incomplete');
-                    router.push(`${window.location.pathname}?tab=incomplete`, { scroll: false });
+                    updateURLParams({ tab: 'incomplete' });
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -1012,7 +1084,7 @@ export default function ProductionPage() {
                 <button
                   onClick={() => {
                     setActiveTab('completed');
-                    router.push(`${window.location.pathname}?tab=completed`, { scroll: false });
+                    updateURLParams({ tab: 'completed' });
                   }}
                   onContextMenu={(e) => {
                     e.preventDefault();
@@ -1065,7 +1137,11 @@ export default function ProductionPage() {
                   </div>
                   <select
                     value={selectedStation}
-                    onChange={(e) => setSelectedStation(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSelectedStation(value);
+                      updateURLParams({ station: value });
+                    }}
                     title={availableStations.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อสถานีทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all stations') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedStation 
@@ -1088,6 +1164,7 @@ export default function ProductionPage() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedStation("");
+                        updateURLParams({ station: "" });
                       }}
                       className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
                     >
@@ -1108,7 +1185,11 @@ export default function ProductionPage() {
                   </div>
                   <select
                     value={selectedTechnician}
-                    onChange={(e) => setSelectedTechnician(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSelectedTechnician(value);
+                      updateURLParams({ technician: value });
+                    }}
                     title={availableTechnicians.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อช่างทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all technicians') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedTechnician 
@@ -1131,6 +1212,7 @@ export default function ProductionPage() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedTechnician("");
+                        updateURLParams({ technician: "" });
                       }}
                       className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
                     >
@@ -1151,7 +1233,11 @@ export default function ProductionPage() {
                   </div>
                   <select
                     value={selectedProject}
-                    onChange={(e) => setSelectedProject(e.target.value)}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setSelectedProject(value);
+                      updateURLParams({ project: value });
+                    }}
                     title={availableProjects.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อโครงการทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all projects') : ''}
                     className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
                       selectedProject 
@@ -1174,6 +1260,7 @@ export default function ProductionPage() {
                       onClick={(e) => {
                         e.stopPropagation();
                         setSelectedProject("");
+                        updateURLParams({ project: "" });
                       }}
                       className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
                     >
@@ -1243,6 +1330,8 @@ export default function ProductionPage() {
                       setSelectedPriorities(new Set());
                       setSelectedStoreStatuses(new Set());
                       setHasDueDateOnly(false);
+                      // Clear URL params for filters
+                      updateURLParams({ station: "", technician: "", project: "" });
                     }}
                     className="col-span-2 sm:col-span-1 lg:col-span-1 px-3 sm:px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm"
                   >
