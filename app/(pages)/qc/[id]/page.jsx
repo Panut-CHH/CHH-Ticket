@@ -102,8 +102,13 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
     try { localStorage.setItem(storageKey, JSON.stringify(draft)); } catch {}
   }, [checklistItems, storageKey]);
 
-  // Load ticket data and history
+  // Load ticket data and history (only after user is authenticated)
   useEffect(() => {
+    // Wait for user to be available before loading data
+    if (!user) {
+      return;
+    }
+    
     // Only load if id is valid (not empty)
     if (id && id.trim() !== '') {
       loadTicketData();
@@ -113,7 +118,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       setTicketLoading(false);
       setTicketNotFound(true);
     }
-  }, [id]);
+  }, [id, user]);
 
   // Presence channel for soft-lock teamwork guard
   useEffect(() => {

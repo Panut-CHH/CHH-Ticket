@@ -211,6 +211,12 @@ export const AuthProvider = ({ children }) => {
         }
       }
       
+      // Handle SIGNED_OUT event which might be triggered by invalid refresh token
+      if (event === 'SIGNED_OUT' && !session) {
+        // This might be triggered by an invalid refresh token, clear local data
+        clearAuthData();
+      }
+      
       // Handle token refresh errors
       if (event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
         // Check if session is invalid due to refresh token error

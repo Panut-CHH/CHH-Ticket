@@ -11,6 +11,7 @@ import LanguageToggle from "@/components/LanguageToggle";
 import {
   sanitizeInput,
   isValidEmail,
+  getEmailTypoSuggestion,
   checkPasswordStrength,
   checkRateLimit,
   recordLoginAttempt,
@@ -69,6 +70,14 @@ export default function UILogin() {
       newErrors.email = t('required', language) + " " + t('email', language).toLowerCase();
     } else if (!isValidEmail(sanitizedEmail)) {
       newErrors.email = t('invalidEmail', language);
+    } else {
+      // Check for common email typos and show suggestion
+      const typoSuggestion = getEmailTypoSuggestion(sanitizedEmail);
+      if (typoSuggestion) {
+        newErrors.email = language === 'th' 
+          ? `อีเมลที่คุณพิมพ์อาจจะมีข้อผิดพลาด ลองตรวจสอบอีกครั้ง (อาจจะเป็น ${typoSuggestion})`
+          : `The email you entered may have a typo. Please check again (maybe ${typoSuggestion})`;
+      }
     }
 
     if (!password || password.trim().length === 0) {

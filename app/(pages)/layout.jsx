@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database, Warehouse, FileText } from "lucide-react";
+import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database, FileText } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -19,7 +19,6 @@ const navItems = [
   { href: "/tickets", label: "ticket", icon: <Ticket className="w-4 h-4" /> },
   { href: "/production", label: "production", icon: <Factory className="w-4 h-4" /> },
   { href: "/qc", label: "qc", icon: <ClipboardCheck className="w-4 h-4" /> },
-  { href: "/store", label: "store", icon: <Warehouse className="w-4 h-4" /> },
   { href: "/log", label: "log", icon: <History className="w-4 h-4" /> },
   { href: "/settings", label: "settings", icon: <Settings className="w-4 h-4" /> },
   { href: "/report", label: "report", icon: <FileText className="w-4 h-4" /> },

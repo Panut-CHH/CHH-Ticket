@@ -6,7 +6,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@heroui/react";
-import { LogIn, User, Shield, Home, Ticket, Settings, ClipboardCheck, Factory, History, FolderOpen, Warehouse } from "lucide-react";
+import { LogIn, User, Shield, Home, Ticket, Settings, ClipboardCheck, Factory, History, FolderOpen } from "lucide-react";
 import UserProfile from "@/components/UserProfile";
 import LanguageToggle from "@/components/LanguageToggle";
 import NotificationBell from "@/components/NotificationBell";
@@ -25,7 +25,6 @@ export default function UIIndex() {
     { path: "/tickets", label: "ticket", description: "viewTickets", icon: Ticket },
     { path: "/production", label: "production", description: "manageProduction", icon: Factory },
     { path: "/qc", label: "qc", description: "qualityControl", icon: ClipboardCheck },
-    { path: "/store", label: "store", description: "storeManagementDesc", icon: Warehouse },
     { path: "/log", label: "log", description: "activityHistory", icon: History },
     { path: "/settings", label: "settings", description: "systemSettings", icon: Settings },
   ];

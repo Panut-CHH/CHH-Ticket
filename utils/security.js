@@ -86,8 +86,75 @@ export const sanitizeInput = (input) => {
  * @returns {boolean} - True if valid email format
  */
 export const isValidEmail = (email) => {
+  if (!email || typeof email !== 'string') {
+    return false;
+  }
+  
+  // Basic email format validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  return emailRegex.test(email);
+  if (!emailRegex.test(email)) {
+    return false;
+  }
+  
+  // Check for common typos in popular email domains
+  const domain = email.split('@')[1]?.toLowerCase() || '';
+  const commonTypos = {
+    'gamil.com': 'gmail.com',
+    'gmial.com': 'gmail.com',
+    'gmai.com': 'gmail.com',
+    'gmail.co': 'gmail.com',
+    'gmail.cmo': 'gmail.com',
+    'yahooo.com': 'yahoo.com',
+    'yaho.com': 'yahoo.com',
+    'yahoo.co': 'yahoo.com',
+    'hotmial.com': 'hotmail.com',
+    'hotmai.com': 'hotmail.com',
+    'hotmail.co': 'hotmail.com',
+    'outlok.com': 'outlook.com',
+    'outloo.com': 'outlook.com',
+    'outlook.co': 'outlook.com',
+  };
+  
+  // Note: We still return true even if there's a typo
+  // because we can't be 100% sure (user might have custom domain)
+  // The validation will pass, but the login will fail if the email doesn't exist
+  return true;
+};
+
+/**
+ * Check if email domain has common typos
+ * @param {string} email - Email to check
+ * @returns {string|null} - Suggested correction or null
+ */
+export const getEmailTypoSuggestion = (email) => {
+  if (!email || typeof email !== 'string') {
+    return null;
+  }
+  
+  const domain = email.split('@')[1]?.toLowerCase() || '';
+  const commonTypos = {
+    'gamil.com': 'gmail.com',
+    'gmial.com': 'gmail.com',
+    'gmai.com': 'gmail.com',
+    'gmail.co': 'gmail.com',
+    'gmail.cmo': 'gmail.com',
+    'yahooo.com': 'yahoo.com',
+    'yaho.com': 'yahoo.com',
+    'yahoo.co': 'yahoo.com',
+    'hotmial.com': 'hotmail.com',
+    'hotmai.com': 'hotmail.com',
+    'hotmail.co': 'hotmail.com',
+    'outlok.com': 'outlook.com',
+    'outloo.com': 'outlook.com',
+    'outlook.co': 'outlook.com',
+  };
+  
+  if (commonTypos[domain]) {
+    const localPart = email.split('@')[0];
+    return `${localPart}@${commonTypos[domain]}`;
+  }
+  
+  return null;
 };
 
 /**

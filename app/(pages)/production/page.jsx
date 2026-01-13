@@ -11,6 +11,11 @@ import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertC
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions, hasPageAccess } from "@/utils/rolePermissions";
 
+const STORE_STATUSES = [
+  { value: 'เบิกของแล้ว', label: 'itemsWithdrawn', color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400', icon: CheckCircle2 },
+  { value: 'รอของ', label: 'waitingForItems', color: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400', icon: XCircle },
+];
+
 export default function ProductionPage() {
   const { user } = useAuth();
   const { language } = useLanguage();
@@ -35,6 +40,7 @@ export default function ProductionPage() {
   const hasPackingRole = hasRole('Packing');
   const hasStorageRole = hasRole('Storage');
   const hasViewerRole = hasRole('Viewer');
+  const canUpdateStoreStatus = isAdmin || hasRole('Storage') || hasRole('SuperAdmin');
 
   // Load ERP tickets and merge with DB station assignments
   const [tickets, setTickets] = useState([]);
@@ -68,6 +74,7 @@ export default function ProductionPage() {
   const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
   const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track which project groups are expanded
+  const [updatingStatus, setUpdatingStatus] = useState(new Set());
 
   // Function to update URL params when filters change
   const updateURLParams = (updates) => {
@@ -602,6 +609,61 @@ export default function ProductionPage() {
     }
   }
 
+  const getStatusDisplay = (status) => {
+    if (!status) return null;
+    const statusObj = STORE_STATUSES.find(s => s.value === status);
+    if (!statusObj) return null;
+    const IconComponent = statusObj.icon;
+    return (
+      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium shadow-sm ${statusObj.color}`}>
+        <IconComponent className="w-3.5 h-3.5" />
+        {t(statusObj.label, language)}
+      </span>
+    );
+  };
+
+  const updateStoreStatus = async (ticketId, newStatus) => {
+    if (!canUpdateStoreStatus) {
+      alert(language === 'th' ? 'คุณไม่มีสิทธิ์ในการอัปเดตสถานะ' : 'You do not have permission to update status');
+      return;
+    }
+
+    setUpdatingStatus(prev => new Set(prev).add(ticketId));
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeader = session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
+
+      const response = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}/store-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeader,
+        },
+        body: JSON.stringify({ store_status: newStatus }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to update store status');
+      }
+
+      await loadTickets();
+    } catch (error) {
+      console.error('Error updating store status:', error);
+      alert(language === 'th' 
+        ? `ไม่สามารถอัปเดตสถานะได้: ${error.message}` 
+        : `Failed to update status: ${error.message}`);
+    } finally {
+      setUpdatingStatus(prev => {
+        const next = new Set(prev);
+        next.delete(ticketId);
+        return next;
+      });
+    }
+  };
+
   const myTickets = useMemo(() => {
     if (!myName) return [];
     let filtered = [];
@@ -933,12 +995,11 @@ export default function ProductionPage() {
         case 'storeStatus': {
           // Create store status rank for sorting
           const storeStatusRank = (s) => {
-            if (!s || s === null) return 4; // ไม่มีสถานะ - ไว้ท้ายสุด
-            const status = String(s);
-            if (status === 'เบิกของแล้ว') return 0;
-            if (status === 'เบิกไม่ครบ') return 1;
-            if (status === 'รอของ') return 2;
-            return 3; // Unknown store status
+          if (!s || s === null) return 3; // ไม่มีสถานะ - ไว้ท้ายสุด
+          const status = String(s);
+          if (status === 'เบิกของแล้ว') return 0;
+          if (status === 'รอของ') return 1;
+          return 2; // Unknown store status
           };
           av = storeStatusRank(a.storeStatus);
           bv = storeStatusRank(b.storeStatus);
@@ -1443,6 +1504,7 @@ export default function ProductionPage() {
                 const firstPendingStep = roadmap.find(step => step.status === 'pending');
                 const pendingStation = firstPendingStep?.step || null;
                 const pendingTechnician = firstPendingStep?.technician || null;
+                const isUpdatingStatus = updatingStatus.has(ticket.id);
                 
                 return (
                   <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
@@ -1532,22 +1594,7 @@ export default function ProductionPage() {
                             </span>
                           )}
                           {/* Store status pill */}
-                          {ticket.storeStatus && (
-                            <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs font-medium ${
-                              ticket.storeStatus === 'เบิกของแล้ว' 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400'
-                                : ticket.storeStatus === 'เบิกไม่ครบ'
-                                ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400'
-                                : 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
-                            }`}>
-                              {ticket.storeStatus === 'เบิกของแล้ว' 
-                                ? t('itemsWithdrawn', language)
-                                : ticket.storeStatus === 'เบิกไม่ครบ'
-                                ? t('incompleteWithdrawal', language)
-                                : t('waitingForItems', language)
-                              }
-                            </span>
-                          )}
+                          {getStatusDisplay(ticket.storeStatus)}
                         </div>
                         
                         {/* Batch Details */}
@@ -1571,7 +1618,7 @@ export default function ProductionPage() {
                           </div>
                         )}
                       </div>
-                      <div className="shrink-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full md:w-auto">
+                      <div className="shrink-0 flex flex-col items-stretch gap-2 w-full md:w-auto">
                         <button
                           onClick={() => {
                             if (canViewProductionDetail) {
@@ -1598,6 +1645,62 @@ export default function ProductionPage() {
                         >
                           {t('detailsMore', language)}
                         </button>
+                        {canUpdateStoreStatus && (
+                          <div className="flex flex-wrap gap-1.5 w-full">
+                            {STORE_STATUSES.map((statusOption) => {
+                              const IconComponent = statusOption.icon;
+                              const isSelected = ticket.storeStatus === statusOption.value;
+
+                              return (
+                                <button
+                                  key={statusOption.value}
+                                  onClick={() => {
+                                    if (!isUpdatingStatus) {
+                                      const newStatus = isSelected ? null : statusOption.value;
+                                      updateStoreStatus(ticket.id, newStatus);
+                                    }
+                                  }}
+                                  disabled={isUpdatingStatus}
+                                  className={`
+                                    flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
+                                    ${isSelected
+                                      ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
+                                      : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+                                    }
+                                    ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
+                                  `}
+                                className={`
+                                    flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
+                                    ${isSelected
+                                      ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
+                                      : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+                                    }
+                                    ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
+                                  `}
+                                >
+                                  <span className="flex items-center gap-1.5">
+                                    <IconComponent className="w-4 h-4" />
+                                    {t(statusOption.label, language)}
+                                  </span>
+                                  {isSelected && <X className="w-3.5 h-3.5 opacity-75" />}
+                                </button>
+                              );
+                            })}
+                            {ticket.storeStatus && (
+                              <button
+                                onClick={() => !isUpdatingStatus && updateStoreStatus(ticket.id, null)}
+                                disabled={isUpdatingStatus}
+                                className={`
+                                  px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600 border border-transparent hover:border-gray-300 dark:hover:border-slate-500
+                                  ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
+                                `}
+                              >
+                                <XCircle className="w-4 h-4 inline mr-1.5" />
+                                {language === 'th' ? 'ล้างสถานะ' : 'Clear'}
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

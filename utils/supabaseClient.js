@@ -27,16 +27,18 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     flowType: 'pkce',
     // Enhanced error handling for refresh token failures
     onError: (event, session, error) => {
-      // Handle refresh token errors silently
+      // Handle refresh token errors and 400 errors silently
       if (error && (
         error.message?.includes('refresh_token_not_found') ||
         error.message?.includes('Invalid Refresh Token') ||
         error.message?.includes('Refresh Token Not Found') ||
+        error.message?.includes('Bad Request') ||
+        error.status === 400 ||
         error.name === 'AuthApiError'
       )) {
         // Only log in development mode
         if (process.env.NODE_ENV === 'development') {
-          console.warn('Supabase refresh token error (handled):', error.message);
+          console.warn('Supabase auth error (handled):', error.message || error.status);
         }
         clearAuthData();
         return;
@@ -64,29 +66,34 @@ if (typeof window !== 'undefined') {
   const originalUnhandledRejection = window.onunhandledrejection;
   window.addEventListener('unhandledrejection', (event) => {
     const error = event.reason;
+    const errorUrl = event.reason?.url || '';
     
-    // Check if it's a Supabase auth error related to refresh tokens
+    // Check if it's a Supabase auth error (400 Bad Request from auth endpoint)
+    const isSupabaseAuthError = errorUrl.includes('/auth/v1/token') || 
+                                 errorUrl.includes('/auth/v1/refresh');
+    
+    // Check if it's a Supabase auth error related to refresh tokens or 400 errors
     if (error && (
+      isSupabaseAuthError ||
       error.message?.includes('refresh_token_not_found') ||
       error.message?.includes('Invalid Refresh Token') ||
       error.message?.includes('Refresh Token Not Found') ||
-      (error.name === 'AuthApiError' && error.message?.includes('refresh'))
+      error.message?.includes('Bad Request') ||
+      error.status === 400 ||
+      (error.name === 'AuthApiError' && (error.message?.includes('refresh') || error.message?.includes('token')))
     )) {
       // Prevent the error from showing in console
       event.preventDefault();
       
       // Only log in development mode
       if (process.env.NODE_ENV === 'development') {
-        console.warn('Handled Supabase refresh token error:', error.message);
+        console.warn('Handled Supabase auth error (400/refresh token):', error.message || error.status || errorUrl);
       }
       
       // Clear invalid auth data
       clearAuthData();
       
-      // Optionally trigger a session check
-      supabase.auth.getSession().catch(() => {
-        // Ignore errors from getSession after clearing data
-      });
+      // Don't trigger getSession as it might cause infinite loop
       
       return;
     }

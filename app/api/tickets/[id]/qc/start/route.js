@@ -134,12 +134,18 @@ export async function POST(request, context) {
         currentUser = session.user;
         
         if (currentUser) {
-          const { data: userRecord } = await supabaseServer
-            .from('users')
-            .select('name, email')
-            .eq('id', currentUser.id)
-            .maybeSingle();
-          userName = userRecord?.name || userRecord?.email || currentUser.email || null;
+          try {
+            const { data: userRecord } = await supabaseServer
+              .from('users')
+              .select('name, email')
+              .eq('id', currentUser.id)
+              .maybeSingle();
+            userName = userRecord?.name || userRecord?.email || currentUser.user_metadata?.full_name || currentUser.email || null;
+          } catch (userRecordError) {
+            // ถ้าดึงข้อมูลจาก users table ไม่ได้ ให้ใช้ข้อมูลจาก session
+            console.warn('Failed to fetch user record from users table, using session data:', userRecordError?.message);
+            userName = currentUser.user_metadata?.full_name || currentUser.email || null;
+          }
         }
       } catch (e) {
         console.error('Failed to get current user for log:', e?.message);

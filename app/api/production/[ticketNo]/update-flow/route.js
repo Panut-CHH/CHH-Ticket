@@ -28,7 +28,7 @@ const supabaseAdmin = createClient(
  */
 export async function POST(request, { params }) {
   try {
-    const { ticketNo } = params;
+    const { ticketNo } = await params;
     const body = await request.json();
     const { action, station_id, step_order, user_id } = body;
 

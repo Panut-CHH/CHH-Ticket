@@ -235,13 +235,19 @@ export async function POST(request, context) {
       
       if (currentUser) {
         inspectorId = currentUser.id;
-        // ดึงชื่อจากตาราง users
-        const { data: userRecord } = await admin
-          .from('users')
-          .select('name, email')
-          .eq('id', currentUser.id)
-          .maybeSingle();
-        inspectorName = userRecord?.name || userRecord?.email || currentUser.email || null;
+        // ดึงชื่อจากตาราง users (fallback ไปที่ user_metadata หรือ email ถ้าไม่มีใน users table)
+        try {
+          const { data: userRecord } = await admin
+            .from('users')
+            .select('name, email')
+            .eq('id', currentUser.id)
+            .maybeSingle();
+          inspectorName = userRecord?.name || userRecord?.email || currentUser.user_metadata?.full_name || currentUser.email || null;
+        } catch (userRecordError) {
+          // ถ้าดึงข้อมูลจาก users table ไม่ได้ ให้ใช้ข้อมูลจาก session
+          console.warn('Failed to fetch user record from users table, using session data:', userRecordError?.message);
+          inspectorName = currentUser.user_metadata?.full_name || currentUser.email || null;
+        }
       }
     } catch (e) {
       console.error('Failed to get current user:', e?.message);
