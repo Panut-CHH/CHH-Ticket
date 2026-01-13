@@ -336,7 +336,8 @@ const STATION_PRESETS = {
     'QC',
     'สี',
     'QC',
-    'Packing'
+    'Packing',
+    'QC'
   ],
   'ประตู': [
     'ประกอบโครง',
@@ -347,7 +348,8 @@ const STATION_PRESETS = {
     'QC',
     'สี',
     'QC',
-    'Packing'
+    'Packing',
+    'QC'
   ],
   'ชุดชาร์ป': [
     'ประกอบโครง',
@@ -360,7 +362,8 @@ const STATION_PRESETS = {
     'QC',
     'ประกอบชุดชาร์ป',
     'QC',
-    'Packing'
+    'Packing',
+    'QC'
   ]
 };
 
