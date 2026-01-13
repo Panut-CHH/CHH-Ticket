@@ -1160,6 +1160,77 @@ export default function ProductionDetailPage() {
 
   const myName = (user?.name || user?.email || "").trim();
   const ticketId = `${params?.id || ""}`;
+  
+  // Store filter params when entering detail page (for back navigation)
+  useEffect(() => {
+    // Get filter params from referrer URL
+    const referrer = document.referrer;
+    if (referrer && referrer.includes('/production')) {
+      try {
+        const referrerUrl = new URL(referrer);
+        const filterParams = {
+          tab: referrerUrl.searchParams.get('tab') || '',
+          station: referrerUrl.searchParams.get('station') || '',
+          technician: referrerUrl.searchParams.get('technician') || '',
+          project: referrerUrl.searchParams.get('project') || ''
+        };
+        // Store in sessionStorage for back navigation
+        sessionStorage.setItem('productionFilters', JSON.stringify(filterParams));
+      } catch (e) {
+        console.warn('Failed to parse referrer URL:', e);
+      }
+    } else {
+      // If no referrer or not from production page, try to get from current URL if it has filter params
+      // This handles cases where user navigates directly to detail page with params
+      try {
+        const currentUrl = new URL(window.location.href);
+        const filterParams = {
+          tab: currentUrl.searchParams.get('tab') || '',
+          station: currentUrl.searchParams.get('station') || '',
+          technician: currentUrl.searchParams.get('technician') || '',
+          project: currentUrl.searchParams.get('project') || ''
+        };
+        // Only store if there are actual filter params
+        if (filterParams.tab || filterParams.station || filterParams.technician || filterParams.project) {
+          sessionStorage.setItem('productionFilters', JSON.stringify(filterParams));
+        }
+      } catch (e) {
+        console.warn('Failed to parse current URL:', e);
+      }
+    }
+  }, []);
+  
+  // Function to navigate back to production page with filters
+  const handleBackToProduction = () => {
+    // Try to get filters from sessionStorage
+    const savedFilters = sessionStorage.getItem('productionFilters');
+    if (savedFilters) {
+      try {
+        const filters = JSON.parse(savedFilters);
+        const params = new URLSearchParams();
+        
+        // Add filter params
+        if (filters.tab) params.set('tab', filters.tab);
+        if (filters.station) params.set('station', filters.station);
+        if (filters.technician) params.set('technician', filters.technician);
+        if (filters.project) params.set('project', filters.project);
+        
+        const queryString = params.toString();
+        const url = queryString ? `/production?${queryString}` : '/production';
+        router.push(url);
+        return;
+      } catch (e) {
+        console.warn('Failed to parse saved filters:', e);
+      }
+    }
+    
+    // Fallback: try router.back() first, if that doesn't work, go to /production
+    if (window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/production');
+    }
+  };
 
   const [ticket, setTicket] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -2193,10 +2264,28 @@ export default function ProductionDetailPage() {
         <div className="min-h-screen container-safe px-2 sm:px-4 md:px-6 lg:px-8 py-4 md:py-6 lg:py-8">
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <button 
-            onClick={() => router.push('/production')} 
+            onClick={handleBackToProduction} 
             onContextMenu={(e) => {
               e.preventDefault();
-              window.open('/production', '_blank');
+              // Get saved filters for new tab
+              const savedFilters = sessionStorage.getItem('productionFilters');
+              if (savedFilters) {
+                try {
+                  const filters = JSON.parse(savedFilters);
+                  const params = new URLSearchParams();
+                  if (filters.tab) params.set('tab', filters.tab);
+                  if (filters.station) params.set('station', filters.station);
+                  if (filters.technician) params.set('technician', filters.technician);
+                  if (filters.project) params.set('project', filters.project);
+                  const queryString = params.toString();
+                  const url = queryString ? `/production?${queryString}` : '/production';
+                  window.open(url, '_blank');
+                } catch (e) {
+                  window.open('/production', '_blank');
+                }
+              } else {
+                window.open('/production', '_blank');
+              }
             }}
             className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 text-sm text-gray-900 dark:text-gray-100"
           >
