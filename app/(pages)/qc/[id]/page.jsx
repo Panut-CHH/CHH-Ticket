@@ -47,6 +47,9 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       { id: 13, name: "ระยะเจาะตรงตามแบบ", pass: null, qty: "", reason: "" },
       { id: 14, name: "คุณภาพหลังการเจาะ", pass: null, qty: "", reason: "" },
       { id: 15, name: "รูปแบบการเปิดถูกต้องตามแบบ", pass: null, qty: "", reason: "" }
+    ],
+    quality: [
+      { id: 17, name: "ตรวจคุณภาพ", pass: null, qty: "", reason: "" }
     ]
   });
 
@@ -499,6 +502,16 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               };
             }
             return acc;
+          }, {}),
+          'คุณภาพ (QA)': checklistItems.quality.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
           }, {})
         },
         // เพิ่ม passQuantity และ failQuantity เพื่ออัปเดต quantity
@@ -601,6 +614,16 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               };
             }
             return acc;
+          }, {}),
+          'คุณภาพ (QA)': checklistItems.quality.reduce((acc, item) => {
+            if (item.pass !== null) {
+              acc[item.name] = {
+                pass: item.pass,
+                qty: item.qty,
+                reason: item.reason
+              };
+            }
+            return acc;
           }, {})
         }
       };
@@ -660,6 +683,9 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
           { id: 13, name: "ระยะเจาะตรงตามแบบ", pass: null, qty: "", reason: "" },
           { id: 14, name: "คุณภาพหลังการเจาะ", pass: null, qty: "", reason: "" },
           { id: 15, name: "รูปแบบการเปิดถูกต้องตามแบบ", pass: null, qty: "", reason: "" }
+        ],
+        quality: [
+          { id: 17, name: "ตรวจคุณภาพ", pass: null, qty: "", reason: "" }
         ]
       });
       try { localStorage.removeItem(storageKey); } catch {}
@@ -1036,6 +1062,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               {renderCategory('door', 'หมวดประตู', checklistItems.door)}
               {renderCategory('paint', 'หมวดสี', checklistItems.paint)}
               {renderCategory('drilling', 'หมวดเจาะอุปกรณ์', checklistItems.drilling)}
+              {renderCategory('quality', 'หมวดคุณภาพ (QA)', checklistItems.quality)}
 
               {/* Footer */}
               <div className="mt-8 pt-6 border-t border-gray-200 dark:border-slate-700">
