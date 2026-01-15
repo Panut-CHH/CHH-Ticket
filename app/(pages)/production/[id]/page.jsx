@@ -699,6 +699,14 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           >
             {ticket.projectDoc?.file_url ? (
               <div className="relative w-full h-full p-0">
+                {/* Quantity info - only show for images */}
+                {ticket.projectDoc.file_type !== 'pdf' && typeof ticket.quantity === 'number' && ticket.quantity > 0 && (
+                  <div className="absolute top-3 left-3 z-10 px-3 py-1.5 bg-blue-600/90 text-white rounded-md shadow-lg backdrop-blur-sm">
+                    <div className="text-sm font-semibold">
+                      จำนวนที่ต้องผลิต: <span className="font-bold">{ticket.quantity.toLocaleString()}</span> ชิ้น
+                    </div>
+                  </div>
+                )}
                 {/* Close button and Print button */}
                 <div className="absolute top-3 right-3 z-10 flex gap-2">
                   {/* Print button - only show for images */}
