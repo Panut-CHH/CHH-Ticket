@@ -855,7 +855,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                   ℹ️ คุณสามารถดูรายละเอียดได้แต่ไม่สามารถเริ่มต้นหรือทำเสร็จสถานีได้ 
                 </div>
               )}
-              {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && (
+              {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && !hasSupervisorProductionRole && !hasSupervisorPaintingRole && (
                 <div className="mt-3 p-3 rounded-lg border bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-900 dark:text-orange-300 text-sm">
                   ⚠️ คุณไม่ได้รับมอบหมายให้ทำในสถานีนี้
                 </div>

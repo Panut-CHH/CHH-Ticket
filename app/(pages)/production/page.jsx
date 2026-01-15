@@ -40,6 +40,8 @@ export default function ProductionPage() {
   const hasPackingRole = hasRole('Packing');
   const hasStorageRole = hasRole('Storage');
   const hasViewerRole = hasRole('Viewer');
+  const hasSupervisorProductionRole = hasRole('Supervisor Production');
+  const hasSupervisorPaintingRole = hasRole('Supervisor Painting');
   const canUpdateStoreStatus = isAdmin || hasRole('Storage') || hasRole('SuperAdmin');
 
   // Load ERP tickets and merge with DB station assignments
@@ -667,8 +669,8 @@ export default function ProductionPage() {
   const myTickets = useMemo(() => {
     if (!myName) return [];
     let filtered = [];
-    if (isAdmin || hasStorageRole || hasViewerRole) {
-      // Admins, Storage, and Viewer see all tickets
+    if (isAdmin || hasStorageRole || hasViewerRole || hasSupervisorProductionRole || hasSupervisorPaintingRole) {
+      // Admins, Storage, Viewer, Supervisor Production, and Supervisor Painting see all tickets
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
@@ -716,7 +718,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, hasViewerRole, user]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, hasViewerRole, hasSupervisorProductionRole, hasSupervisorPaintingRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {
