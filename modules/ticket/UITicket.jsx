@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { Search, Filter, Edit, User, Clock, Loader, FileText, AlertCircle, ChevronDown, ChevronRight } from "lucide-react";
+import { Search, Filter, Edit, User, Clock, Loader, FileText, AlertCircle, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t, translations } from "@/utils/translations";
@@ -42,6 +42,9 @@ export default function UITicket() {
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [selectedItemCodes, setSelectedItemCodes] = useState(new Set());
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
@@ -1337,7 +1340,7 @@ export default function UITicket() {
 
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
-  function TicketCard({ ticket, onEdit, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
+  function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
@@ -1588,26 +1591,38 @@ export default function UITicket() {
               </div>
             </div>
           </div>
-          <button 
-            onClick={() => canAction && onEdit(ticket)}
-            onContextMenu={(e) => {
-              if (canAction) {
-                e.preventDefault();
-                const rpdNo = ticket.rpd || ticket.id || "";
-                const cleanedRpd = rpdNo.replace(/^#/,'');
-                window.open(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`, '_blank');
-              }
-            }}
-            disabled={!canAction}
-            className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 w-full lg:w-auto lg:flex-shrink-0 ${
-              canAction 
-                ? 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105 active:scale-95 cursor-pointer' 
-                : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
-            }`}
-          >
-            <Edit className="w-3 h-3" />
-            <span>{t('editTicket', language)}</span>
-          </button>
+          <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-shrink-0">
+            <button 
+              onClick={() => canAction && onEdit(ticket)}
+              onContextMenu={(e) => {
+                if (canAction) {
+                  e.preventDefault();
+                  const rpdNo = ticket.rpd || ticket.id || "";
+                  const cleanedRpd = rpdNo.replace(/^#/,'');
+                  window.open(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`, '_blank');
+                }
+              }}
+              disabled={!canAction}
+              className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 ${
+                canAction 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105 active:scale-95 cursor-pointer' 
+                  : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
+              }`}
+            >
+              <Edit className="w-3 h-3" />
+              <span>{t('editTicket', language)}</span>
+            </button>
+            {canAction && (
+              <button
+                onClick={() => onDelete(ticket)}
+                disabled={isDeleting}
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-red-600 hover:bg-red-700 text-white hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>{t('deleteTicket', language)}</span>
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -1621,6 +1636,56 @@ export default function UITicket() {
       router.push(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`);
     } catch (e) {
       console.error("Navigate to edit failed", e);
+    }
+  };
+
+  const handleRequestDelete = (ticket) => {
+    if (!canAction) return;
+    setDeleteTarget(ticket);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleCloseDelete = () => {
+    setShowDeleteConfirm(false);
+    setDeleteTarget(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const ticketId = String(deleteTarget.rpd || deleteTarget.id || '').replace(/^#/, '').trim();
+      let authHeader = {};
+      try {
+        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        if (currentSession?.access_token) {
+          authHeader = { Authorization: `Bearer ${currentSession.access_token}` };
+        }
+      } catch (e) {
+        console.warn('Failed to get auth session for delete', e);
+      }
+
+      const resp = await fetch(`/api/tickets/${encodeURIComponent(ticketId)}`, { method: 'DELETE', headers: { ...authHeader } });
+      const json = await resp.json().catch(() => ({}));
+
+      if (!resp.ok) {
+        throw new Error(json?.error || t('deleteError', language) || 'Delete failed');
+      }
+
+      setShowDeleteConfirm(false);
+      setDeleteTarget(null);
+      // รีเฟรชข้อมูล
+      setRefreshTrigger(prev => prev + 1);
+      // ลบออกจาก state ทันทีเพื่อให้ UI ตอบสนองเร็ว
+      setErpTickets(prev => prev.filter(t => {
+        const id = String(t.rpd || t.id || '').replace(/^#/, '').trim();
+        return id !== ticketId;
+      }));
+    } catch (e) {
+      console.error('Delete ticket failed', e);
+      setErrorMessage(typeof e === 'object' ? (e?.message || JSON.stringify(e)) : String(e));
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -1958,6 +2023,7 @@ export default function UITicket() {
                                       <TicketCard
                                         ticket={ticket}
                                         onEdit={handleEdit}
+                                        onDelete={handleRequestDelete}
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
@@ -2099,6 +2165,7 @@ export default function UITicket() {
                                       <TicketCard
                                         ticket={ticket}
                                         onEdit={handleEdit}
+                                        onDelete={handleRequestDelete}
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
@@ -2127,6 +2194,7 @@ export default function UITicket() {
                 <TicketCard
                   ticket={t}
                   onEdit={handleEdit}
+                  onDelete={handleRequestDelete}
                   ticketBomStatus={ticketBomStatus}
                   ticketAssignmentStatus={ticketAssignmentStatus}
                   projectMapByItemCode={projectMapByItemCode}
@@ -2173,6 +2241,7 @@ export default function UITicket() {
                   <TicketCard
                     ticket={t}
                     onEdit={handleEdit}
+                    onDelete={handleRequestDelete}
                     ticketBomStatus={ticketBomStatus}
                     ticketAssignmentStatus={ticketAssignmentStatus}
                     projectMapByItemCode={projectMapByItemCode}
@@ -2197,6 +2266,41 @@ export default function UITicket() {
               {isLoading ? t('loading', language) : (language === 'th' ? 'โหลดเพิ่มเติม' : 'Load More')}
             </span>
           </button>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm px-4">
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md border border-gray-200 dark:border-slate-700">
+            <div className="p-4 border-b border-gray-200 dark:border-slate-700">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {t('confirmDelete', language) || 'Confirm Delete'}
+              </h3>
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                {(t('deleteConfirmMessage', language) || 'Are you sure you want to delete ticket {ticketId}?').replace(
+                  '{ticketId}',
+                  String(deleteTarget?.rpd || deleteTarget?.id || '').replace(/^#/, '') || ''
+                )}
+              </p>
+            </div>
+            <div className="p-4 flex justify-end gap-3">
+              <button
+                onClick={handleCloseDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg text-sm font-medium border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-slate-800 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-60"
+              >
+                {t('cancel', language)}
+              </button>
+              <button
+                onClick={handleDelete}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-60"
+              >
+                {isDeleting ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...') : (t('deleteTicket', language) || 'Delete')}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       </div>

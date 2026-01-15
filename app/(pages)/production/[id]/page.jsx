@@ -582,6 +582,8 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
       console.log('[PRICE_CALC] Station:', stationName, 'Price:', price, 'Type:', priceType);
       
       // Check if this is color station (สถานีสี)
+      // Only "สี" (paint) station goes to colorPrice
+      // All other stations including "ประกอบวงกบ" (frame assembly) and "ประกอบชุดชาร์ป" (sharp set assembly) go to productionPrice
       const isColorStation = stationName.includes('สี') || stationName.includes('color');
       
       // Calculate price based on price_type
@@ -600,6 +602,11 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
         colorPrice += stationTotal;
         console.log('[PRICE_CALC] Added to colorPrice:', stationTotal, 'Total colorPrice:', colorPrice);
       } else {
+        // All non-color stations go to productionPrice, including:
+        // - ประกอบวงกบ (frame assembly)
+        // - ประกอบชุดชาร์ป (sharp set assembly)
+        // - อัดบาน (press)
+        // - and all other production stations
         productionPrice += stationTotal;
         console.log('[PRICE_CALC] Added to productionPrice:', stationTotal, 'Total productionPrice:', productionPrice);
       }

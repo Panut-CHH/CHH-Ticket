@@ -743,6 +743,8 @@ export default function ProductionPage() {
       const priceType = station.priceType || 'flat';
       
       // Check if this is color station (สถานีสี)
+      // Only "สี" (paint) station goes to colorPrice
+      // All other stations including "ประกอบวงกบ" (frame assembly) and "ประกอบชุดชาร์ป" (sharp set assembly) go to productionPrice
       const isColorStation = stationName.includes('สี') || stationName.includes('color');
       
       // Calculate price based on price_type
@@ -759,6 +761,11 @@ export default function ProductionPage() {
       if (isColorStation) {
         colorPrice += stationTotal;
       } else {
+        // All non-color stations go to productionPrice, including:
+        // - ประกอบวงกบ (frame assembly)
+        // - ประกอบชุดชาร์ป (sharp set assembly)
+        // - อัดบาน (press)
+        // - and all other production stations
         productionPrice += stationTotal;
       }
     });

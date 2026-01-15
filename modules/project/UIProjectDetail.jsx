@@ -49,7 +49,7 @@ export default function UIProjectDetail({ projectId }) {
   const [itemCodes, setItemCodes] = useState([]);
   const [expandedItems, setExpandedItems] = useState({});
   const [loading, setLoading] = useState(true);
-  const [itemPrices, setItemPrices] = useState({}); // Store prices for each item: { itemCode: { pressPrice, paintPrice } }
+  const [itemPrices, setItemPrices] = useState({}); // Store prices for each item: { itemCode: { productionPrice, pressPrice, framePrice, sharpPrice, paintPrice } }
   
   // Modal states
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -282,11 +282,13 @@ export default function UIProjectDetail({ projectId }) {
   // Load labor prices for all items
   const loadItemPrices = async (items) => {
     try {
-      // Find stations by name "อัดบาน" and "สี"
+      // Find stations by name for production & color
       const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
+      const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
       
-      if (!pressStation && !paintStation) {
+      if (!pressStation && !paintStation && !frameStation && !sharpStation) {
         return; // Stations not found, skip loading prices
       }
       
@@ -299,23 +301,38 @@ export default function UIProjectDetail({ projectId }) {
             const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(item.item_code)}`);
             const result = await response.json();
             
-            // Always create an entry, even if no prices found
-            const pressPrice = (result.success && result.data && pressStation)
-              ? result.data.find(p => p.station_code === pressStation.code)?.price ?? null
-              : null;
-            const paintPrice = (result.success && result.data && paintStation)
-              ? result.data.find(p => p.station_code === paintStation.code)?.price ?? null
-              : null;
+            // Helper to find price by station (returns null if not found)
+            const findPrice = (station) => {
+              if (!station || !result.success || !Array.isArray(result.data)) return null;
+              const match = result.data.find(p => p.station_code === station.code);
+              return match && typeof match.price === 'number' ? match.price : (match?.price ?? null);
+            };
+            
+            const pressPrice = findPrice(pressStation);
+            const framePrice = findPrice(frameStation);
+            const sharpPrice = findPrice(sharpStation);
+            const paintPrice = findPrice(paintStation);
+            
+            const productionPrice =
+              (pressPrice || 0) +
+              (framePrice || 0) +
+              (sharpPrice || 0);
             
             pricesMap[item.item_code] = {
+              productionPrice: productionPrice > 0 ? productionPrice : null,
               pressPrice: pressPrice,
+              framePrice: framePrice,
+              sharpPrice: sharpPrice,
               paintPrice: paintPrice
             };
           } catch (error) {
             console.error(`Error loading prices for ${item.item_code}:`, error);
             // Still create entry with null values on error
             pricesMap[item.item_code] = {
+              productionPrice: null,
               pressPrice: null,
+              framePrice: null,
+              sharpPrice: null,
               paintPrice: null
             };
           }
@@ -901,7 +918,15 @@ export default function UIProjectDetail({ projectId }) {
                         {isAdminOrAbove(user) && itemPrices[item.item_code] && (
                           <div className="mt-2 px-2 py-1 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
                             <span className="text-yellow-800 dark:text-yellow-200 font-medium">
-                              {language === 'th' ? 'ราคาผลิต' : 'Production Price'}: {itemPrices[item.item_code].pressPrice !== null && itemPrices[item.item_code].pressPrice !== undefined ? itemPrices[item.item_code].pressPrice : '-'}
+                              {language === 'th' ? 'ราคาผลิต' : 'Production Price'}:{" "}
+                              {(() => {
+                                const p = itemPrices[item.item_code];
+                                const value =
+                                  p.productionPrice !== null && p.productionPrice !== undefined
+                                    ? p.productionPrice
+                                    : (p.pressPrice || 0) + (p.framePrice || 0) + (p.sharpPrice || 0);
+                                return value > 0 ? value : '-';
+                              })()}
                             </span>
                             <span className="text-yellow-700 dark:text-yellow-300 mx-2">|</span>
                             <span className="text-yellow-800 dark:text-yellow-200 font-medium">
