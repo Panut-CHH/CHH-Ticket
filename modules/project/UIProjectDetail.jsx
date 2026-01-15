@@ -92,7 +92,9 @@ export default function UIProjectDetail({ projectId }) {
   // Labor price states
   const [laborPrices, setLaborPrices] = useState({
     pressStation: { price: '', priceType: 'per_piece' },
-    paintStation: { price: '', priceType: 'per_piece' }
+    paintStation: { price: '', priceType: 'per_piece' },
+    frameStation: { price: '', priceType: 'per_piece' },
+    sharpStation: { price: '', priceType: 'per_piece' }
   });
   const [availableStations, setAvailableStations] = useState([]);
   const [loadingStations, setLoadingStations] = useState(false);
@@ -614,13 +616,17 @@ export default function UIProjectDetail({ projectId }) {
       const result = await response.json();
       
       if (result.success && result.data) {
-        // Find stations by name "อัดบาน" and "สี"
+        // Find stations by name "อัดบาน", "สี", "ประกอบวงกบ", and "ประกอบชุดชาร์ป"
         const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
         const paintStation = availableStations.find(s => s.name_th === 'สี');
+        const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+        const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
         
         const prices = {
           pressStation: { price: '', priceType: 'per_piece' },
-          paintStation: { price: '', priceType: 'per_piece' }
+          paintStation: { price: '', priceType: 'per_piece' },
+          frameStation: { price: '', priceType: 'per_piece' },
+          sharpStation: { price: '', priceType: 'per_piece' }
         };
         
         // Map existing prices to form
@@ -637,6 +643,18 @@ export default function UIProjectDetail({ projectId }) {
               priceType: priceData.price_type || 'per_piece'
             };
           }
+          if (frameStation && priceData.station_code === frameStation.code) {
+            prices.frameStation = {
+              price: priceData.price || '',
+              priceType: priceData.price_type || 'per_piece'
+            };
+          }
+          if (sharpStation && priceData.station_code === sharpStation.code) {
+            prices.sharpStation = {
+              price: priceData.price || '',
+              priceType: priceData.price_type || 'per_piece'
+            };
+          }
         });
         
         setLaborPrices(prices);
@@ -644,14 +662,18 @@ export default function UIProjectDetail({ projectId }) {
         // Reset to defaults if no prices found
         setLaborPrices({
           pressStation: { price: '', priceType: 'per_piece' },
-          paintStation: { price: '', priceType: 'per_piece' }
+          paintStation: { price: '', priceType: 'per_piece' },
+          frameStation: { price: '', priceType: 'per_piece' },
+          sharpStation: { price: '', priceType: 'per_piece' }
         });
       }
     } catch (error) {
       console.error('Error loading labor prices:', error);
       setLaborPrices({
         pressStation: { price: '', priceType: 'per_piece' },
-        paintStation: { price: '', priceType: 'per_piece' }
+        paintStation: { price: '', priceType: 'per_piece' },
+        frameStation: { price: '', priceType: 'per_piece' },
+        sharpStation: { price: '', priceType: 'per_piece' }
       });
     } finally {
       setLoadingPrices(false);
@@ -666,9 +688,11 @@ export default function UIProjectDetail({ projectId }) {
     try {
       const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
+      const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
       
-      if (!pressStation && !paintStation) {
-        alert(language === 'th' ? 'ไม่พบสถานี "อัดบาน" หรือ "สี" ในระบบ' : 'Stations "Press" or "Paint" not found');
+      if (!pressStation && !paintStation && !frameStation && !sharpStation) {
+        alert(language === 'th' ? 'ไม่พบสถานีที่ต้องการในระบบ' : 'No stations found');
         setSavingPrices(false);
         return;
       }
@@ -688,6 +712,22 @@ export default function UIProjectDetail({ projectId }) {
           station_code: paintStation.code,
           price: laborPrices.paintStation.price ? parseFloat(laborPrices.paintStation.price) : null,
           price_type: laborPrices.paintStation.priceType
+        });
+      }
+      
+      if (frameStation) {
+        pricesToSave.push({
+          station_code: frameStation.code,
+          price: laborPrices.frameStation.price ? parseFloat(laborPrices.frameStation.price) : null,
+          price_type: laborPrices.frameStation.priceType
+        });
+      }
+      
+      if (sharpStation) {
+        pricesToSave.push({
+          station_code: sharpStation.code,
+          price: laborPrices.sharpStation.price ? parseFloat(laborPrices.sharpStation.price) : null,
+          price_type: laborPrices.sharpStation.priceType
         });
       }
       
@@ -1740,7 +1780,9 @@ export default function UIProjectDetail({ projectId }) {
           setPricingItem(null);
           setLaborPrices({
             pressStation: { price: '', priceType: 'per_piece' },
-            paintStation: { price: '', priceType: 'per_piece' }
+            paintStation: { price: '', priceType: 'per_piece' },
+            frameStation: { price: '', priceType: 'per_piece' },
+            sharpStation: { price: '', priceType: 'per_piece' }
           });
         }}
         title={language === 'th' ? `ตั้งราคาค่าแรง - ${pricingItem?.item_code || ''}` : `Set Labor Price - ${pricingItem?.item_code || ''}`}
@@ -1755,7 +1797,9 @@ export default function UIProjectDetail({ projectId }) {
                   setPricingItem(null);
                   setLaborPrices({
                     pressStation: { price: '', priceType: 'per_piece' },
-                    paintStation: { price: '', priceType: 'per_piece' }
+                    paintStation: { price: '', priceType: 'per_piece' },
+                    frameStation: { price: '', priceType: 'per_piece' },
+                    sharpStation: { price: '', priceType: 'per_piece' }
                   });
                 }}
                 disabled={savingPrices}
@@ -1794,8 +1838,8 @@ export default function UIProjectDetail({ projectId }) {
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 break-words">
                 {language === 'th' 
-                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบาน" และ "สี" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
-                  : 'Set labor prices for "Press" and "Paint" stations. These prices will automatically appear in ticket edit page'}
+                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบาน", "สี", "ประกอบวงกบ", และ "ประกอบชุดชาร์ป" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
+                  : 'Set labor prices for "Press", "Paint", "Frame Assembly", and "Sharp Set Assembly" stations. These prices will automatically appear in ticket edit page'}
               </p>
               
               <div className="space-y-4">
@@ -1884,6 +1928,100 @@ export default function UIProjectDetail({ projectId }) {
                         onChange={(e) => setLaborPrices(prev => ({
                           ...prev,
                           paintStation: { ...prev.paintStation, price: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
+                        onWheel={(e) => e.target.blur()}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Frame Station (ประกอบวงกบ) */}
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    {language === 'th' ? 'สถานี: ประกอบวงกบ' : 'Station: Frame Assembly'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ประเภทการคิดเงิน' : 'Price Type'} *
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={laborPrices.frameStation.priceType}
+                          onChange={(e) => setLaborPrices(prev => ({
+                            ...prev,
+                            frameStation: { ...prev.frameStation, priceType: e.target.value }
+                          }))}
+                          className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer text-sm"
+                        >
+                          <option value="flat">{language === 'th' ? 'เหมาจ่าย' : 'Flat Rate'}</option>
+                          <option value="per_piece">{language === 'th' ? 'ต่อชิ้น' : 'Per Piece'}</option>
+                          <option value="per_hour">{language === 'th' ? 'รายชั่วโมง' : 'Per Hour'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ราคา' : 'Price'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborPrices.frameStation.price}
+                        onChange={(e) => setLaborPrices(prev => ({
+                          ...prev,
+                          frameStation: { ...prev.frameStation, price: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
+                        onWheel={(e) => e.target.blur()}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sharp Station (ประกอบชุดชาร์ป) */}
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    {language === 'th' ? 'สถานี: ประกอบชุดชาร์ป' : 'Station: Sharp Set Assembly'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ประเภทการคิดเงิน' : 'Price Type'} *
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={laborPrices.sharpStation.priceType}
+                          onChange={(e) => setLaborPrices(prev => ({
+                            ...prev,
+                            sharpStation: { ...prev.sharpStation, priceType: e.target.value }
+                          }))}
+                          className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer text-sm"
+                        >
+                          <option value="flat">{language === 'th' ? 'เหมาจ่าย' : 'Flat Rate'}</option>
+                          <option value="per_piece">{language === 'th' ? 'ต่อชิ้น' : 'Per Piece'}</option>
+                          <option value="per_hour">{language === 'th' ? 'รายชั่วโมง' : 'Per Hour'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ราคา' : 'Price'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborPrices.sharpStation.price}
+                        onChange={(e) => setLaborPrices(prev => ({
+                          ...prev,
+                          sharpStation: { ...prev.sharpStation, price: e.target.value }
                         }))}
                         placeholder="0.00"
                         className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"

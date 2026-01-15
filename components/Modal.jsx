@@ -50,7 +50,7 @@ export default function Modal({ open, onClose, title, children, maxWidth = "max-
         )}
         
         {/* Content */}
-        <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-500 scrollbar-track-gray-100 dark:scrollbar-track-gray-700">
+        <div className="overflow-y-auto flex-1 modal-scrollbar-visible">
           {children}
         </div>
         

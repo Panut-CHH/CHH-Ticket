@@ -124,6 +124,60 @@ svg.lucide {
   background: rgba(100, 116, 139, 0.5);
 }
 
+/* Enhanced visible scrollbar for modal - Always visible and clear */
+.modal-scrollbar-visible {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: #94a3b8 #f1f5f9; /* thumb track - visible colors */
+}
+
+.modal-scrollbar-visible::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.modal-scrollbar-visible::-webkit-scrollbar-track {
+  background: #f1f5f9; /* slate-100 - visible track */
+  border-radius: 10px;
+  margin: 4px;
+}
+
+.modal-scrollbar-visible::-webkit-scrollbar-thumb {
+  background: #94a3b8; /* slate-400 - visible thumb */
+  border-radius: 10px;
+  border: 2px solid #f1f5f9; /* Add border for better visibility */
+  transition: background 0.2s ease;
+}
+
+.modal-scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* slate-500 - darker on hover */
+}
+
+.modal-scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background: #475569; /* slate-600 - even darker when active */
+}
+
+/* Dark mode for visible modal scrollbar */
+.dark .modal-scrollbar-visible {
+  scrollbar-color: #475569 #1e293b; /* thumb track */
+}
+
+.dark .modal-scrollbar-visible::-webkit-scrollbar-track {
+  background: #1e293b; /* slate-800 - visible track in dark mode */
+}
+
+.dark .modal-scrollbar-visible::-webkit-scrollbar-thumb {
+  background: #475569; /* slate-600 - visible thumb in dark mode */
+  border-color: #334155; /* slate-700 border */
+}
+
+.dark .modal-scrollbar-visible::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* slate-500 */
+}
+
+.dark .modal-scrollbar-visible::-webkit-scrollbar-thumb:active {
+  background: #94a3b8; /* slate-400 */
+}
+
 /* Slide-in from left animation for sidebar/drawers */
 @keyframes slideInLeft {
   from { transform: translateX(-100%); opacity: 0.6; }
