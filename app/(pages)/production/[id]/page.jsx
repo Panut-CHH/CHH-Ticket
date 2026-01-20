@@ -682,7 +682,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             <button 
               onClick={() => setIsDocOpen(true)} 
               disabled={!ticket.projectDoc}
-              className={`w-full px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 shadow-sm ${ticket.projectDoc ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800' : 'bg-gray-100 dark:bg-slate-600 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-slate-700'}`}
+              className={`w-full px-6 py-3 rounded-xl text-sm font-medium inline-flex items-center justify-center gap-2 shadow-sm ${ticket.projectDoc ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white hover:from-purple-700 hover:to-purple-800' : 'bg-gray-100 dark:bg-slate-600 text-gray-400 dark:text-gray-500 cursor-not-allowed border border-gray-200 dark:border-slate-700'}`}
             >
               <FileText className="w-5 h-5" />
               {ticket.projectDoc ? `ดูเอกสาร: ${ticket.projectDoc.file_name}` : 'ไม่มีเอกสาร'}
@@ -858,7 +858,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
               <button
                 onClick={onDoneClick}
                 disabled={!canDone || isCoolingDown || !canActionInProduction}
-                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${!canDone || isCoolingDown || !canActionInProduction ? "bg-gray-300 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed" : "bg-emerald-600 hover:bg-emerald-700"}`}
+                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${!canDone || isCoolingDown || !canActionInProduction ? "bg-gray-300 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}
               >
                 <Check className="w-5 h-5" /> DONE (ทำขั้นตอนนี้เสร็จแล้ว)
               </button>

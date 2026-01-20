@@ -1194,7 +1194,7 @@ export default function ProductionPage() {
             </div>
 
             {/* Search / Filter / Sort */}
-            <div className="mt-4 sm:mt-6 space-y-3">
+            <div className="mt-4 sm:mt-6 space-y-4">
               {/* Search Bar - Full width on mobile */}
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -1209,223 +1209,213 @@ export default function ProductionPage() {
                 />
               </div>
 
-              {/* Filters and Sort - Grid layout for better mobile support */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-3">
-                {/* Station Filter */}
-                <div className="relative col-span-2 sm:col-span-1">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-                    <Settings2 className={`w-4 h-4 ${selectedStation ? 'text-blue-500' : 'text-gray-400'}`} />
-                  </div>
-                  <select
-                    value={selectedStation}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setSelectedStation(value);
-                      updateURLParams({ station: value });
-                    }}
-                    title={availableStations.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อสถานีทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all stations') : ''}
-                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
-                      selectedStation 
-                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
-                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
-                    }`}
-                  >
-                    <option value="">{language === 'th' ? '📍 สถานี' : '📍 Station'}</option>
-                    {availableStations.map(station => (
-                      <option key={station} value={station}>{station}</option>
-                    ))}
-                  </select>
-                  {availableStations.length > 5 && (
-                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
-                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
+              {/* Filters and Sort - Improved responsive layout */}
+              <div className="space-y-3">
+                {/* Filter Row 1: Station, Technician, Project */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Station Filter */}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                      <Settings2 className={`w-4 h-4 ${selectedStation ? 'text-blue-500' : 'text-gray-400'}`} />
                     </div>
-                  )}
-                  {selectedStation && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedStation("");
-                        updateURLParams({ station: "" });
+                    <select
+                      value={selectedStation}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSelectedStation(value);
+                        updateURLParams({ station: value });
                       }}
-                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
+                      title={availableStations.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อสถานีทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all stations') : ''}
+                      className={`w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-800 border rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                        selectedStation 
+                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                          : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                      }`}
                     >
-                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
-                    </button>
-                  )}
-                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Technician Filter */}
-                <div className="relative col-span-2 sm:col-span-1">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-                    <User className={`w-4 h-4 ${selectedTechnician ? 'text-blue-500' : 'text-gray-400'}`} />
-                  </div>
-                  <select
-                    value={selectedTechnician}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setSelectedTechnician(value);
-                      updateURLParams({ technician: value });
-                    }}
-                    title={availableTechnicians.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อช่างทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all technicians') : ''}
-                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
-                      selectedTechnician 
-                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
-                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
-                    }`}
-                  >
-                    <option value="">{language === 'th' ? '👤 ช่าง' : '👤 Tech'}</option>
-                    {availableTechnicians.map(technician => (
-                      <option key={technician} value={technician}>{technician}</option>
-                    ))}
-                  </select>
-                  {availableTechnicians.length > 5 && (
-                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
-                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
-                    </div>
-                  )}
-                  {selectedTechnician && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedTechnician("");
-                        updateURLParams({ technician: "" });
-                      }}
-                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
-                    >
-                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
-                    </button>
-                  )}
-                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Project Filter */}
-                <div className="relative col-span-2 sm:col-span-1">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
-                    <Building2 className={`w-4 h-4 ${selectedProject ? 'text-blue-500' : 'text-gray-400'}`} />
-                  </div>
-                  <select
-                    value={selectedProject}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      setSelectedProject(value);
-                      updateURLParams({ project: value });
-                    }}
-                    title={availableProjects.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อโครงการทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all projects') : ''}
-                    className={`w-full pl-10 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
-                      selectedProject 
-                        ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
-                        : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
-                    }`}
-                  >
-                    <option value="">{language === 'th' ? '🏢 โครงการ' : '🏢 Project'}</option>
-                    {availableProjects.map(project => (
-                      <option key={project} value={project}>{project}</option>
-                    ))}
-                  </select>
-                  {availableProjects.length > 5 && (
-                    <div className="absolute -bottom-5 left-0 right-0 text-[10px] text-gray-400 dark:text-gray-500 text-center pointer-events-none">
-                      {language === 'th' ? '↓ เลื่อนดูรายชื่อทั้งหมด ↓' : '↓ Scroll to see all ↓'}
-                    </div>
-                  )}
-                  {selectedProject && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedProject("");
-                        updateURLParams({ project: "" });
-                      }}
-                      className="absolute inset-y-0 right-0 pr-8 flex items-center pointer-events-auto z-10"
-                    >
-                      <X className="w-3.5 h-3.5 text-gray-400 hover:text-red-500 transition-colors" />
-                    </button>
-                  )}
-                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Sort Key */}
-                <div className="relative col-span-1 sm:col-span-1">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <ArrowUpDown className="w-4 h-4 text-gray-400" />
-                  </div>
-                  <select
-                    value={sortKey}
-                    onChange={(e) => setSortKey(e.target.value)}
-                    className="w-full pl-9 pr-8 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-xs sm:text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm"
-                  >
-                    <option value="dueDate">{language === 'th' ? '📅 กำหนดส่ง' : '📅 Due'}</option>
-                    <option value="priority">{language === 'th' ? '⚡ ความสำคัญ' : '⚡ Priority'}</option>
-                    <option value="value">{language === 'th' ? '💰 มูลค่า' : '💰 Value'}</option>
-                    <option value="id">{language === 'th' ? '🔢 เลขตั๋ว' : '🔢 ID'}</option>
-                    <option value="status">{language === 'th' ? '📊 สถานะ' : '📊 Status'}</option>
-                    <option value="storeStatus">{language === 'th' ? '📦 Store' : '📦 Store'}</option>
-                  </select>
-                  <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
-                    <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Sort Direction */}
-                <button
-                  onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
-                  className={`col-span-1 px-3 py-2.5 sm:py-2.5 bg-white dark:bg-slate-800 border rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1 shadow-sm ${
-                    sortDir === 'asc' 
-                      ? 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
-                      : 'text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700'
-                  }`}
-                  title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก (คลิกเพื่อเปลี่ยน)' : 'เรียงจากมากไปน้อย (คลิกเพื่อเปลี่ยน)') : (sortDir === 'asc' ? 'Ascending (click to change)' : 'Descending (click to change)')}
-                >
-                  {sortDir === 'asc' ? (
-                    <ArrowUp className="w-4 h-4 sm:w-5 sm:h-5" />
-                  ) : (
-                    <ArrowDown className="w-4 h-4 sm:w-5 sm:h-5" />
-                  )}
-                  <span className="text-xs hidden lg:inline ml-1">
-                    {sortDir === 'asc' ? (language === 'th' ? 'น้อย→มาก' : 'A→Z') : (language === 'th' ? 'มาก→น้อย' : 'Z→A')}
-                  </span>
-                </button>
-
-                {/* Clear All Filters Button */}
-                {activeFilterCount > 0 && (
-                  <button
-                    onClick={() => {
-                      setSelectedStation("");
-                      setSelectedTechnician("");
-                      setSelectedProject("");
-                      setSearchTerm("");
-                      setSelectedStatuses(new Set());
-                      setSelectedPriorities(new Set());
-                      setSelectedStoreStatuses(new Set());
-                      setHasDueDateOnly(false);
-                      // Clear URL params for filters
-                      updateURLParams({ station: "", technician: "", project: "" });
-                    }}
-                    className="col-span-2 sm:col-span-1 lg:col-span-1 px-3 sm:px-4 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center gap-1.5 sm:gap-2 text-xs sm:text-sm font-medium shadow-sm"
-                  >
-                    <X className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
-                    <span className="hidden sm:inline">{language === 'th' ? 'ล้างทั้งหมด' : 'Clear'}</span>
-                    <span className="sm:hidden">{language === 'th' ? 'ล้าง' : 'Clear'}</span>
-                    {activeFilterCount > 0 && (
-                      <span className="px-1.5 py-0.5 bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-300 rounded-full text-xs font-semibold">
-                        {activeFilterCount}
-                      </span>
+                      <option value="">{language === 'th' ? '📍 สถานี' : '📍 Station'}</option>
+                      {availableStations.map(station => (
+                        <option key={station} value={station}>{station}</option>
+                      ))}
+                    </select>
+                    {selectedStation && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedStation("");
+                          updateURLParams({ station: "" });
+                        }}
+                        className="absolute inset-y-0 right-0 pr-10 flex items-center pointer-events-auto z-10"
+                      >
+                        <X className="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors" />
+                      </button>
                     )}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Technician Filter */}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                      <User className={`w-4 h-4 ${selectedTechnician ? 'text-blue-500' : 'text-gray-400'}`} />
+                    </div>
+                    <select
+                      value={selectedTechnician}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSelectedTechnician(value);
+                        updateURLParams({ technician: value });
+                      }}
+                      title={availableTechnicians.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อช่างทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all technicians') : ''}
+                      className={`w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-800 border rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                        selectedTechnician 
+                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                          : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <option value="">{language === 'th' ? '👤 ช่าง' : '👤 Tech'}</option>
+                      {availableTechnicians.map(technician => (
+                        <option key={technician} value={technician}>{technician}</option>
+                      ))}
+                    </select>
+                    {selectedTechnician && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedTechnician("");
+                          updateURLParams({ technician: "" });
+                        }}
+                        className="absolute inset-y-0 right-0 pr-10 flex items-center pointer-events-auto z-10"
+                      >
+                        <X className="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors" />
+                      </button>
+                    )}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Project Filter */}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none z-10">
+                      <Building2 className={`w-4 h-4 ${selectedProject ? 'text-blue-500' : 'text-gray-400'}`} />
+                    </div>
+                    <select
+                      value={selectedProject}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        setSelectedProject(value);
+                        updateURLParams({ project: value });
+                      }}
+                      title={availableProjects.length > 5 ? (language === 'th' ? 'สามารถเลื่อนดูรายชื่อโครงการทั้งหมดได้ (Scroll ได้)' : 'You can scroll to see all projects') : ''}
+                      className={`w-full pl-10 pr-10 py-3 bg-white dark:bg-slate-800 border rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer shadow-sm ${
+                        selectedProject 
+                          ? 'border-blue-500 dark:border-blue-400 bg-blue-50/50 dark:bg-blue-900/20' 
+                          : 'border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
+                      }`}
+                    >
+                      <option value="">{language === 'th' ? '🏢 โครงการ' : '🏢 Project'}</option>
+                      {availableProjects.map(project => (
+                        <option key={project} value={project}>{project}</option>
+                      ))}
+                    </select>
+                    {selectedProject && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedProject("");
+                          updateURLParams({ project: "" });
+                        }}
+                        className="absolute inset-y-0 right-0 pr-10 flex items-center pointer-events-auto z-10"
+                      >
+                        <X className="w-4 h-4 text-gray-400 hover:text-red-500 transition-colors" />
+                      </button>
+                    )}
+                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sort Row 2: Sort Key, Sort Direction, Clear Button */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Sort Key */}
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <ArrowUpDown className="w-4 h-4 text-gray-400" />
+                    </div>
+                    <select
+                      value={sortKey}
+                      onChange={(e) => setSortKey(e.target.value)}
+                      className="w-full pl-10 pr-8 py-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl text-sm text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm"
+                    >
+                      <option value="dueDate">{language === 'th' ? '📅 กำหนดส่ง' : '📅 Due'}</option>
+                      <option value="priority">{language === 'th' ? '⚡ ความสำคัญ' : '⚡ Priority'}</option>
+                      <option value="value">{language === 'th' ? '💰 มูลค่า' : '💰 Value'}</option>
+                      <option value="id">{language === 'th' ? '🔢 เลขตั๋ว' : '🔢 ID'}</option>
+                      <option value="status">{language === 'th' ? '📊 สถานะ' : '📊 Status'}</option>
+                      <option value="storeStatus">{language === 'th' ? '📦 Store' : '📦 Store'}</option>
+                    </select>
+                    <div className="pointer-events-none absolute inset-y-0 right-0 pr-3 flex items-center">
+                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Sort Direction */}
+                  <button
+                    onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                    className={`w-full px-4 py-3 bg-white dark:bg-slate-800 border rounded-xl hover:bg-gray-50 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-2 shadow-sm ${
+                      sortDir === 'asc' 
+                        ? 'text-blue-600 dark:text-blue-400 border-blue-500 dark:border-blue-400 bg-blue-50 dark:bg-blue-900/20' 
+                        : 'text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700'
+                    }`}
+                    title={language === 'th' ? (sortDir === 'asc' ? 'เรียงจากน้อยไปมาก (คลิกเพื่อเปลี่ยน)' : 'เรียงจากมากไปน้อย (คลิกเพื่อเปลี่ยน)') : (sortDir === 'asc' ? 'Ascending (click to change)' : 'Descending (click to change)')}
+                  >
+                    {sortDir === 'asc' ? (
+                      <ArrowUp className="w-5 h-5" />
+                    ) : (
+                      <ArrowDown className="w-5 h-5" />
+                    )}
+                    <span className="text-sm">
+                      {sortDir === 'asc' ? (language === 'th' ? 'น้อย→มาก' : 'A→Z') : (language === 'th' ? 'มาก→น้อย' : 'Z→A')}
+                    </span>
                   </button>
-                )}
+
+                  {/* Clear All Filters Button */}
+                  {activeFilterCount > 0 && (
+                    <button
+                      onClick={() => {
+                        setSelectedStation("");
+                        setSelectedTechnician("");
+                        setSelectedProject("");
+                        setSearchTerm("");
+                        setSelectedStatuses(new Set());
+                        setSelectedPriorities(new Set());
+                        setSelectedStoreStatuses(new Set());
+                        setHasDueDateOnly(false);
+                        // Clear URL params for filters
+                        updateURLParams({ station: "", technician: "", project: "" });
+                      }}
+                      className="w-full px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 transition-all flex items-center justify-center gap-2 text-sm font-medium shadow-sm"
+                    >
+                      <X className="w-4 h-4" />
+                      <span>{language === 'th' ? 'ล้างทั้งหมด' : 'Clear All'}</span>
+                      {activeFilterCount > 0 && (
+                        <span className="px-2 py-0.5 bg-red-200 dark:bg-red-800 text-red-700 dark:text-red-300 rounded-full text-xs font-semibold">
+                          {activeFilterCount}
+                        </span>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
