@@ -360,6 +360,8 @@ const STATION_PRESETS = {
     'QC',
     'สี',
     'QC',
+    'ประกอบวงกบ',
+    'QC',
     'ประกอบชุดชาร์ป',
     'QC',
     'Packing',
