@@ -294,6 +294,16 @@ svg.lucide {
   overflow-x: hidden;
 }
 
+/* Global ticket card constraints - ป้องกัน card ขยายเกินขอบจอ */
+.ticket-card {
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.ticket-card .flex-1 {
+  min-width: 0;
+}
+
 /* Mobile-first responsive utilities */
 @media (max-width: 640px) {
   .container-safe {
@@ -301,6 +311,11 @@ svg.lucide {
     padding-right: 1rem !important;
     max-width: 100vw !important;
     overflow-x: hidden !important;
+  }
+  
+  .tickets-zoom {
+    max-width: 100% !important;
+    overflow: hidden !important;
   }
   
   /* Force single column layout on mobile for production page */
@@ -314,12 +329,9 @@ svg.lucide {
     display: grid !important;
   }
   
-  /* Ensure cards don't overflow */
-  .ticket-card,
+  /* Ensure cards don't overflow (already defined globally above) */
   .stat-card {
     max-width: 100% !important;
-    width: 100% !important;
-    min-width: 0 !important;
     box-sizing: border-box !important;
   }
   
@@ -389,6 +401,11 @@ svg.lucide {
 
 /* Tablet landscape optimizations */
 @media (min-width: 768px) and (max-width: 1024px) {
+  .tickets-zoom {
+    max-width: 100% !important;
+    overflow: hidden !important;
+  }
+  
   /* Increase content density for tablet landscape */
   .stat-card {
     padding: 1rem 1.25rem;
@@ -462,8 +479,11 @@ svg.lucide {
   
   /* Better ticket card spacing for tablet */
   .ticket-card {
-    max-width: 100%;
-    overflow: hidden;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
   }
   
   /* Optimize roadmap scroll for tablet */
@@ -494,6 +514,8 @@ svg.lucide {
 /* Desktop optimizations for Tickets page */
 @media (min-width: 1280px) {
   .tickets-zoom {
+    max-width: 100% !important;
+    overflow: hidden !important;
     transform: none;
     transform-origin: top center;
   }
@@ -1004,10 +1026,6 @@ select::-webkit-scrollbar-thumb:active {
 .roadmap-scroll {
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 #f1f5f9;
-  /* จำกัดความกว้างที่แสดงในครั้งเดียว */
-  max-width: 100%;
-  /* ให้แสดงประมาณ 4-5 สถานีในครั้งเดียว */
-  min-width: 0;
 }
 
 .roadmap-scroll::-webkit-scrollbar {
@@ -1017,51 +1035,49 @@ select::-webkit-scrollbar-thumb:active {
 .roadmap-scroll::-webkit-scrollbar-track {
   background: #f1f5f9;
   border-radius: 4px;
-  margin: 0 4px;
 }
 
 .roadmap-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #94a3b8;
   border-radius: 4px;
   border: 1px solid #f8fafc;
 }
 
 .roadmap-scroll::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #64748b;
   border-color: #f1f5f9;
 }
 
 .roadmap-scroll::-webkit-scrollbar-thumb:active {
-  background: #64748b;
+  background: #475569;
 }
 
 /* Dark mode roadmap scrollbar */
 .dark .roadmap-scroll {
-  scrollbar-color: #475569 #1e293b;
+  scrollbar-color: #64748b #1e293b;
 }
 
 .dark .roadmap-scroll::-webkit-scrollbar-track {
   background: #1e293b;
+  border-radius: 6px;
 }
 
 .dark .roadmap-scroll::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #64748b;
   border-color: #334155;
+  border-radius: 6px;
+  min-width: 40px;
 }
 
 .dark .roadmap-scroll::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
-}
-
-.dark .roadmap-scroll::-webkit-scrollbar-thumb:active {
   background: #94a3b8;
 }
 
-/* Responsive roadmap display - ปรับให้เป็น flexible */
-.roadmap-scroll {
-  max-width: 100%;
-  width: 100%;
+.dark .roadmap-scroll::-webkit-scrollbar-thumb:active {
+  background: #cbd5e1;
 }
+
+/* Responsive roadmap display - ปรับให้เป็น flexible (duplicate removed, using definition above) */
 
 @media (min-width: 1025px) {
   .roadmap-scroll {

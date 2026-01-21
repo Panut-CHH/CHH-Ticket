@@ -74,10 +74,60 @@ export async function loadActiveQcQueue() {
     };
   });
 
-  // 2) Load flows
-  const { data: flows } = await client
-    .from('ticket_station_flow')
-    .select(`*, stations(name_th, code)`).order('step_order', { ascending: true });
+  // 2) Load flows with pagination และ filter ตาม ticket_no ที่มีอยู่จริง
+  // ใช้ pagination เพื่อให้แน่ใจว่าได้ข้อมูลทั้งหมด (Supabase default limit = 1000)
+  let flows = [];
+  {
+    const allTicketNumbers = baseTickets.map(t => t.id).filter(v => v);
+    
+    if (allTicketNumbers.length > 0) {
+      let allFlows = [];
+      const maxInQuery = 500; // ใช้ 500 เพื่อความปลอดภัย (Supabase .in() limit ~1000)
+      let flowError = null;
+      
+      // แบ่ง ticket numbers เป็น chunks
+      for (let i = 0; i < allTicketNumbers.length; i += maxInQuery) {
+        const ticketChunk = allTicketNumbers.slice(i, i + maxInQuery);
+        
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data: flowsPage, error: error } = await client
+            .from('ticket_station_flow')
+            .select(`*, stations(name_th, code)`)
+            .in('ticket_no', ticketChunk)
+            .order('step_order', { ascending: true })
+            .range(from, from + pageSize - 1);
+          
+          if (error) {
+            flowError = error;
+            hasMore = false;
+            break;
+          }
+          
+          if (flowsPage && flowsPage.length > 0) {
+            allFlows = allFlows.concat(flowsPage);
+            from += pageSize;
+            hasMore = flowsPage.length === pageSize;
+          } else {
+            hasMore = false;
+          }
+        }
+        
+        if (flowError) break;
+      }
+      
+      if (flowError) {
+        console.error('[QC] Failed to load station flows:', flowError);
+        flows = [];
+      } else {
+        flows = allFlows;
+        console.log(`[QC] Loaded ${flows.length} flows for ${allTicketNumbers.length} tickets (with pagination)`);
+      }
+    }
+  }
 
   const flowByTicket = new Map();
   (flows || []).forEach(f => {

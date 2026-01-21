@@ -364,8 +364,7 @@ const STATION_PRESETS = {
     'QC',
     'ประกอบชุดชาร์ป',
     'QC',
-    'Packing',
-    'QC'
+    'Packing'
   ]
 };
 

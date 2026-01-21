@@ -159,8 +159,8 @@ export default function UITicket() {
           const rpdNo = erpTicket.No || erpTicket.no || erpTicket.RPD_No;
           const itemCode = erpTicket.Source_No || erpTicket.itemCode;
           
-          // Debug: แสดงข้อมูล ERP สำหรับ RPD2510-199
-          if (rpdNo === 'RPD2510-199') {
+          // ไม่ log debug เพราะสร้าง noise
+          if (false && rpdNo === 'RPD2510-199') {
             console.log('🔍 Debug ERP data for RPD2510-199:', {
               Due_Date: erpTicket.Due_Date,
               Delivery_Date: erpTicket.Delivery_Date,
@@ -189,10 +189,7 @@ export default function UITicket() {
                 customer_name: erpTicket.Customer_Name || null
               };
               
-              // Debug: แสดงข้อมูลที่จะบันทึก
-              if (rpdNo === 'RPD2510-199') {
-                console.log('🔍 Debug ticket data to save:', ticketData);
-              }
+              // ไม่ log debug เพราะสร้าง noise
               
               // ใช้ upsert แทน insert เพื่อป้องกัน duplicate key error
               // onConflict: 'no' หมายความว่าถ้า no ซ้ำกันให้ update แทน
@@ -237,7 +234,7 @@ export default function UITicket() {
                 }
               } else if (saveError?.code === '23505') {
                 // Duplicate key error - ticket มีอยู่แล้ว ใช้ข้อมูลที่มีอยู่
-                console.log(`ℹ️ Ticket ${rpdNo} already exists (duplicate key), fetching existing...`);
+                // ไม่ log เพราะมี ticket หลายตัวที่ already exists (ปกติ)
                 const { data: existingTicket } = await supabase
                   .from('ticket')
                   .select('*')
@@ -254,7 +251,7 @@ export default function UITicket() {
             } catch (saveError) {
               // จัดการ duplicate key error ที่อาจเกิดขึ้นใน catch block
               if (saveError?.code === '23505') {
-                console.log(`ℹ️ Ticket ${rpdNo} already exists (caught in catch), fetching existing...`);
+                // ไม่ log เพราะมี ticket หลายตัวที่ already exists (ปกติ)
                 try {
                   const { data: existingTicket } = await supabase
                     .from('ticket')
@@ -274,7 +271,7 @@ export default function UITicket() {
               }
             }
           } else {
-            console.log(`ℹ️ Ticket ${rpdNo} already exists in DB`);
+            // ไม่ log เพราะมี ticket หลายตัวที่ already exists (ปกติ)
           }
         }
         
@@ -390,11 +387,7 @@ export default function UITicket() {
         // รวมตั๋วจาก ERP และตั๋วจาก DB ที่ไม่มีใน ERP
         const allTickets = [...mapped, ...dbOnlyTickets];
         
-        // Debug: แสดงจำนวนตั๋วที่รวม
-        if (dbOnlyTickets.length > 0) {
-          console.log(`✅ เพิ่มตั๋วจาก DB ที่ไม่มีใน ERP: ${dbOnlyTickets.length} ตั๋ว`, 
-            dbOnlyTickets.map(t => t.id));
-        }
+        // ไม่ log เพราะสร้าง noise
 
         if (active) setErpTickets(allTickets);
       } catch (e) {
@@ -604,22 +597,41 @@ export default function UITicket() {
         }
 
         // โหลด station flows (ไม่ join assignments เพราะไม่มี foreign key relationship)
-        const { data: flows, error: flowError } = await supabase
-          .from('ticket_station_flow')
-          .select(`
-            *,
-            stations (
-              name_th,
-              code
-            )
-          `)
-          .order('step_order', { ascending: true });
-
-        if (flowError) {
-          console.error('Failed to load station flows:', flowError);
-          if (active) setDbStationFlows([]);
-          return;
+        // ใช้ pagination เพื่อให้แน่ใจว่าได้ข้อมูลทั้งหมด (Supabase default limit = 1000)
+        let allFlows = [];
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const { data: flows, error: flowError } = await supabase
+            .from('ticket_station_flow')
+            .select(`
+              *,
+              stations (
+                name_th,
+                code
+              )
+            `)
+            .order('step_order', { ascending: true })
+            .range(from, from + pageSize - 1);
+          
+          if (flowError) {
+            console.error('Failed to load station flows:', flowError);
+            if (active) setDbStationFlows([]);
+            return;
+          }
+          
+          if (flows && flows.length > 0) {
+            allFlows = allFlows.concat(flows);
+            from += pageSize;
+            hasMore = flows.length === pageSize; // ถ้าได้ครบ pageSize แสดงว่าอาจมีข้อมูลเพิ่ม
+          } else {
+            hasMore = false;
+          }
         }
+        
+        const flows = allFlows;
 
         if (active) {
           // Load assignments separately and merge with flows
@@ -700,9 +712,24 @@ export default function UITicket() {
           }) || [];
 
           setDbStationFlows(flowsWithAssignments);
-          console.log(`Loaded ${flowsWithAssignments?.length || 0} station flows with assignments`);
-          console.log('Sample station flows:', flowsWithAssignments.slice(0, 3));
-          console.log('All ticket_no values:', flowsWithAssignments.map(f => f.ticket_no));
+          const totalFlows = flowsWithAssignments?.length || 0;
+          
+          // Debug: ตรวจสอบจำนวน flows ต่อ ticket และหา ticket ที่มี flows มากกว่า 7
+          const flowsByTicket = flowsWithAssignments.reduce((acc, flow) => {
+            const ticketNo = String(flow.ticket_no || '').trim();
+            if (!acc[ticketNo]) acc[ticketNo] = [];
+            acc[ticketNo].push(flow);
+            return acc;
+          }, {});
+          
+          const ticketsWithManyFlows = Object.entries(flowsByTicket)
+            .filter(([ticketNo, ticketFlows]) => ticketFlows.length > 7)
+            .map(([ticketNo, ticketFlows]) => ({ ticketNo, count: ticketFlows.length }));
+          
+          // แสดง log เฉพาะเมื่อมี ticket ที่มี flows มากกว่า 7
+          if (ticketsWithManyFlows.length > 0) {
+            console.log(`🔍 [ROADMAP] Found ${ticketsWithManyFlows.length} tickets with >7 flows. Total flows loaded: ${totalFlows}`);
+          }
         }
       } catch (e) {
         console.error('Failed to load station flows:', e);
@@ -852,8 +879,15 @@ export default function UITicket() {
       
       // หา station flows ที่เกี่ยวข้องกับ ticket นี้ (เช็คทุกกรณี ไม่ใช่แค่เมื่อมี dbTicket)
       // ใช้ trim() เพื่อให้แน่ใจว่าไม่มี space หรือ format ต่างกัน
+      // เรียงลำดับตาม step_order เพื่อให้แน่ใจว่าได้ลำดับที่ถูกต้อง
       const ticketFlows = Array.isArray(dbStationFlows) 
-        ? dbStationFlows.filter(flow => String(flow.ticket_no || '').trim() === ticketNo)
+        ? dbStationFlows
+            .filter(flow => String(flow.ticket_no || '').trim() === ticketNo)
+            .sort((a, b) => {
+              const orderA = Number(a.step_order) || 0;
+              const orderB = Number(b.step_order) || 0;
+              return orderA - orderB;
+            })
         : [];
       
       // เช็คว่ามี station flow หรือไม่
@@ -878,33 +912,9 @@ export default function UITicket() {
       
       merged.hasAssignment = hasAssignment;
       
-      // Debug log สำหรับ ticket RPD2510-199
-      if (ticketNo === 'RPD2510-199') {
-        console.log('[TICKET DEBUG] RPD2510-199:', {
-          ticketNo,
-          hasBom,
-          inDatabase: !!dbTicket,
-          hasStationFlow: ticketFlows.length > 0,
-          hasAssignment,
-          ticketFlowsCount: ticketFlows.length,
-          status: merged.status || dbTicket?.status || 'Pending'
-        });
-      }
+      // ไม่ log debug เพราะสร้าง noise
       
-      // Debug log สำหรับ ticket ที่มีปัญหา
-      if (ticketFlows.length > 0 && !hasAssignment) {
-        console.log(`[ASSIGNMENT DEBUG] Ticket ${ticketNo}:`, {
-          hasStationFlow: ticketFlows.length > 0,
-          hasAssignment,
-          ticketFlowsCount: ticketFlows.length,
-          assignments: ticketFlows.map(f => ({
-            step: f.step_order,
-            hasAssignments: !!f.ticket_assignments,
-            assignmentsLength: f.ticket_assignments?.length || 0,
-            technicianName: f.ticket_assignments?.[0]?.users?.name || null
-          }))
-        });
-      }
+      // ไม่ log assignment debug เพราะสร้าง noise มาก
       
       if (dbTicket) {
         // ใช้ข้อมูลจาก database
@@ -932,6 +942,14 @@ export default function UITicket() {
           technician: flow.ticket_assignments?.[0]?.users?.name || ""
         }));
         
+        // Debug: ตรวจสอบเฉพาะเมื่อมีปัญหา (flows มากกว่า 7 แต่ roadmap ไม่ครบ)
+        if (ticketFlows.length > 7 && merged.roadmap.length !== ticketFlows.length) {
+          console.warn(`⚠️ [ROADMAP] Ticket ${ticketNo}: ${ticketFlows.length} flows but only ${merged.roadmap.length} roadmap steps created`);
+        } else if (ticketFlows.length > 7) {
+          // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
+          console.log(`✅ [ROADMAP] Ticket ${ticketNo}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
+        }
+        
         // คำนวณสถานะตามการ assign และความคืบหน้า
         const stations = ticketFlows.map(flow => ({
           name: flow.stations?.name_th || "",
@@ -951,7 +969,7 @@ export default function UITicket() {
         merged.statusClass = getStatusClass(merged.status);
       } else {
         // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
-        console.log(`No station flows found for ticket ${t.id}, using ERP roadmap`);
+        // ไม่ log เพราะมี ticket หลายตัวที่ยังไม่มี station flows (ปกติ)
         // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
         if (!merged.status || merged.status === "Pending") {
           merged.status = "Pending";
@@ -1065,8 +1083,8 @@ export default function UITicket() {
     const quantity = Number(rec?.Quantity ?? rec?.quantity ?? 0);
     const dueDate = rec?.Due_Date || rec?.Delivery_Date || rec?.deliveryDate || rec?.Ending_Date_Time || rec?.Ending_Date || null;
     
-    // Debug: แสดงข้อมูล Due_Date
-    if (rpdNo === 'RPD2510-199') {
+    // ไม่ log debug เพราะสร้าง noise
+    if (false && rpdNo === 'RPD2510-199') {
       console.log('🔍 Debug Due_Date for RPD2510-199:', {
         Delivery_Date: rec?.Delivery_Date,
         deliveryDate: rec?.deliveryDate,
@@ -1195,9 +1213,7 @@ export default function UITicket() {
 
   // Merge station flows เข้ากับ tickets ใน groupedByItem
   const groupedByItemWithFlows = useMemo(() => {
-    console.log('Merging station flows with grouped tickets...');
-    console.log('dbStationFlows count:', dbStationFlows.length);
-    console.log('groupedByItem count:', groupedByItem.length);
+    // ไม่ log เพราะสร้าง noise
     
     return groupedByItem.map(group => ({
       ...group,
@@ -1225,25 +1241,38 @@ export default function UITicket() {
           }
           
           // หา station flows ที่เกี่ยวข้องกับ ticket นี้
+          // เรียงลำดับตาม step_order เพื่อให้แน่ใจว่าได้ลำดับที่ถูกต้อง
           const ticketFlows = Array.isArray(dbStationFlows) 
-            ? dbStationFlows.filter(flow => {
-                const flowTicketNo = String(flow.ticket_no || '').trim();
-                const ticketId = String(ticket.id || ticket.rpd || '').trim().replace('#', '');
-                const match = flowTicketNo === ticketId;
-                if (!match) {
-                  console.log(`Station flow mismatch: flow.ticket_no="${flowTicketNo}" vs ticket.id="${ticketId}"`);
-                }
-                return match;
-              })
+            ? dbStationFlows
+                .filter(flow => {
+                  const flowTicketNo = String(flow.ticket_no || '').trim();
+                  const ticketId = String(ticket.id || ticket.rpd || '').trim().replace('#', '');
+                  return flowTicketNo === ticketId;
+                })
+                .sort((a, b) => {
+                  const orderA = Number(a.step_order) || 0;
+                  const orderB = Number(b.step_order) || 0;
+                  return orderA - orderB;
+                })
             : [];
           
           if (ticketFlows.length > 0) {
+            const ticketId = String(ticket.id || ticket.rpd || '').trim().replace('#', '');
+            
             // สร้าง roadmap จาก station flows
             merged.roadmap = ticketFlows.map((flow) => ({
               step: flow.stations?.name_th || "",
               status: flow.status || "pending",
               technician: flow.ticket_assignments?.[0]?.users?.name || ""
             }));
+            
+            // Debug: ตรวจสอบเฉพาะเมื่อมีปัญหา (flows มากกว่า 7 แต่ roadmap ไม่ครบ)
+            if (ticketFlows.length > 7 && merged.roadmap.length !== ticketFlows.length) {
+              console.warn(`⚠️ [ROADMAP] Ticket ${ticketId}: ${ticketFlows.length} flows but only ${merged.roadmap.length} roadmap steps created`);
+            } else if (ticketFlows.length > 7) {
+              // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
+              console.log(`✅ [ROADMAP] Ticket ${ticketId}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
+            }
             
             // คำนวณสถานะตามการ assign และความคืบหน้า
             const stations = ticketFlows.map(flow => ({
@@ -1265,7 +1294,7 @@ export default function UITicket() {
             merged.hasStationFlow = true;
           } else {
             // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
-            console.log(`No station flows found for ticket ${ticket.id}, using ERP roadmap`);
+            // ไม่ log เพราะมี ticket หลายตัวที่ยังไม่มี station flows (ปกติ)
             // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
             merged.status = "Pending";
             merged.statusClass = "text-blue-600";
@@ -1347,9 +1376,9 @@ export default function UITicket() {
     
     // ข้ามการหาจาก mock projects เดิม
     return (
-      <div className="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 overflow-hidden max-w-full">
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3">
-          <div className="flex-1">
+      <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 overflow-hidden max-w-full">
+        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 min-w-0">
+          <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
               <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-gray-100">{ticket.id}</h3>
               {/* ข้อมูลรหัสต่างๆ - ย้ายมาด้านบนข้างๆ เลขตั๋ว (ลบ RPD ออกเพราะซ้ำกับเลขตั๋ว) */}
@@ -1428,8 +1457,8 @@ export default function UITicket() {
                     (hasStationFlow && !actualHasAssignment) || 
                     (!hasStationFlow && inDatabase && status === 'Pending' && !actualHasAssignment);
                   
-                  // Debug log สำหรับ ticket RPD2510-199
-                  if (ticketNo === 'RPD2510-199') {
+                  // ไม่ log debug เพราะสร้าง noise
+                  if (false && ticketNo === 'RPD2510-199') {
                     console.log('[ASSIGNMENT WARNING DEBUG]', {
                       ticketNo,
                       hasStationFlow,
@@ -1500,64 +1529,65 @@ export default function UITicket() {
                 <span>{ticket.time}</span>
               </div>
             </div>
-            <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100 dark:border-slate-700">
+            <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-100 dark:border-slate-700 min-w-0">
               <div className="flex items-center gap-2 mb-2 sm:mb-3">
                 <span className="text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">{t('productionPath', language)}:</span>
               </div>
-              {/* แสดง roadmap ในกรอบที่จำกัดความกว้าง แต่สามารถ scroll ได้ */}
-              <div className="w-full overflow-hidden">
-                <div className="flex items-center gap-2 sm:gap-2 lg:gap-3 overflow-x-auto pb-2 pr-1 roadmap-scroll" style={{ scrollbarWidth: 'thin' }}>
-                  {ticket.roadmap.map((step, stepIndex) => (
-                    <div key={stepIndex} className="flex items-center flex-shrink-0 relative">
-                      <div className="flex flex-col items-center">
-                        <div className="relative group">
-                          <div className={`rounded-full border-2 transition-all duration-300 ${
-                            step.status === 'completed'
-                              ? 'w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5 xl:w-4 xl:h-4 bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-500 shadow-md'
-                              : step.status === 'current'
-                              ? 'w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4 xl:w-4 xl:h-4 bg-amber-500 border-amber-500 shadow-lg shadow-amber-500/30 animate-pulse ring-2 ring-amber-300/40'
-                              : 'w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 xl:w-3 xl:h-3 bg-gray-200 border-gray-200'
-                          }`} />
-                          {(step.status === 'completed' || step.status === 'current') && (
-                            <div className={`${step.status === 'completed' ? 'bg-emerald-400/30' : 'bg-amber-400/30'} absolute -inset-1 rounded-full blur-md opacity-50 pointer-events-none`} />
-                          )}
-                        </div>
-                        <div className={`mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] md:text-[10px] lg:text-[10px] xl:text-xs px-1.5 sm:px-2 py-1 bg-white dark:bg-slate-800 rounded border text-center min-w-fit transition-transform duration-200 ${
-                          step.status === 'completed'
-                            ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.12)]'
-                            : step.status === 'current'
-                            ? 'text-amber-600 dark:text-amber-400 font-medium border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 shadow-[0_1px_6px_rgba(245,158,11,0.16)]'
-                            : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'
-                        } group-hover:-translate-y-0.5`}>
-                          <div className="font-medium">{stepIndex + 1}.</div>
-                          <div className="text-[10px] sm:text-[10px] md:text-[10px] lg:text-[10px] xl:text-xs leading-tight">{step.step}</div>
-                        </div>
-                      </div>
-                      {stepIndex < ticket.roadmap.length - 1 && (() => {
-                        const next = ticket.roadmap[stepIndex + 1];
-                        const isCompleted = step.status === 'completed';
-                        const hasCurrent = currentIndex >= 0;
-                        // Active when completed → current, OR when no current and the next is the first pending (show direction to next)
-                        const connectsToCurrent = isCompleted && (next?.status === 'current' || (!hasCurrent && firstPendingIndex === stepIndex + 1));
-                        
-                        // Determine connector class
-                        let connectorClass = 'road-connector';
-                        if (isCompleted) connectorClass += ' road-connector--completed';
-                        if (connectsToCurrent) connectorClass += ' road-connector--active';
-                        
-                        return (
-                          <div className={`w-8 sm:w-10 md:w-10 lg:w-10 xl:w-16 mx-1 sm:mx-2 lg:mx-2 xl:mx-3 ${connectorClass}`}>
-                            {connectsToCurrent && (
-                              <>
-                                <div className="road-connector__fill" />
-                                <div className="road-connector__beam" />
-                              </>
+              {/* แสดง roadmap ในกล่องแยกที่จำกัดความกว้าง แต่สามารถ scroll ได้ */}
+              {/* ล็อคความกว้างกล่อง roadmap ไม่ให้ขยายเต็มจอ แล้วให้เลื่อนซ้ายขวาเฉพาะด้านใน */}
+              <div className="w-full max-w-[960px] mx-auto overflow-hidden border border-gray-200 dark:border-slate-600 rounded-lg bg-gray-50 dark:bg-slate-800/50 p-3 sm:p-4">
+                {/* กล่อง scroll ล็อคความกว้างเท่ากับกล่องด้านนอก */}
+                <div className="w-full overflow-x-auto overflow-y-hidden pb-2 roadmap-scroll">
+                  {/* เนื้อหา roadmap ใช้ inline-flex ให้ยาวเฉพาะในกล่อง scroll นี้ */}
+                  <div className="inline-flex items-center gap-2 sm:gap-2 lg:gap-3">
+                    {ticket.roadmap.map((step, stepIndex) => (
+                      <div key={stepIndex} className="flex items-center flex-shrink-0 relative">
+                        <div className="flex flex-col items-center">
+                          <div className="relative group">
+                            <div className={`rounded-full border-2 transition-all duration-300 ${
+                              step.status === 'completed'
+                                ? 'w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5 xl:w-4 xl:h-4 bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-500 shadow-md'
+                                : step.status === 'current'
+                                ? 'w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4 xl:w-4 xl:h-4 bg-amber-500 border-amber-500 shadow-lg shadow-amber-500/30 animate-pulse ring-2 ring-amber-300/40'
+                                : 'w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 xl:w-3 xl:h-3 bg-gray-200 border-gray-200'
+                            }`} />
+                            {(step.status === 'completed' || step.status === 'current') && (
+                              <div className={`${step.status === 'completed' ? 'bg-emerald-400/30' : 'bg-amber-400/30'} absolute -inset-1 rounded-full blur-md opacity-50 pointer-events-none`} />
                             )}
                           </div>
-                        );
-                      })()}
-                    </div>
-                  ))}
+                          <div className={`mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] md:text-[10px] lg:text-[10px] xl:text-xs px-1.5 sm:px-2 py-1 bg-white dark:bg-slate-800 rounded border text-center min-w-fit transition-transform duration-200 ${
+                            step.status === 'completed'
+                              ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.12)]'
+                              : step.status === 'current'
+                              ? 'text-amber-600 dark:text-amber-400 font-medium border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 shadow-[0_1px_6px_rgba(245,158,11,0.16)]'
+                              : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'
+                          } group-hover:-translate-y-0.5`}>
+                            <div className="font-medium">{stepIndex + 1}.</div>
+                            <div className="text-[10px] sm:text-[10px] md:text-[10px] lg:text-[10px] xl:text-xs leading-tight">{step.step}</div>
+                          </div>
+                        </div>
+                        {stepIndex < ticket.roadmap.length - 1 && (() => {
+                          const next = ticket.roadmap[stepIndex + 1];
+                          const isCompleted = step.status === 'completed';
+                          const hasCurrent = currentIndex >= 0;
+                          const connectsToCurrent = isCompleted && (next?.status === 'current' || (!hasCurrent && firstPendingIndex === stepIndex + 1));
+                          let connectorClass = 'road-connector';
+                          if (isCompleted) connectorClass += ' road-connector--completed';
+                          if (connectsToCurrent) connectorClass += ' road-connector--active';
+                          return (
+                            <div className={`w-8 sm:w-10 md:w-10 lg:w-10 xl:w-16 mx-1 sm:mx-2 lg:mx-2 xl:mx-3 ${connectorClass}`}>
+                              {connectsToCurrent && (
+                                <>
+                                  <div className="road-connector__fill" />
+                                  <div className="road-connector__beam" />
+                                </>
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="mt-2 sm:mt-3 p-2 bg-gray-50 dark:bg-slate-700 rounded-lg">
@@ -1591,7 +1621,7 @@ export default function UITicket() {
               </div>
             </div>
           </div>
-          <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-shrink-0">
+          <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-shrink-0" style={{ minWidth: 0, maxWidth: '100%' }}>
             <button 
               onClick={() => canAction && onEdit(ticket)}
               onContextMenu={(e) => {
@@ -1893,7 +1923,7 @@ export default function UITicket() {
       </div>
 
       {/* Tab Content */}
-      <div className="space-y-6">
+      <div className="space-y-6" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
         {loadingInitial ? (
           <div className="text-center py-12">
             <div className="flex flex-col items-center gap-4">
@@ -1903,14 +1933,14 @@ export default function UITicket() {
             </div>
           </div>
         ) : currentTab ? (
-          <div className="space-y-4">
+          <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
             {/* แสดงผลแบบกลุ่มตาม Item Code ก่อน */}
             {activeTab === "open" && groupedByItemWithFlows.length > 0 && (
-              <div className="mb-6">
+              <div className="mb-6" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                   {language === 'th' ? 'จัดกลุ่มตาม Item Code' : 'Grouped by Item Code'}
                 </h2>
-                <div className="space-y-4">
+                <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                   {groupedByItemWithFlows
                     .filter(g => {
                       // กรองตามสถานะตั๋วก่อน
@@ -1937,7 +1967,11 @@ export default function UITicket() {
                     .map((g, i) => {
                       const isExpanded = expandedItems.has(g.itemCode);
                       return (
-                        <div key={g.itemCode} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
+                        <div
+                          key={g.itemCode}
+                          className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-fadeInUpSmall"
+                          style={{ animationDelay: `${0.06 * (i + 1)}s` }}
+                        >
                           {/* Header with collapse/expand button */}
                           <div 
                             className="flex items-center justify-between p-4 sm:p-5 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
@@ -2016,10 +2050,10 @@ export default function UITicket() {
                               : g.items;
                             
                             return (
-                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700">
-                                <div className="space-y-3 pt-3">
+                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+                                <div className="space-y-3 pt-3" style={{ width: '100%', minWidth: 0 }}>
                                   {displayItems.map((ticket, ticketIndex) => (
-                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
+                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s`, width: '100%', minWidth: 0 }}>
                                       <TicketCard
                                         ticket={ticket}
                                         onEdit={handleEdit}
@@ -2052,7 +2086,7 @@ export default function UITicket() {
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                   {language === 'th' ? 'จัดกลุ่มตาม Item Code' : 'Grouped by Item Code'}
                 </h2>
-                <div className="space-y-4">
+                <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                   {groupedByItemWithFlows
                     .filter(g => {
                       // กรองตามสถานะตั๋วก่อน
@@ -2079,11 +2113,12 @@ export default function UITicket() {
                     .map((g, i) => {
                       const isExpanded = expandedItems.has(g.itemCode);
                       return (
-                        <div key={g.itemCode} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
+                        <div key={g.itemCode} className="bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s`, width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden', boxSizing: 'border-box' }}>
                           {/* Header with collapse/expand button */}
                           <div 
                             className="flex items-center justify-between p-4 sm:p-5 cursor-pointer hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                             onClick={() => toggleItemExpansion(g.itemCode)}
+                            style={{ minWidth: 0, maxWidth: '100%' }}
                           >
                             <div className="flex items-center gap-3">
                               <div className="flex items-center gap-2">
@@ -2158,10 +2193,10 @@ export default function UITicket() {
                               : g.items.filter(ticket => ticket.status === "Finish");
                             
                             return (
-                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700">
-                                <div className="space-y-3 pt-3">
+                              <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
+                                <div className="space-y-3 pt-3" style={{ width: '100%', minWidth: 0 }}>
                                   {displayItems.map((ticket, ticketIndex) => (
-                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s` }}>
+                                    <div key={ticket.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (ticketIndex + 1)}s`, width: '100%', minWidth: 0 }}>
                                       <TicketCard
                                         ticket={ticket}
                                         onEdit={handleEdit}

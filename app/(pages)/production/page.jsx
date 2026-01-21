@@ -319,20 +319,64 @@ export default function ProductionPage() {
       // DB-first: ไม่ต้องสร้าง rework tickets แยก เพราะ baseMapped ครอบคลุมอยู่แล้ว
 
       // 3) Load station flows and assignments from DB
+      // Filter flows ตาม ticket_no ที่มีอยู่จริงเพื่อลดข้อมูลที่ต้องโหลด
+      // ใช้ pagination และแบ่ง queries เมื่อ ticket numbers เยอะเกินไป (Supabase .in() limit ~1000)
       let flows = [];
       {
-        const { data, error } = await supabase
-          .from('ticket_station_flow')
-          .select(`
-            *,
-            stations (
-              name_th,
-              code
-            )
-          `)
-          .order('step_order', { ascending: true });
-        if (!error && Array.isArray(data)) {
-          flows = data;
+        if (allTicketNumbers.length === 0) {
+          flows = [];
+        } else {
+          let allFlows = [];
+          const maxInQuery = 500; // ใช้ 500 เพื่อความปลอดภัย (Supabase .in() limit ~1000)
+          let flowError = null;
+          
+          // แบ่ง ticket numbers เป็น chunks
+          for (let i = 0; i < allTicketNumbers.length; i += maxInQuery) {
+            const ticketChunk = allTicketNumbers.slice(i, i + maxInQuery);
+            
+            let from = 0;
+            const pageSize = 1000;
+            let hasMore = true;
+            
+            while (hasMore) {
+              const { data: flowsPage, error: error } = await supabase
+                .from('ticket_station_flow')
+                .select(`
+                  *,
+                  stations (
+                    name_th,
+                    code
+                  )
+                `)
+                .in('ticket_no', ticketChunk)
+                .order('step_order', { ascending: true })
+                .range(from, from + pageSize - 1);
+              
+              if (error) {
+                flowError = error;
+                hasMore = false;
+                break;
+              }
+              
+              if (flowsPage && flowsPage.length > 0) {
+                allFlows = allFlows.concat(flowsPage);
+                from += pageSize;
+                hasMore = flowsPage.length === pageSize;
+              } else {
+                hasMore = false;
+              }
+            }
+            
+            if (flowError) break;
+          }
+          
+          if (flowError) {
+            console.error('[PRODUCTION] Failed to load station flows:', flowError);
+            flows = [];
+          } else {
+            flows = allFlows;
+            console.log(`[PRODUCTION] Loaded ${flows.length} flows for ${allTicketNumbers.length} tickets (filtered by ticket_no)`);
+          }
         }
       }
 
@@ -408,16 +452,30 @@ export default function ProductionPage() {
           return { ...t, status: 'Pending', statusClass: 'text-blue-600', stations: [], roadmap: [] };
         }
 
-        const roadmap = ticketFlows.map(flow => ({
+        // เรียง ticketFlows ตาม step_order เพื่อให้ roadmap เรียงลำดับถูกต้อง
+        const sortedTicketFlows = [...ticketFlows].sort((a, b) => {
+          const orderA = Number(a.step_order) || 0;
+          const orderB = Number(b.step_order) || 0;
+          return orderA - orderB;
+        });
+        
+        console.log(`[PRODUCTION] Ticket ${ticketNo} sorted flows:`, sortedTicketFlows.map(f => ({
+          step_order: f.step_order,
+          station: f.stations?.name_th,
+          status: f.status
+        })));
+        
+        const roadmap = sortedTicketFlows.map(flow => ({
           step: flow.stations?.name_th || '',
           status: flow.status || 'pending',
-          technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || ''
+          technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || '',
+          step_order: flow.step_order // เก็บ step_order ไว้ใน roadmap เพื่อใช้ในการตรวจสอบ
         }));
 
-        console.log(`[PRODUCTION] Ticket ${ticketNo} roadmap:`, roadmap);
+        console.log(`[PRODUCTION] Ticket ${ticketNo} roadmap:`, roadmap.map(r => ({ step: r.step, status: r.status, step_order: r.step_order })));
 
         // Build stations with price for amount calc
-        const stations = ticketFlows.map(flow => ({
+        const stations = sortedTicketFlows.map(flow => ({
           name: flow.stations?.name_th || '',
           technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || '',
           priceType: flow.price_type || 'flat',
@@ -425,13 +483,13 @@ export default function ProductionPage() {
           status: flow.status || 'pending'
         }));
 
-        const currentFlow = ticketFlows.find(f => f.status === 'current');
+        const currentFlow = sortedTicketFlows.find(f => f.status === 'current');
         let assignee = currentFlow ? (assignmentMap[`${currentFlow.ticket_no}-${currentFlow.station_id}-${currentFlow.step_order}`] || '') : '';
         if (!assignee) {
-          assignee = assignmentMap[`${ticketFlows[0].ticket_no}-${ticketFlows[0].station_id}-${ticketFlows[0].step_order}`] || '';
+          assignee = assignmentMap[`${sortedTicketFlows[0].ticket_no}-${sortedTicketFlows[0].station_id}-${sortedTicketFlows[0].step_order}`] || '';
         }
 
-        const status = calculateTicketStatus(stations, roadmap);
+        const status = calculateTicketStatus(stations, roadmap, sortedTicketFlows);
         const statusClass = getStatusClass(status);
 
         return { 
@@ -583,16 +641,89 @@ export default function ProductionPage() {
 
   // ERP mapping removed (DB-first approach)
 
-  function calculateTicketStatus(stations, roadmap) {
+  function calculateTicketStatus(stations, roadmap, ticketFlows = []) {
     if (!Array.isArray(stations) || stations.length === 0) return "Pending";
     const hasAssigned = stations.some(s => (s.technician || '').trim() !== '');
     if (!hasAssigned) return "Pending";
-    if (Array.isArray(roadmap) && roadmap.length > 0) {
-      const allCompleted = roadmap.every(step => step.status === 'completed');
-      const hasCurrent = roadmap.some(step => step.status === 'current');
-      if (allCompleted) return "Finish";
-      if (hasCurrent) return "In Progress";
+    
+    const ticketNo = ticketFlows[0]?.ticket_no || roadmap[0]?.step_order || 'unknown';
+    
+    // เช็คจาก ticketFlows ก่อน (เป็น source of truth)
+    if (Array.isArray(ticketFlows) && ticketFlows.length > 0) {
+      // เรียง ticketFlows ตาม step_order
+      const sortedFlows = [...ticketFlows].sort((a, b) => {
+        const orderA = Number(a.step_order) || 0;
+        const orderB = Number(b.step_order) || 0;
+        return orderA - orderB;
+      });
+      
+      console.log(`[PRODUCTION] Ticket ${ticketNo}: Checking ${sortedFlows.length} flows:`, 
+        sortedFlows.map(f => `order ${f.step_order} (${f.stations?.name_th}) = ${f.status}`));
+      
+      // เช็คว่ามี step ที่กำลังทำอยู่หรือไม่
+      const hasCurrent = sortedFlows.some(flow => {
+        const flowStatus = (flow.status || 'pending').toLowerCase();
+        return flowStatus === 'current';
+      });
+      if (hasCurrent) {
+        console.log(`[PRODUCTION] Ticket ${ticketNo}: Has current step, status: In Progress`);
+        return "In Progress";
+      }
+      
+      // เช็คว่ามี step ไหนที่ยังไม่ completed (pending หรือ current)
+      const incompleteSteps = sortedFlows.filter(flow => {
+        const flowStatus = (flow.status || 'pending').toLowerCase();
+        return flowStatus !== 'completed';
+      });
+      
+      if (incompleteSteps.length > 0) {
+        console.log(`[PRODUCTION] ⚠️ Ticket ${ticketNo}: ${incompleteSteps.length}/${sortedFlows.length} steps not completed:`, 
+          incompleteSteps.map(f => `order ${f.step_order} (${f.stations?.name_th}) = ${f.status}`));
+        return "In Progress";
+      }
+      
+      // ถ้าทุก step เป็น completed ให้ตรวจสอบว่า step สุดท้าย (step_order สูงสุด) เป็น completed
+      const maxStepOrder = Math.max(...sortedFlows.map(f => Number(f.step_order) || 0));
+      const lastFlow = sortedFlows.find(f => Number(f.step_order) === maxStepOrder);
+      if (lastFlow) {
+        const lastFlowStatus = (lastFlow.status || 'pending').toLowerCase();
+        if (lastFlowStatus === 'completed') {
+          console.log(`[PRODUCTION] ✅ Ticket ${ticketNo}: All ${sortedFlows.length} steps completed (last: order ${maxStepOrder}, ${lastFlow.stations?.name_th}), status: Finish`);
+          return "Finish";
+        } else {
+          console.log(`[PRODUCTION] ⚠️ Ticket ${ticketNo}: Last step (order ${maxStepOrder}, ${lastFlow.stations?.name_th}) not completed, status: ${lastFlowStatus}`);
+          return "In Progress";
+        }
+      }
     }
+    
+    // Fallback: เช็คจาก roadmap (กรณีที่ ticketFlows ไม่มีข้อมูล)
+    if (Array.isArray(roadmap) && roadmap.length > 0) {
+      const hasCurrent = roadmap.some(step => step.status === 'current');
+      if (hasCurrent) {
+        console.log(`[PRODUCTION] Ticket ${ticketNo}: Has current step in roadmap, status: In Progress`);
+        return "In Progress";
+      }
+      
+      // เช็คว่ามี step ไหนที่ยังไม่ completed
+      const incompleteSteps = roadmap.filter(step => {
+        const stepStatus = (step.status || 'pending').toLowerCase();
+        return stepStatus !== 'completed';
+      });
+      
+      if (incompleteSteps.length > 0) {
+        console.log(`[PRODUCTION] ⚠️ Ticket ${ticketNo}: ${incompleteSteps.length}/${roadmap.length} roadmap steps not completed:`, 
+          incompleteSteps.map(s => `${s.step} = ${s.status}`));
+        return "In Progress";
+      }
+      
+      // ถ้าทุก step ใน roadmap เป็น completed แต่ไม่มี ticketFlows ให้ verify
+      // ยังไม่ถือว่าเสร็จเพราะอาจมี step อื่นที่ยังไม่ถูกเพิ่มใน roadmap
+      console.log(`[PRODUCTION] ⚠️ Ticket ${ticketNo}: All roadmap steps completed but no ticketFlows to verify, status: In Progress`);
+      return "In Progress";
+    }
+    
+    console.log(`[PRODUCTION] Ticket ${ticketNo}: Default status: Released`);
     return "Released";
   }
 
@@ -1661,14 +1792,6 @@ export default function ProductionPage() {
                                   }}
                                   disabled={isUpdatingStatus}
                                   className={`
-                                    flex items-center justify-between px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
-                                    ${isSelected
-                                      ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
-                                      : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
-                                    }
-                                    ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
-                                  `}
-                                className={`
                                     flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
                                     ${isSelected
                                       ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
