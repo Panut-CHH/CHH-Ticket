@@ -895,7 +895,7 @@ export default function ProductionPage() {
         // All non-color stations go to productionPrice, including:
         // - ประกอบวงกบ (frame assembly)
         // - ประกอบชุดชาร์ป (sharp set assembly)
-        // - อัดบาน (press)
+        // - ปรับขนาด (resize/press)
         // - and all other production stations
         productionPrice += stationTotal;
       }

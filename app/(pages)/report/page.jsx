@@ -67,7 +67,7 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
 
-      // 1) completed station flows - เฉพาะสถานี "อัดบาน" และ "สี"
+      // 1) completed station flows - เฉพาะสถานี "ปรับขนาด" และ "สี"
       const { data: flows, error: flowError } = await supabase
         .from("ticket_station_flow")
         .select(`
@@ -85,10 +85,11 @@ export default function ReportPage() {
 
       if (flowError) throw flowError;
 
-      // Filter เฉพาะสถานี "อัดบาน" และ "สี"
+      // Filter เฉพาะสถานี "ปรับขนาด" และ "สี" (รองรับทั้งชื่อเก่าและใหม่)
       const filteredFlows = (flows || []).filter((flow) => {
         const stationName = (flow.stations?.name_th || flow.stations?.code || "").toLowerCase();
-        return stationName === "อัดบาน" || stationName === "สี" || stationName.includes("อัดบาน") || stationName.includes("สี");
+        return stationName === "ปรับขนาด" || stationName === "อัดบาน" || stationName === "สี" || 
+               stationName.includes("ปรับขนาด") || stationName.includes("อัดบาน") || stationName.includes("สี");
       });
 
       // Debug: Log station names to see what we're getting

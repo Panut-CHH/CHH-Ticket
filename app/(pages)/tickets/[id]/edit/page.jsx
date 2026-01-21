@@ -342,7 +342,7 @@ const STATION_PRESETS = {
   'ประตู': [
     'ประกอบโครง',
     'QC',
-    'อัดบาน',
+    'ปรับขนาด',
     'QC',
     'CNC',
     'QC',
@@ -354,7 +354,7 @@ const STATION_PRESETS = {
   'ชุดชาร์ป': [
     'ประกอบโครง',
     'QC',
-    'อัดบาน',
+    'ปรับขนาด',
     'QC',
     'CNC',
     'QC',
@@ -435,11 +435,11 @@ const STATION_PRESETS = {
   // Populate labor prices when stations and availableStations are ready
   useEffect(() => {
     if (ticketView?.itemCode && stations.length > 0 && availableStations.length > 0 && !loadingStations) {
-      // Check if there are any "อัดบาน" or "สี" stations without prices
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      // Check if there are any "ปรับขนาด" or "สี" stations without prices
+      const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       const hasPressOrPaintWithoutPrice = stations.some(s => {
-        const isPress = pressStation && s.name === 'อัดบาน';
+        const isPress = pressStation && (s.name === 'ปรับขนาด' || s.name === 'อัดบาน');
         const isPaint = paintStation && s.name === 'สี';
         return (isPress || isPaint) && (!s.price || s.price === '' || s.price === null);
       });
@@ -759,14 +759,14 @@ const STATION_PRESETS = {
         });
       });
       
-      // หา station codes สำหรับ "อัดบาน" และ "สี"
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      // หา station codes สำหรับ "ปรับขนาด" และ "สี"
+      const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       
       // อัปเดตราคาใน stations ที่มีชื่อตรงกับ "อัดบาน" หรือ "สี" และยังไม่มีราคา
       const updatedStations = currentStations.map(station => {
-        // ตรวจสอบว่าเป็นสถานี "อัดบาน" หรือ "สี"
-        const isPressStation = pressStation && (station.name === 'อัดบาน');
+        // ตรวจสอบว่าเป็นสถานี "ปรับขนาด" หรือ "สี"
+        const isPressStation = pressStation && (station.name === 'ปรับขนาด' || station.name === 'อัดบาน');
         const isPaintStation = paintStation && station.name === 'สี';
         
         if (!isPressStation && !isPaintStation) {

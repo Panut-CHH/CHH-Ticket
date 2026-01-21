@@ -241,7 +241,7 @@ export const translations = {
     productionPath: "เส้นทางการผลิต",
     assembleFrame: "ประกอบโครง",
     cutToSize: "ใสไม้ให้ได้ขนาด",
-    pressDoor: "อัดบาน",
+    pressDoor: "ปรับขนาด",
     attachSize: "ติดขนาดบานที่อัดให้ได้ขนาด",
     
     // Production/My Work

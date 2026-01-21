@@ -282,8 +282,8 @@ export default function UIProjectDetail({ projectId }) {
   // Load labor prices for all items
   const loadItemPrices = async (items) => {
     try {
-      // Find stations by name for production & color
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      // Find stations by name for production & color (รองรับทั้งชื่อเก่าและใหม่)
+      const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
       const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
@@ -633,8 +633,8 @@ export default function UIProjectDetail({ projectId }) {
       const result = await response.json();
       
       if (result.success && result.data) {
-        // Find stations by name "อัดบาน", "สี", "ประกอบวงกบ", and "ประกอบชุดชาร์ป"
-        const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+        // Find stations by name "ปรับขนาด", "สี", "ประกอบวงกบ", and "ประกอบชุดชาร์ป"
+        const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
         const paintStation = availableStations.find(s => s.name_th === 'สี');
         const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
         const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
@@ -703,7 +703,7 @@ export default function UIProjectDetail({ projectId }) {
     
     setSavingPrices(true);
     try {
-      const pressStation = availableStations.find(s => s.name_th === 'อัดบาน');
+      const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
       const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
@@ -1863,15 +1863,15 @@ export default function UIProjectDetail({ projectId }) {
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 break-words">
                 {language === 'th' 
-                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "อัดบาน", "สี", "ประกอบวงกบ", และ "ประกอบชุดชาร์ป" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
-                  : 'Set labor prices for "Press", "Paint", "Frame Assembly", and "Sharp Set Assembly" stations. These prices will automatically appear in ticket edit page'}
+                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "ปรับขนาด", "สี", "ประกอบวงกบ", และ "ประกอบชุดชาร์ป" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
+                  : 'Set labor prices for "Resize", "Paint", "Frame Assembly", and "Sharp Set Assembly" stations. These prices will automatically appear in ticket edit page'}
               </p>
               
               <div className="space-y-4">
-                {/* Press Station (อัดบาน) */}
+                {/* Press Station (ปรับขนาด) */}
                 <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
                   <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
-                    {language === 'th' ? 'สถานี: อัดบาน' : 'Station: Press'}
+                    {language === 'th' ? 'สถานี: ปรับขนาด' : 'Station: Resize'}
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>

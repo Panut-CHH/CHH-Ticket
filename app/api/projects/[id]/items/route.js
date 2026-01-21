@@ -10,7 +10,8 @@ const stationMapping = {
   "ประกอบโครง": "27e36a35-f4ef-4982-83b1-8bdd1802e108",
   "ใสไม้ให้ได้ขนาด": "a810f1b9-1edd-42f4-9ecd-7297c7b077b9",
   "QC": "14acc6a7-4f12-4809-8799-6d0885fb8b48",
-  "อัดบาน": "75b17fd6-9956-40c5-bdcd-4c379aabed06",
+  "ปรับขนาด": "75b17fd6-9956-40c5-bdcd-4c379aabed06",
+  "อัดบาน": "75b17fd6-9956-40c5-bdcd-4c379aabed06", // เก็บไว้เพื่อ backward compatibility
   "CNC": "417afd0c-4be8-491b-b64f-280cae8ebaef",
   "สี": "dd2176de-4d33-4bc9-ac32-5b9f55f3a7cf",
   "Packing": "647c5f96-ddb9-46c3-b4d4-97bb17bf3d96",
@@ -29,7 +30,7 @@ function getDefaultRoadmapSteps(itemUnit) {
       return [
         "ประกอบโครง",
         "QC",
-        "อัดบาน",
+        "ปรับขนาด",
         "QC",
         "CNC",
         "QC",
@@ -51,7 +52,7 @@ function getDefaultRoadmapSteps(itemUnit) {
       return [
         "ประกอบโครง",
         "QC",
-        "อัดบาน",
+        "ปรับขนาด",
         "QC",
         "CNC",
         "QC",
