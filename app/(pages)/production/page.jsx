@@ -38,6 +38,7 @@ export default function ProductionPage() {
   
   const hasCNCRole = hasRole('CNC');
   const hasPackingRole = hasRole('Packing');
+  const hasPaintingRole = hasRole('Painting');
   const hasStorageRole = hasRole('Storage');
   const hasViewerRole = hasRole('Viewer');
   const hasSupervisorProductionRole = hasRole('Supervisor Production');
@@ -805,6 +806,72 @@ export default function ProductionPage() {
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
+        // สำหรับ Painting role ให้เช็คเฉพาะสถานีสีที่ assign ให้ตัวเองเท่านั้น
+        if (hasPaintingRole) {
+          const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
+          
+          // เรียง roadmap ตาม step_order ก่อน
+          const sortedRoadmap = [...roadmap].sort((a, b) => {
+            const orderA = Number(a.step_order) || 0;
+            const orderB = Number(b.step_order) || 0;
+            return orderA - orderB;
+          });
+          
+          // หาสถานีสีใน roadmap
+          const paintingStepIndex = sortedRoadmap.findIndex(step => {
+            const stepName = (step.step || '').toLowerCase().trim();
+            return stepName.includes('สี') || stepName.includes('color') || stepName.includes('paint');
+          });
+          
+          if (paintingStepIndex >= 0) {
+            const paintingStep = sortedRoadmap[paintingStepIndex];
+            const paintingStatus = (paintingStep.status || 'pending').toLowerCase();
+            
+            // เช็คว่าสถานีสี assign ให้ตัวเองหรือไม่
+            const paintingTechnician = (paintingStep.technician || '').toString().toLowerCase();
+            const isAssignedToMe = paintingTechnician.includes(myNameLower);
+            
+            // ถ้าไม่ได้ assign ให้ตัวเอง ให้ return false
+            if (!isAssignedToMe) {
+              return false;
+            }
+            
+            // ถ้าสถานีสีเป็น current และ assign ให้ตัวเอง แสดงได้เลย
+            if (paintingStatus === 'current') {
+              return true;
+            }
+            
+            // ถ้าสถานีสีเป็น pending ต้องเช็คว่าเป็นสถานีถัดไปที่พร้อมทำ (next pending)
+            if (paintingStatus === 'pending') {
+              // หาสถานีทั้งหมดที่อยู่ก่อนสถานีสี (index น้อยกว่า)
+              const previousSteps = sortedRoadmap.slice(0, paintingStepIndex);
+              
+              // เช็คว่าสถานีก่อนหน้าทั้งหมดเสร็จแล้วหรือไม่
+              const allPreviousCompleted = previousSteps.length === 0 || 
+                previousSteps.every(step => {
+                  const stepStatus = (step.status || 'pending').toLowerCase();
+                  return stepStatus === 'completed';
+                });
+              
+              // เช็คว่าสถานีสีเป็นสถานีถัดไปที่พร้อมทำ (next pending) หรือไม่
+              // หาสถานี pending แรกใน roadmap
+              const firstPendingIndex = sortedRoadmap.findIndex(step => {
+                const stepStatus = (step.status || 'pending').toLowerCase();
+                return stepStatus === 'pending';
+              });
+              
+              // ถ้าสถานีสีเป็นสถานี pending แรก และสถานีก่อนหน้าทั้งหมดเสร็จแล้ว และ assign ให้ตัวเอง แสดงได้
+              if (allPreviousCompleted && firstPendingIndex === paintingStepIndex) {
+                return true;
+              }
+            }
+          }
+          
+          // ถ้าไม่ใช่สถานีสีที่พร้อมทำ หรือไม่ได้ assign ให้ตัวเอง ให้ return false (ไม่แสดงตั๋วนี้)
+          return false;
+        }
+        
+        // สำหรับ role อื่นๆ (CNC, Packing, และ role ธรรมดา) ใช้ logic เดิม
         // เช็ค assignee หรือ technician (existing logic)
         const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
         if (assigneeLower.includes(myNameLower)) return true;
@@ -849,7 +916,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasStorageRole, hasViewerRole, hasSupervisorProductionRole, hasSupervisorPaintingRole, user]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasPaintingRole, hasStorageRole, hasViewerRole, hasSupervisorProductionRole, hasSupervisorPaintingRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {
