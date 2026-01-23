@@ -493,6 +493,23 @@ export default function UIProjectDetail({ projectId }) {
 
       setUploadProgress(80);
 
+      if (!response.ok) {
+        const text = await response.text();
+        if (response.status === 413) {
+          alert(language === 'th' ? 'ไฟล์ใหญ่เกินไป (สูงสุด 10MB)' : 'File too large (max 10MB)');
+          return;
+        }
+        let errMsg = language === 'th' ? 'อัปโหลดล้มเหลว' : 'Upload failed';
+        try {
+          const err = JSON.parse(text);
+          if (err?.error) errMsg = err.error;
+        } catch {
+          if (text) errMsg = text.slice(0, 200);
+        }
+        alert(errMsg);
+        return;
+      }
+
       const result = await response.json();
 
       if (result.success) {
