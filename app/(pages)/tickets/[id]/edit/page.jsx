@@ -759,17 +759,23 @@ const STATION_PRESETS = {
         });
       });
       
-      // หา station codes สำหรับ "ปรับขนาด" และ "สี"
+      // หา station codes สำหรับ "ปรับขนาด", "สี", "ประกอบวงกบ", "ไม่ประกอบวงกบ", และ "ประกอบชุดชาร์ป"
       const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
+      const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
+      const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
       
-      // อัปเดตราคาใน stations ที่มีชื่อตรงกับ "อัดบาน" หรือ "สี" และยังไม่มีราคา
+      // อัปเดตราคาใน stations ที่มีชื่อตรงกับสถานีที่ต้องการ populate และยังไม่มีราคา
       const updatedStations = currentStations.map(station => {
-        // ตรวจสอบว่าเป็นสถานี "ปรับขนาด" หรือ "สี"
+        // ตรวจสอบว่าเป็นสถานีที่ต้องการ populate ราคา
         const isPressStation = pressStation && (station.name === 'ปรับขนาด' || station.name === 'อัดบาน');
         const isPaintStation = paintStation && station.name === 'สี';
+        const isFrameStation = frameStation && station.name === 'ประกอบวงกบ';
+        const isNoFrameStation = noFrameStation && station.name === 'ไม่ประกอบวงกบ';
+        const isSharpStation = sharpStation && station.name === 'ประกอบชุดชาร์ป';
         
-        if (!isPressStation && !isPaintStation) {
+        if (!isPressStation && !isPaintStation && !isFrameStation && !isNoFrameStation && !isSharpStation) {
           return station; // ไม่ใช่สถานีที่ต้องการ populate ราคา
         }
         
@@ -780,7 +786,13 @@ const STATION_PRESETS = {
         }
         
         // หา station code ที่เหมาะสม
-        const stationCode = isPressStation ? pressStation?.code : paintStation?.code;
+        let stationCode = null;
+        if (isPressStation) stationCode = pressStation?.code;
+        else if (isPaintStation) stationCode = paintStation?.code;
+        else if (isFrameStation) stationCode = frameStation?.code;
+        else if (isNoFrameStation) stationCode = noFrameStation?.code;
+        else if (isSharpStation) stationCode = sharpStation?.code;
+        
         if (!stationCode) return station;
         
         const priceData = priceMap.get(stationCode);

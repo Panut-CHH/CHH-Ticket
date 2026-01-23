@@ -49,7 +49,7 @@ export default function UIProjectDetail({ projectId }) {
   const [itemCodes, setItemCodes] = useState([]);
   const [expandedItems, setExpandedItems] = useState({});
   const [loading, setLoading] = useState(true);
-  const [itemPrices, setItemPrices] = useState({}); // Store prices for each item: { itemCode: { productionPrice, pressPrice, framePrice, sharpPrice, paintPrice } }
+  const [itemPrices, setItemPrices] = useState({}); // Store prices for each item: { itemCode: { productionPrice, pressPrice, framePrice, noFramePrice, sharpPrice, paintPrice } }
   
   // Modal states
   const [showAddItemModal, setShowAddItemModal] = useState(false);
@@ -94,6 +94,7 @@ export default function UIProjectDetail({ projectId }) {
     pressStation: { price: '', priceType: 'per_piece' },
     paintStation: { price: '', priceType: 'per_piece' },
     frameStation: { price: '', priceType: 'per_piece' },
+    noFrameStation: { price: '', priceType: 'per_piece' },
     sharpStation: { price: '', priceType: 'per_piece' }
   });
   const [availableStations, setAvailableStations] = useState([]);
@@ -286,9 +287,10 @@ export default function UIProjectDetail({ projectId }) {
       const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
       const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
       
-      if (!pressStation && !paintStation && !frameStation && !sharpStation) {
+      if (!pressStation && !paintStation && !frameStation && !noFrameStation && !sharpStation) {
         return; // Stations not found, skip loading prices
       }
       
@@ -310,18 +312,21 @@ export default function UIProjectDetail({ projectId }) {
             
             const pressPrice = findPrice(pressStation);
             const framePrice = findPrice(frameStation);
+            const noFramePrice = findPrice(noFrameStation);
             const sharpPrice = findPrice(sharpStation);
             const paintPrice = findPrice(paintStation);
             
             const productionPrice =
               (pressPrice || 0) +
               (framePrice || 0) +
+              (noFramePrice || 0) +
               (sharpPrice || 0);
             
             pricesMap[item.item_code] = {
               productionPrice: productionPrice > 0 ? productionPrice : null,
               pressPrice: pressPrice,
               framePrice: framePrice,
+              noFramePrice: noFramePrice,
               sharpPrice: sharpPrice,
               paintPrice: paintPrice
             };
@@ -332,6 +337,7 @@ export default function UIProjectDetail({ projectId }) {
               productionPrice: null,
               pressPrice: null,
               framePrice: null,
+              noFramePrice: null,
               sharpPrice: null,
               paintPrice: null
             };
@@ -626,54 +632,97 @@ export default function UIProjectDetail({ projectId }) {
     // Load existing prices for this item code
     setLoadingPrices(true);
     try {
+      console.log('[Labor Prices] Opening modal for item:', item.item_code);
+      console.log('[Labor Prices] Available stations count:', availableStations.length);
+      console.log('[Labor Prices] Available stations:', availableStations.map(s => ({ name: s.name_th, code: s.code })));
+      
       const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(item.item_code)}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' }
       });
       const result = await response.json();
       
+      console.log('[Labor Prices] API response:', result);
+      
       if (result.success && result.data) {
-        // Find stations by name "ปรับขนาด", "สี", "ประกอบวงกบ", and "ประกอบชุดชาร์ป"
+        // Find stations by name "ปรับขนาด", "สี", "ประกอบวงกบ", "ไม่ประกอบวงกบ", and "ประกอบชุดชาร์ป"
         const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
         const paintStation = availableStations.find(s => s.name_th === 'สี');
         const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+        const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
         const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
+        
+        console.log('[Labor Prices] Found noFrameStation:', noFrameStation ? { name: noFrameStation.name_th, code: noFrameStation.code } : 'NOT FOUND');
+        console.log('[Labor Prices] Price data from API:', result.data);
         
         const prices = {
           pressStation: { price: '', priceType: 'per_piece' },
           paintStation: { price: '', priceType: 'per_piece' },
           frameStation: { price: '', priceType: 'per_piece' },
+          noFrameStation: { price: '', priceType: 'per_piece' },
           sharpStation: { price: '', priceType: 'per_piece' }
         };
         
         // Map existing prices to form
         result.data.forEach(priceData => {
+          console.log('[Labor Prices] Processing price data:', { 
+            station_code: priceData.station_code, 
+            price: priceData.price, 
+            price_type: typeof priceData.price,
+            noFrameCode: noFrameStation?.code,
+            matches: priceData.station_code === noFrameStation?.code
+          });
           if (pressStation && priceData.station_code === pressStation.code) {
             prices.pressStation = {
-              price: priceData.price || '',
+              price: priceData.price !== null && priceData.price !== undefined ? String(priceData.price) : '',
               priceType: priceData.price_type || 'per_piece'
             };
           }
           if (paintStation && priceData.station_code === paintStation.code) {
             prices.paintStation = {
-              price: priceData.price || '',
+              price: priceData.price !== null && priceData.price !== undefined ? String(priceData.price) : '',
               priceType: priceData.price_type || 'per_piece'
             };
           }
           if (frameStation && priceData.station_code === frameStation.code) {
             prices.frameStation = {
-              price: priceData.price || '',
+              price: priceData.price !== null && priceData.price !== undefined ? String(priceData.price) : '',
+              priceType: priceData.price_type || 'per_piece'
+            };
+          }
+          if (noFrameStation && priceData.station_code === noFrameStation.code) {
+            console.log('[Labor Prices] ✅ Matched noFrameStation!', {
+              station_code: priceData.station_code,
+              expected_code: noFrameStation.code,
+              price: priceData.price,
+              price_type: typeof priceData.price,
+              isNull: priceData.price === null,
+              isUndefined: priceData.price === undefined
+            });
+            // Convert price to string for input field - handle all cases
+            let priceValue = '';
+            if (priceData.price !== null && priceData.price !== undefined) {
+              const numPrice = Number(priceData.price);
+              if (!isNaN(numPrice)) {
+                priceValue = String(numPrice);
+              }
+            }
+            console.log('[Labor Prices] Converted price value for noFrameStation:', priceValue);
+            prices.noFrameStation = {
+              price: priceValue,
               priceType: priceData.price_type || 'per_piece'
             };
           }
           if (sharpStation && priceData.station_code === sharpStation.code) {
             prices.sharpStation = {
-              price: priceData.price || '',
+              price: priceData.price !== null && priceData.price !== undefined ? String(priceData.price) : '',
               priceType: priceData.price_type || 'per_piece'
             };
           }
         });
         
+        console.log('[Labor Prices] Final prices state:', prices);
+        console.log('[Labor Prices] noFrameStation final price:', prices.noFrameStation.price);
         setLaborPrices(prices);
       } else {
         // Reset to defaults if no prices found
@@ -681,6 +730,7 @@ export default function UIProjectDetail({ projectId }) {
           pressStation: { price: '', priceType: 'per_piece' },
           paintStation: { price: '', priceType: 'per_piece' },
           frameStation: { price: '', priceType: 'per_piece' },
+          noFrameStation: { price: '', priceType: 'per_piece' },
           sharpStation: { price: '', priceType: 'per_piece' }
         });
       }
@@ -690,6 +740,7 @@ export default function UIProjectDetail({ projectId }) {
         pressStation: { price: '', priceType: 'per_piece' },
         paintStation: { price: '', priceType: 'per_piece' },
         frameStation: { price: '', priceType: 'per_piece' },
+        noFrameStation: { price: '', priceType: 'per_piece' },
         sharpStation: { price: '', priceType: 'per_piece' }
       });
     } finally {
@@ -706,9 +757,14 @@ export default function UIProjectDetail({ projectId }) {
       const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
       const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
       const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
       
-      if (!pressStation && !paintStation && !frameStation && !sharpStation) {
+      console.log('[Save Labor Prices] Available stations:', availableStations.map(s => ({ name: s.name_th, code: s.code })));
+      console.log('[Save Labor Prices] Found noFrameStation:', noFrameStation ? { name: noFrameStation.name_th, code: noFrameStation.code } : 'NOT FOUND');
+      console.log('[Save Labor Prices] Current laborPrices.noFrameStation:', laborPrices.noFrameStation);
+      
+      if (!pressStation && !paintStation && !frameStation && !noFrameStation && !sharpStation) {
         alert(language === 'th' ? 'ไม่พบสถานีที่ต้องการในระบบ' : 'No stations found');
         setSavingPrices(false);
         return;
@@ -740,6 +796,31 @@ export default function UIProjectDetail({ projectId }) {
         });
       }
       
+      if (noFrameStation) {
+        // Handle price conversion: empty string or invalid number should be null
+        let noFramePrice = null;
+        const priceStr = String(laborPrices.noFrameStation.price || '').trim();
+        if (priceStr && priceStr !== '') {
+          const parsed = parseFloat(priceStr);
+          noFramePrice = isNaN(parsed) ? null : parsed;
+        }
+        
+        console.log('[Save Labor Prices] Saving noFrameStation:', {
+          station_code: noFrameStation.code,
+          price: noFramePrice,
+          price_type: laborPrices.noFrameStation.priceType,
+          rawPrice: laborPrices.noFrameStation.price,
+          priceStr: priceStr
+        });
+        pricesToSave.push({
+          station_code: noFrameStation.code,
+          price: noFramePrice,
+          price_type: laborPrices.noFrameStation.priceType
+        });
+      } else {
+        console.warn('[Save Labor Prices] noFrameStation not found, skipping save');
+      }
+      
       if (sharpStation) {
         pricesToSave.push({
           station_code: sharpStation.code,
@@ -747,6 +828,8 @@ export default function UIProjectDetail({ projectId }) {
           price_type: laborPrices.sharpStation.priceType
         });
       }
+      
+      console.log('[Save Labor Prices] Prices to save:', pricesToSave);
       
       const response = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(pricingItem.item_code)}`, {
         method: 'POST',
@@ -756,8 +839,42 @@ export default function UIProjectDetail({ projectId }) {
       
       const result = await response.json();
       
+      console.log('[Save Labor Prices] API response:', result);
+      
       if (result.success) {
         alert(language === 'th' ? 'บันทึกราคาค่าแรงสำเร็จ' : 'Labor prices saved successfully');
+        
+        // Reload prices immediately after saving to verify
+        if (pricingItem) {
+          console.log('[Save Labor Prices] Reloading prices for item:', pricingItem.item_code);
+          try {
+            const reloadResponse = await fetch(`/api/projects/items/labor-prices?itemCode=${encodeURIComponent(pricingItem.item_code)}`, {
+              method: 'GET',
+              headers: { 'Content-Type': 'application/json' }
+            });
+            const reloadResult = await reloadResponse.json();
+            console.log('[Save Labor Prices] Reloaded prices:', reloadResult);
+            
+            // Update the form with reloaded data
+            if (reloadResult.success && reloadResult.data) {
+              const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
+              const noFramePriceData = reloadResult.data.find(p => p.station_code === noFrameStation?.code);
+              if (noFramePriceData) {
+                console.log('[Save Labor Prices] Found noFrameStation in reloaded data:', noFramePriceData);
+                setLaborPrices(prev => ({
+                  ...prev,
+                  noFrameStation: {
+                    price: noFramePriceData.price !== null && noFramePriceData.price !== undefined ? String(noFramePriceData.price) : '',
+                    priceType: noFramePriceData.price_type || 'per_piece'
+                  }
+                }));
+              }
+            }
+          } catch (reloadError) {
+            console.error('[Save Labor Prices] Error reloading prices:', reloadError);
+          }
+        }
+        
         setShowLaborPriceModal(false);
         setPricingItem(null);
         // Reload prices after saving
@@ -1807,6 +1924,7 @@ export default function UIProjectDetail({ projectId }) {
             pressStation: { price: '', priceType: 'per_piece' },
             paintStation: { price: '', priceType: 'per_piece' },
             frameStation: { price: '', priceType: 'per_piece' },
+            noFrameStation: { price: '', priceType: 'per_piece' },
             sharpStation: { price: '', priceType: 'per_piece' }
           });
         }}
@@ -1824,6 +1942,7 @@ export default function UIProjectDetail({ projectId }) {
                     pressStation: { price: '', priceType: 'per_piece' },
                     paintStation: { price: '', priceType: 'per_piece' },
                     frameStation: { price: '', priceType: 'per_piece' },
+                    noFrameStation: { price: '', priceType: 'per_piece' },
                     sharpStation: { price: '', priceType: 'per_piece' }
                   });
                 }}
@@ -1863,8 +1982,8 @@ export default function UIProjectDetail({ projectId }) {
             <>
               <p className="text-sm text-gray-600 dark:text-gray-400 mb-4 break-words">
                 {language === 'th' 
-                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "ปรับขนาด", "สี", "ประกอบวงกบ", และ "ประกอบชุดชาร์ป" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
-                  : 'Set labor prices for "Resize", "Paint", "Frame Assembly", and "Sharp Set Assembly" stations. These prices will automatically appear in ticket edit page'}
+                  ? 'ตั้งราคาค่าแรงสำหรับสถานี "ปรับขนาด", "สี", "ประกอบวงกบ", "ไม่ประกอบวงกบ", และ "ประกอบชุดชาร์ป" ราคานี้จะแสดงอัตโนมัติในหน้า ticket edit'
+                  : 'Set labor prices for "Resize", "Paint", "Frame Assembly", "No Frame Assembly", and "Sharp Set Assembly" stations. These prices will automatically appear in ticket edit page'}
               </p>
               
               <div className="space-y-4">
@@ -2000,6 +2119,53 @@ export default function UIProjectDetail({ projectId }) {
                         onChange={(e) => setLaborPrices(prev => ({
                           ...prev,
                           frameStation: { ...prev.frameStation, price: e.target.value }
+                        }))}
+                        placeholder="0.00"
+                        className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
+                        onWheel={(e) => e.target.blur()}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* No Frame Station (ไม่ประกอบวงกบ) */}
+                <div className="bg-gray-50 dark:bg-slate-700/50 rounded-lg p-4 border border-gray-200 dark:border-slate-600">
+                  <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">
+                    {language === 'th' ? 'สถานี: ไม่ประกอบวงกบ' : 'Station: No Frame Assembly'}
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ประเภทการคิดเงิน' : 'Price Type'} *
+                      </label>
+                      <div className="relative">
+                        <select
+                          value={laborPrices.noFrameStation.priceType}
+                          onChange={(e) => setLaborPrices(prev => ({
+                            ...prev,
+                            noFrameStation: { ...prev.noFrameStation, priceType: e.target.value }
+                          }))}
+                          className="w-full appearance-none bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 pr-8 cursor-pointer text-sm"
+                        >
+                          <option value="flat">{language === 'th' ? 'เหมาจ่าย' : 'Flat Rate'}</option>
+                          <option value="per_piece">{language === 'th' ? 'ต่อชิ้น' : 'Per Piece'}</option>
+                          <option value="per_hour">{language === 'th' ? 'รายชั่วโมง' : 'Per Hour'}</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        {language === 'th' ? 'ราคา' : 'Price'}
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={laborPrices.noFrameStation.price}
+                        onChange={(e) => setLaborPrices(prev => ({
+                          ...prev,
+                          noFrameStation: { ...prev.noFrameStation, price: e.target.value }
                         }))}
                         placeholder="0.00"
                         className="w-full bg-white dark:bg-slate-800 border border-gray-300 dark:border-slate-600 rounded-lg px-3 py-2 text-sm"
