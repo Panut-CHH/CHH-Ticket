@@ -473,6 +473,8 @@ export default function UIProjectDetail({ projectId }) {
   };
 
   // Handle upload file
+  // Flow: Prepare (validate) → Upload to Supabase (client-side) → Complete (save to DB)
+  // This bypasses Vercel's 4.5MB body limit by uploading directly to Supabase
   const handleUploadFile = async () => {
     if (!uploadFile || !uploadingItem) return;
 
@@ -480,25 +482,20 @@ export default function UIProjectDetail({ projectId }) {
     setUploadProgress(0);
 
     try {
-      const formData = new FormData();
-      formData.append('file', uploadFile);
-      formData.append('uploadedBy', user?.id || '');
-
-      setUploadProgress(30);
-
-      const response = await fetch(`/api/projects/items/${uploadingItem.id}/upload`, {
+      // Step 1: Prepare - validate and get filePath (no file sent to API)
+      setUploadProgress(10);
+      const prepareResponse = await fetch(`/api/projects/items/${uploadingItem.id}/upload-prepare`, {
         method: 'POST',
-        body: formData
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fileName: uploadFile.name,
+          fileSize: uploadFile.size,
+          fileType: uploadFile.type
+        })
       });
 
-      setUploadProgress(80);
-
-      if (!response.ok) {
-        const text = await response.text();
-        if (response.status === 413) {
-          alert(language === 'th' ? 'ไฟล์ใหญ่เกินไป (สูงสุด 10MB)' : 'File too large (max 10MB)');
-          return;
-        }
+      if (!prepareResponse.ok) {
+        const text = await prepareResponse.text();
         let errMsg = language === 'th' ? 'อัปโหลดล้มเหลว' : 'Upload failed';
         try {
           const err = JSON.parse(text);
@@ -510,18 +507,74 @@ export default function UIProjectDetail({ projectId }) {
         return;
       }
 
-      const result = await response.json();
-
-      if (result.success) {
-        setUploadProgress(100);
-        await loadItemCodes();
-        setShowUploadModal(false);
-        setUploadFile(null);
-        setUploadingItem(null);
-        alert(t('uploadSuccess', language));
-      } else {
-        alert(result.error);
+      const prepareResult = await prepareResponse.json();
+      if (!prepareResult.success) {
+        alert(prepareResult.error || (language === 'th' ? 'อัปโหลดล้มเหลว' : 'Upload failed'));
+        return;
       }
+
+      const { filePath, fileName: timestampedFileName } = prepareResult.data;
+      setUploadProgress(30);
+
+      // Step 2: Upload file directly to Supabase Storage (bypasses Vercel)
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('project-files')
+        .upload(filePath, uploadFile, {
+          cacheControl: '3600',
+          upsert: false
+        });
+
+      if (uploadError) {
+        console.error('Storage upload error:', uploadError);
+        alert(
+          language === 'th' 
+            ? `อัปโหลดล้มเหลว: ${uploadError.message}` 
+            : `Upload failed: ${uploadError.message}`
+        );
+        return;
+      }
+
+      setUploadProgress(70);
+
+      // Step 3: Complete - save metadata to DB (no file sent to API)
+      const completeResponse = await fetch(`/api/projects/items/${uploadingItem.id}/upload-complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filePath,
+          fileName: timestampedFileName,
+          fileSize: uploadFile.size,
+          fileType: uploadFile.type,
+          uploadedBy: user?.id || null
+        })
+      });
+
+      if (!completeResponse.ok) {
+        const text = await completeResponse.text();
+        let errMsg = language === 'th' ? 'บันทึกข้อมูลไฟล์ล้มเหลว' : 'Failed to save file metadata';
+        try {
+          const err = JSON.parse(text);
+          if (err?.error) errMsg = err.error;
+        } catch {
+          if (text) errMsg = text.slice(0, 200);
+        }
+        alert(errMsg);
+        // File is uploaded but DB record failed - user can retry or we could clean up
+        return;
+      }
+
+      const completeResult = await completeResponse.json();
+      if (!completeResult.success) {
+        alert(completeResult.error || (language === 'th' ? 'บันทึกข้อมูลไฟล์ล้มเหลว' : 'Failed to save file metadata'));
+        return;
+      }
+
+      setUploadProgress(100);
+      await loadItemCodes();
+      setShowUploadModal(false);
+      setUploadFile(null);
+      setUploadingItem(null);
+      alert(t('uploadSuccess', language));
     } catch (error) {
       console.error('Error uploading file:', error);
       alert(language === 'th' ? 'อัปโหลดล้มเหลว' : 'Upload failed');
