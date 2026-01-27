@@ -9,9 +9,10 @@ const nextConfig = {
   async redirects() {
     return [
       {
-        source: "/:path*",
-        destination: "https://chh-ticket.evergreenchh.tech/:path*",
-        permanent: true,
+        source: "/overview",
+        destination: "/",
+        permanent: false,
+
       },
     ];
   },
