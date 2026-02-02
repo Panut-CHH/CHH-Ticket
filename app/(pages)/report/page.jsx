@@ -1,13 +1,53 @@
 "use client";
 
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
-import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X } from "lucide-react";
+import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package } from "lucide-react";
+import DocumentViewer from "@/components/DocumentViewer";
+
+/** เซลล์ชื่อ Project: บรรทัดเดียว ตัดด้วย ... ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal tooltip) */
+const PROJECT_CELL_WIDTH = 240;
+
+function ProjectCell({ text, onShow, onHide }) {
+  const hideTimerRef = useRef(null);
+
+  const handleMouseEnter = (e) => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    if (text && onShow) onShow(text, e.currentTarget);
+  };
+
+  const handleMouseLeave = () => {
+    if (onHide) {
+      hideTimerRef.current = setTimeout(onHide, 120);
+    }
+  };
+
+  useEffect(() => () => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+  }, []);
+
+  if (!text) return <span className="text-gray-500">-</span>;
+
+  return (
+    <span
+      className="block truncate max-w-full cursor-default"
+      style={{ maxWidth: PROJECT_CELL_WIDTH }}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      {text}
+    </span>
+  );
+}
 
 const formatRound = (dateInput) => {
   if (!dateInput) {
@@ -31,6 +71,17 @@ const formatRound = (dateInput) => {
   return `${m}/${yy}`;
 };
 
+/** แปลง ISO date เป็น dd/mm/yy สำหรับคอลัมน์ QC เสร็จเมื่อ */
+const formatQcCompletedAt = (iso) => {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${dd}/${mm}/${yy}`;
+};
+
 const isAdminOrManager = (roles) => {
   const arr = Array.isArray(roles) ? roles : roles ? [roles] : [];
   return arr
@@ -44,8 +95,7 @@ export default function ReportPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("unpaid"); // unpaid | paid
-  const [selectedRound, setSelectedRound] = useState(formatRound());
+  const [activeTab, setActiveTab] = useState("unpaid"); // unpaid | paid | cancelled
 
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
@@ -57,10 +107,96 @@ export default function ReportPage() {
   const [selectedProject, setSelectedProject] = useState("");
 
   // Sort states
-  const [sortKey, setSortKey] = useState(""); // ticketNo | round | technician | station | project | quantity | pricePerUnit | totalPrice
+  const [sortKey, setSortKey] = useState(""); // ticketNo | technician | station | project | quantity | pricePerUnit | totalPrice
   const [sortDir, setSortDir] = useState("asc"); // asc | desc
 
+  // Actions dropdown: ซึ่งแถวเปิดเมนู ... (null = ปิด)
+  const [openActionsKey, setOpenActionsKey] = useState(null);
+
+  // Project tooltip: ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal)
+  const [projectTooltip, setProjectTooltip] = useState(null); // null | { text, left, top }
+  const hideTooltipRef = useRef(null);
+
+  // แสดงภาพแปลน: โมดัลแสดงแบบแปลนจาก project
+  const [planModal, setPlanModal] = useState(null); // null | { ticketNo, sourceNo }
+  const [planFile, setPlanFile] = useState(null); // null | { file_url, file_name, file_type }
+  const [planLoading, setPlanLoading] = useState(false);
+
+  const showProjectTooltip = useCallback((text, element) => {
+    if (hideTooltipRef.current) {
+      clearTimeout(hideTooltipRef.current);
+      hideTooltipRef.current = null;
+    }
+    const rect = element.getBoundingClientRect();
+    setProjectTooltip({ text, left: rect.left, top: rect.bottom + 6 });
+  }, []);
+
+  const hideProjectTooltip = useCallback(() => {
+    hideTooltipRef.current = setTimeout(() => setProjectTooltip(null), 180);
+  }, []);
+
+  useEffect(() => () => {
+    if (hideTooltipRef.current) clearTimeout(hideTooltipRef.current);
+  }, []);
+
+  // โหลดแบบแปลนเมื่อเปิดโมดัล
+  const fetchPlanFile = useCallback(async (sourceNo) => {
+    if (!sourceNo) return null;
+    const { data: item } = await supabase
+      .from("project_items")
+      .select("id")
+      .eq("item_code", sourceNo)
+      .maybeSingle();
+    if (!item) return null;
+    const { data: file } = await supabase
+      .from("project_files")
+      .select("file_url, file_name, file_type")
+      .eq("project_item_id", item.id)
+      .eq("is_current", true)
+      .maybeSingle();
+    return file;
+  }, []);
+
+  useEffect(() => {
+    if (!planModal) {
+      setPlanFile(null);
+      return;
+    }
+    let cancelled = false;
+    setPlanLoading(true);
+    setPlanFile(null);
+    fetchPlanFile(planModal.sourceNo).then((file) => {
+      if (!cancelled) {
+        setPlanFile(file || null);
+        setPlanLoading(false);
+      }
+    }).catch(() => {
+      if (!cancelled) setPlanLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [planModal, fetchPlanFile]);
+
+  const openPlanModal = useCallback((row) => {
+    setOpenActionsKey(null);
+    setPlanModal({ ticketNo: row.ticketNo, sourceNo: row.sourceNo });
+  }, []);
+
+  const closePlanModal = useCallback(() => {
+    setPlanModal(null);
+    setPlanFile(null);
+  }, []);
+
   const canManage = isAdminOrManager(user?.roles || user?.role);
+
+  // ปิดเมนู Actions เมื่อคลิกนอก
+  useEffect(() => {
+    if (!openActionsKey) return;
+    const close = (e) => {
+      if (!e.target.closest(".report-actions-dropdown")) setOpenActionsKey(null);
+    };
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [openActionsKey]);
 
   const loadData = useCallback(async () => {
     try {
@@ -126,11 +262,50 @@ export default function ReportPage() {
         .select("no, description, quantity, source_no");
       if (ticketError) throw ticketError;
 
-      // 4) payments
-      const { data: paymentData, error: paymentError } = await supabase
-        .from("technician_payments")
-        .select("*");
-      if (paymentError) throw paymentError;
+      // 4) payments — ดึงผ่าน API (service role) เพื่อให้เห็น record ที่เพิ่ง insert หลังรีเฟรช
+      let paymentData = [];
+      if (user?.id) {
+        try {
+          const payRes = await fetch(`/api/report/payments?user_id=${encodeURIComponent(user.id)}`);
+          const payJson = await payRes.json().catch(() => ({}));
+          if (payRes.ok && payJson.success && Array.isArray(payJson.data)) {
+            paymentData = payJson.data;
+          } else {
+            const { data: fallback } = await supabase.from("technician_payments").select("*");
+            paymentData = fallback || [];
+          }
+        } catch (_) {
+          const { data: fallback } = await supabase.from("technician_payments").select("*");
+          paymentData = fallback || [];
+        }
+      } else {
+        const { data: fallback, error: paymentError } = await supabase
+          .from("technician_payments")
+          .select("*");
+        if (paymentError) throw paymentError;
+        paymentData = fallback || [];
+      }
+
+      // 5) qc_sessions - เวลา QC เสร็จ (ใช้ completed_at จาก QC session ถ้ามี)
+      const ticketNos = [...new Set((filteredFlows || []).map((f) => f.ticket_no))];
+      let qcCompletedMap = {};
+      if (ticketNos.length > 0) {
+        const { data: qcSessions, error: qcError } = await supabase
+          .from("qc_sessions")
+          .select("ticket_no, station_id, step_order, completed_at")
+          .in("ticket_no", ticketNos)
+          .not("completed_at", "is", null);
+        if (!qcError && qcSessions?.length) {
+          qcSessions.forEach((s) => {
+            const key = `${s.ticket_no}-${s.station_id}-${s.step_order}`;
+            const existing = qcCompletedMap[key];
+            const at = s.completed_at;
+            if (!existing || (at && new Date(at) > new Date(existing))) {
+              qcCompletedMap[key] = at;
+            }
+          });
+        }
+      }
 
       const assignmentMap = {};
       (assignmentData || []).forEach((a) => {
@@ -162,6 +337,8 @@ export default function ReportPage() {
         const pricePerUnit = priceType === "per_piece" ? price : price;
         const total = priceType === "per_piece" ? price * qty : price;
         const roundFromCompleted = formatRound(flow.completed_at);
+        const flowKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
+        const qcCompletedAt = qcCompletedMap[flowKey] || flow.completed_at;
 
         // ถ้ามี technician ให้แสดงแยกตาม technician แต่ละคน
         if (technicians.length > 0) {
@@ -177,12 +354,14 @@ export default function ReportPage() {
               technicianName: tech.name || "-",
               stationName: flow.stations?.name_th || flow.stations?.code || "-",
               projectName: ticket?.description || ticket?.source_no || flow.ticket_no,
+              sourceNo: ticket?.source_no ?? null,
               quantity: qty,
               unit: "ชิ้น",
               pricePerUnit: pricePerUnit,
               totalPrice: total,
               round: paidRecord?.payment_round || roundFromCompleted,
               completedAt: flow.completed_at,
+              qcCompletedAt,
               paymentStatus: paidRecord?.status || "unpaid",
               paymentRecord: paidRecord || null
             });
@@ -201,12 +380,14 @@ export default function ReportPage() {
             technicianName: language === "th" ? "ยังไม่ได้มอบหมาย" : "Not Assigned",
             stationName: flow.stations?.name_th || flow.stations?.code || "-",
             projectName: ticket?.description || ticket?.source_no || flow.ticket_no,
+            sourceNo: ticket?.source_no ?? null,
             quantity: qty,
             unit: "ชิ้น",
             pricePerUnit: pricePerUnit,
             totalPrice: total,
             round: paidRecord?.payment_round || roundFromCompleted,
             completedAt: flow.completed_at,
+            qcCompletedAt,
             paymentStatus: paidRecord?.status || "unpaid",
             paymentRecord: paidRecord || null
           });
@@ -221,38 +402,11 @@ export default function ReportPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  const availableRounds = useMemo(() => {
-    const set = new Set();
-    rows.forEach((r) => {
-      set.add(r.round);
-    });
-    if (!set.has(selectedRound)) {
-      set.add(selectedRound);
-    }
-    const sorted = Array.from(set).sort((a, b) => {
-      const [ma, ya] = a.split("/").map(Number);
-      const [mb, yb] = b.split("/").map(Number);
-      if (ya !== yb) return yb - ya;
-      return mb - ma;
-    });
-    
-    // Auto-select the most recent round with data if current selection has no data
-    if (sorted.length > 0 && !rows.some(r => r.round === selectedRound)) {
-      const mostRecentRound = sorted[0];
-      if (mostRecentRound !== selectedRound) {
-        // Update selectedRound to the most recent round with data
-        setTimeout(() => setSelectedRound(mostRecentRound), 0);
-      }
-    }
-    
-    return sorted;
-  }, [rows, selectedRound]);
 
   // Get unique values for filters
   const availableTechnicians = useMemo(() => {
@@ -315,12 +469,6 @@ export default function ReportPage() {
             av = a.ticketNo;
             bv = b.ticketNo;
             break;
-          case "round":
-            const [ma, ya] = a.round.split("/").map(Number);
-            const [mb, yb] = b.round.split("/").map(Number);
-            av = ya * 100 + ma;
-            bv = yb * 100 + mb;
-            break;
           case "technician":
             av = a.technicianName;
             bv = b.technicianName;
@@ -345,6 +493,10 @@ export default function ReportPage() {
             av = a.totalPrice;
             bv = b.totalPrice;
             break;
+          case "qcCompletedAt":
+            av = a.qcCompletedAt ? new Date(a.qcCompletedAt).getTime() : 0;
+            bv = b.qcCompletedAt ? new Date(b.qcCompletedAt).getTime() : 0;
+            break;
           default:
             return 0;
         }
@@ -360,21 +512,39 @@ export default function ReportPage() {
   };
 
   const unpaidRows = useMemo(() => {
-    const base = rows
-      .filter((r) => r.paymentStatus !== "paid" && r.paymentStatus !== "cancelled")
-      .filter((r) => r.round === selectedRound);
+    const base = rows.filter((r) => r.paymentStatus !== "paid" && r.paymentStatus !== "cancelled");
     return filterAndSort(base);
-  }, [rows, selectedRound, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
 
   const paidRows = useMemo(() => {
-    const base = rows
-      .filter((r) => r.paymentStatus === "paid")
-      .filter((r) => r.round === selectedRound);
+    const base = rows.filter((r) => r.paymentStatus === "paid");
     return filterAndSort(base);
-  }, [rows, selectedRound, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+
+  const cancelledRows = useMemo(() => {
+    const base = rows.filter((r) => r.paymentStatus === "cancelled");
+    return filterAndSort(base);
+  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+
+  const currentTabRows = useMemo(() => {
+    if (activeTab === "unpaid") return unpaidRows;
+    if (activeTab === "paid") return paidRows;
+    return cancelledRows;
+  }, [activeTab, unpaidRows, paidRows, cancelledRows]);
+
+  const summary = useMemo(() => {
+    const count = currentTabRows.length;
+    const totalAmount = currentTabRows.reduce((s, r) => s + (Number(r.totalPrice) || 0), 0);
+    const totalQty = currentTabRows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
+    return { count, totalAmount, totalQty };
+  }, [currentTabRows]);
+
+  const [actionLoadingKey, setActionLoadingKey] = useState(null);
 
   const handleAction = async (row, action) => {
     if (!canManage) return;
+    const rowKey = `${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`;
+    setActionLoadingKey(rowKey);
     try {
       const payload = {
         action,
@@ -388,6 +558,7 @@ export default function ReportPage() {
         price_per_unit: row.pricePerUnit,
         project_name: row.projectName,
         payment_date: new Date().toISOString(),
+        payment_round: row.round,
         user_id: user?.id
       };
       const res = await fetch("/api/report/payment", {
@@ -395,14 +566,49 @@ export default function ReportPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-      const json = await res.json();
+      const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.success) {
         throw new Error(json.error || "Request failed");
       }
-      await loadData();
+      // อัปเดต state ทันที (optimistic) ให้แถวหายจาก "รอจ่าย" และโผล่ใน "จ่ายแล้ว"
+      const isSameRow = (r) =>
+        r.ticketNo === row.ticketNo &&
+        r.stationId === row.stationId &&
+        r.stepOrder === row.stepOrder &&
+        r.technicianId === row.technicianId &&
+        r.round === row.round;
+      if (action === "confirm") {
+        setRows((prev) =>
+          prev.map((r) =>
+            isSameRow(r)
+              ? { ...r, paymentStatus: "paid", paymentRecord: { ...(r.paymentRecord || {}), status: "paid", payment_round: row.round } }
+              : r
+          )
+        );
+        alert(language === "th" ? "ยืนยันการจ่ายแล้ว" : "Payment confirmed");
+      } else if (action === "cancel") {
+        setRows((prev) =>
+          prev.map((r) =>
+            isSameRow(r)
+              ? { ...r, paymentStatus: "cancelled", paymentRecord: { ...(r.paymentRecord || {}), status: "cancelled", payment_round: row.round } }
+              : r
+          )
+        );
+      } else if (action === "revert") {
+        setRows((prev) =>
+          prev.map((r) =>
+            isSameRow(r)
+              ? { ...r, paymentStatus: "unpaid", paymentRecord: null }
+              : r
+          )
+        );
+      }
+      // ไม่เรียก loadData() หลังยืนยัน/ยกเลิก เพราะจะดึงข้อมูลเก่าจาก server มาเขียนทับ state แล้วแถวกลับไปโชว์ "รอจ่าย"
     } catch (e) {
       console.error("[REPORT] action error:", e);
       alert(e?.message || "ไม่สามารถทำรายการได้");
+    } finally {
+      setActionLoadingKey(null);
     }
   };
 
@@ -415,10 +621,11 @@ export default function ReportPage() {
     }
   };
 
-  const SortableHeader = ({ sortKey: key, children }) => (
+  const SortableHeader = ({ sortKey: key, children, style, className = "" }) => (
     <th
-      className="px-4 py-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none"
+      className={`py-3 cursor-pointer hover:bg-gray-100 dark:hover:bg-slate-700 select-none ${className}`}
       onClick={() => handleSort(key)}
+      style={style}
     >
       <div className="flex items-center gap-1">
         {children}
@@ -435,69 +642,141 @@ export default function ReportPage() {
     </th>
   );
 
-  const renderTable = (data, isPaid) => (
-    <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm">
-      <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700">
+  const renderTable = (data, tabType, tooltip) => (
+    <div className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-visible">
+      <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 w-full" style={{ tableLayout: "fixed", minWidth: "720px" }}>
         <thead className="bg-gray-50 dark:bg-slate-900/40">
           <tr className="text-left text-xs font-semibold text-gray-600 dark:text-gray-300">
-            <SortableHeader sortKey="ticketNo">No.</SortableHeader>
-            <SortableHeader sortKey="round">{t("round", language)}</SortableHeader>
-            <SortableHeader sortKey="technician">{t("technician", language) || "Technician"}</SortableHeader>
-            <SortableHeader sortKey="station">{language === "th" ? "สถานี" : "Station"}</SortableHeader>
-            <SortableHeader sortKey="project">Project</SortableHeader>
-            <SortableHeader sortKey="quantity">{t("quantity", language)}</SortableHeader>
-            <SortableHeader sortKey="pricePerUnit">{t("price", language) || "Price/unit"}</SortableHeader>
-            <SortableHeader sortKey="totalPrice">{t("total", language) || "Total"}</SortableHeader>
-            <th className="px-4 py-3 text-right">Actions</th>
+            <SortableHeader sortKey="ticketNo" className="pl-4 pr-3">No.</SortableHeader>
+            <SortableHeader sortKey="technician" className="px-3">{t("technician", language) || "Technician"}</SortableHeader>
+            <SortableHeader sortKey="station" className="px-3">{language === "th" ? "สถานี" : "Station"}</SortableHeader>
+            <SortableHeader sortKey="project" className="pl-3 pr-6" style={{ width: PROJECT_CELL_WIDTH, maxWidth: PROJECT_CELL_WIDTH }}>Project</SortableHeader>
+            <SortableHeader sortKey="qcCompletedAt" className="pl-6 pr-3">{language === "th" ? "QC เสร็จเมื่อ" : "QC completed"}</SortableHeader>
+            <SortableHeader sortKey="quantity" className="px-3">{t("quantity", language)}</SortableHeader>
+            <SortableHeader sortKey="pricePerUnit" className="px-3">{t("price", language) || "Price/unit"}</SortableHeader>
+            <SortableHeader sortKey="totalPrice" className="px-3">{t("total", language) || "Total"}</SortableHeader>
+            <th className="pl-3 pr-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-gray-100 dark:divide-slate-700 text-sm">
-          {data.map((row) => (
-            <tr key={`${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`}>
-              <td className="px-4 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">{row.ticketNo}</td>
-              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-200">{row.round}</td>
-              <td className="px-4 py-3 text-gray-800 dark:text-gray-100 font-medium">{row.technicianName}</td>
-              <td className="px-4 py-3 text-gray-800 dark:text-gray-100">{row.stationName}</td>
-              <td className="px-4 py-3 text-gray-800 dark:text-gray-100">{row.projectName}</td>
-              <td className="px-4 py-3 text-gray-800 dark:text-gray-100">{row.quantity}</td>
-              <td className="px-4 py-3 text-gray-800 dark:text-gray-100">
+          {data.map((row) => {
+            const rowKey = `${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`;
+            return (
+            <tr key={rowKey}>
+              <td className="pl-4 pr-3 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">{row.ticketNo}</td>
+              <td className="px-3 py-3 text-gray-800 dark:text-gray-100 font-medium">{row.technicianName}</td>
+              <td className="px-3 py-3 text-gray-800 dark:text-gray-100">{row.stationName}</td>
+              <td className="pl-3 pr-6 py-3 text-gray-800 dark:text-gray-100 align-middle" style={{ width: PROJECT_CELL_WIDTH, maxWidth: PROJECT_CELL_WIDTH }}>
+                <ProjectCell text={row.projectName} onShow={tooltip?.showProjectTooltip} onHide={tooltip?.hideProjectTooltip} />
+              </td>
+              <td className="pl-6 pr-3 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300 text-xs">
+                {formatQcCompletedAt(row.qcCompletedAt)}
+              </td>
+              <td className="px-3 py-3 text-gray-800 dark:text-gray-100">{row.quantity}</td>
+              <td className="px-3 py-3 text-gray-800 dark:text-gray-100">
                 {row.pricePerUnit.toLocaleString()} บาท
               </td>
-              <td className="px-4 py-3 text-gray-900 dark:text-gray-100 font-semibold">
+              <td className="px-3 py-3 text-gray-900 dark:text-gray-100 font-semibold">
                 {row.totalPrice.toLocaleString()} บาท
               </td>
-              <td className="px-4 py-3 text-right">
+              <td className="pl-3 pr-4 py-3 text-right">
                 {canManage ? (
-                  <div className="flex items-center justify-end gap-2">
-                    {!isPaid && (
-                      <button
-                        onClick={() => handleAction(row, "confirm")}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs hover:bg-emerald-700"
-                      >
-                        <CheckCircle className="w-4 h-4" />
-                        {t("confirmPayment", language)}
-                      </button>
-                    )}
-                    {isPaid && (
-                      <span className="inline-flex items-center gap-1 text-emerald-600 text-xs">
-                        <CheckCircle className="w-4 h-4" />
-                        {t("paidItems", language)}
-                      </span>
-                    )}
+                  <div className="report-actions-dropdown relative flex justify-end">
                     <button
-                      onClick={() => handleAction(row, "cancel")}
-                      className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 text-xs hover:bg-rose-200"
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (actionLoadingKey === rowKey) return;
+                        setOpenActionsKey((k) => (k === rowKey ? null : rowKey));
+                      }}
+                      disabled={actionLoadingKey === rowKey}
+                      className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-600 hover:text-gray-700 dark:hover:text-gray-200 disabled:opacity-70 disabled:cursor-wait"
+                      aria-label={language === "th" ? "เมนู" : "Menu"}
                     >
-                      <XCircle className="w-4 h-4" />
-                      {t("cancelPayment", language)}
+                      {actionLoadingKey === rowKey ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <MoreVertical className="w-5 h-5" />
+                      )}
                     </button>
+                    {openActionsKey === rowKey && (
+                      <div className="absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 shadow-lg">
+                        <button
+                          type="button"
+                          onClick={() => openPlanModal(row)}
+                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
+                        >
+                          <ImageIcon className="w-4 h-4 shrink-0 text-slate-600 dark:text-slate-400" />
+                          {language === "th" ? "แสดงภาพแปลน" : "View plan"}
+                        </button>
+                        {tabType === "unpaid" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "confirm");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                            >
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              {t("confirmPayment", language)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "cancel");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              {t("cancelPayment", language)}
+                            </button>
+                          </>
+                        )}
+                        {tabType === "paid" && (
+                          <>
+                            <div className="flex items-center gap-2 px-3 py-2 text-sm text-emerald-600 dark:text-emerald-400">
+                              <CheckCircle className="w-4 h-4" />
+                              {t("paidItems", language)}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "revert");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                            >
+                              <RefreshCcw className="w-4 h-4" />
+                              {language === "th" ? "ย้อนกลับเป็นรอจ่าย" : "Revert to unpaid"}
+                            </button>
+                          </>
+                        )}
+                        {tabType === "cancelled" && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleAction(row, "revert");
+                              setOpenActionsKey(null);
+                            }}
+                            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            {language === "th" ? "คืนสถานะรอจ่าย" : "Revert to unpaid"}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <span className="text-xs text-gray-500">{t("accessDenied", language)}</span>
                 )}
               </td>
             </tr>
-          ))}
+            );
+          })}
           {data.length === 0 && (
             <tr>
               <td colSpan={9} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
@@ -513,7 +792,65 @@ export default function ReportPage() {
   return (
     <ProtectedRoute>
       <RoleGuard pagePath="/report">
-        <div className="min-h-screen container-safe px-3 sm:px-4 md:px-6 lg:px-8 py-6 space-y-4">
+        {projectTooltip &&
+          createPortal(
+            <div
+              className="report-project-tooltip fixed z-[9999] max-w-sm rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 py-3 text-sm text-gray-800 dark:text-gray-100 shadow-2xl"
+              style={{
+                left: projectTooltip.left,
+                top: projectTooltip.top,
+              }}
+              role="tooltip"
+            >
+              <div className="whitespace-normal break-words">{projectTooltip.text}</div>
+            </div>,
+            document.body
+          )}
+        {planModal &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 p-4"
+              onClick={closePlanModal}
+              role="dialog"
+              aria-modal="true"
+              aria-label={language === "th" ? "แบบแปลน" : "Plan"}
+            >
+              <div
+                className="relative flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-600 px-4 py-3">
+                  <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                    {language === "th" ? "แบบแปลน" : "Plan"} — {planModal.ticketNo}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={closePlanModal}
+                    className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-gray-200"
+                    aria-label={language === "th" ? "ปิด" : "Close"}
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-auto p-4 min-h-[400px]">
+                  {planLoading ? (
+                    <div className="flex items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                      <Loader2 className="w-8 h-8 animate-spin" />
+                    </div>
+                  ) : planFile?.file_url ? (
+                    <DocumentViewer url={planFile.file_url} height={560} className="w-full" />
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400 text-sm">
+                      <ImageIcon className="w-12 h-12 mb-2 opacity-50" />
+                      {language === "th" ? "ไม่มีแบบแปลน" : "No plan available"}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
+        <div className="min-h-screen container-safe px-3 sm:px-4 md:px-6 lg:px-8 py-6 space-y-4 max-w-full overflow-x-auto">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <div className="flex items-center gap-2 text-gray-800 dark:text-gray-100">
@@ -527,15 +864,6 @@ export default function ReportPage() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <select
-                value={selectedRound}
-                onChange={(e) => setSelectedRound(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-sm"
-              >
-                {availableRounds.map((r) => (
-                  <option key={r} value={r}>{`${t("round", language)} ${r}`}</option>
-                ))}
-              </select>
               <button
                 onClick={loadData}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
@@ -567,6 +895,67 @@ export default function ReportPage() {
             >
               {t("paidItems", language)}
             </button>
+            <button
+              onClick={() => setActiveTab("cancelled")}
+              className={`px-3 py-2 text-sm font-medium rounded-lg ${
+                activeTab === "cancelled"
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+              }`}
+            >
+              {language === "th" ? "ยกเลิกการจ่าย" : "Cancelled"}
+            </button>
+          </div>
+
+          {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
+                  <LayoutList className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    {language === "th" ? "จำนวนรายการ" : "Items"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
+                    {summary.count}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400">
+                  <Banknote className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    {language === "th" ? "ยอดรวม" : "Total"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
+                    {summary.totalAmount.toLocaleString()}
+                    <span className="ml-1 text-sm font-normal text-gray-500 dark:text-gray-400">บาท</span>
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400">
+                  <Package className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                    {language === "th" ? "จำนวนชิ้น" : "Quantity"}
+                  </p>
+                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
+                    {summary.totalQty.toLocaleString()}
+                    <span className="ml-1 text-sm font-normal text-gray-500 dark:text-gray-400">{language === "th" ? "ชิ้น" : "pcs"}</span>
+                  </p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Filters */}
@@ -683,14 +1072,22 @@ export default function ReportPage() {
               {t("loading", language)}
             </div>
           ) : activeTab === "unpaid" ? (
-            renderTable(unpaidRows, false)
-          ) : (
+            renderTable(unpaidRows, "unpaid", { showProjectTooltip, hideProjectTooltip })
+          ) : activeTab === "paid" ? (
             <div className="space-y-3">
               <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                 <Calendar className="w-4 h-4" />
-                {language === "th" ? "แสดงรายการจ่ายแล้วตามรอบที่เลือก" : "Showing paid items for the selected round"}
+                {language === "th" ? "แสดงรายการจ่ายแล้ว" : "Showing paid items"}
               </div>
-              {renderTable(paidRows, true)}
+              {renderTable(paidRows, "paid", { showProjectTooltip, hideProjectTooltip })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                <XCircle className="w-4 h-4" />
+                {language === "th" ? "รายการที่ยกเลิกการจ่าย กดคืนสถานะรอจ่ายได้" : "Cancelled items. You can revert to unpaid."}
+              </div>
+              {renderTable(cancelledRows, "cancelled", { showProjectTooltip, hideProjectTooltip })}
             </div>
           )}
         </div>

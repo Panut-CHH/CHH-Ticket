@@ -60,10 +60,11 @@ export async function POST(request) {
       price_per_unit,
       project_name,
       payment_date,
+      payment_round: bodyPaymentRound,
       user_id
     } = body || {};
 
-    if (!['confirm', 'cancel'].includes(action)) {
+    if (!['confirm', 'cancel', 'revert'].includes(action)) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
@@ -81,7 +82,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const paymentRound = formatRound(payment_date);
+    const paymentRound = (bodyPaymentRound && String(bodyPaymentRound).trim()) ? String(bodyPaymentRound).trim() : formatRound(payment_date);
     const baseRecord = {
       ticket_no,
       station_id,
@@ -139,6 +140,24 @@ export async function POST(request) {
       }
 
       return NextResponse.json({ success: true, data });
+    }
+
+    if (action === 'revert') {
+      const { error } = await supabaseAdmin
+        .from('technician_payments')
+        .delete()
+        .eq('ticket_no', ticket_no)
+        .eq('station_id', station_id)
+        .eq('step_order', step_order)
+        .eq('technician_id', technician_id)
+        .eq('payment_round', paymentRound);
+
+      if (error) {
+        console.error('[REPORT PAYMENT] revert error:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, data: null });
     }
 
     return NextResponse.json({ success: false, error: 'Unhandled action' }, { status: 400 });

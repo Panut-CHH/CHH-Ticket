@@ -6,15 +6,7 @@ const nextConfig = {
       bodySizeLimit: '10mb',
     },
   },
-  async redirects() {
-    return [
-      {
-        source: "/:path*",
-        destination: "https://chh-ticket.evergreenchh.tech/:path*",
-        permanent: true,
-      },
-    ];
-  },
+  // redirect เก่าต้องย้ายไป middleware.js เพื่อยกเว้น localhost
 };
 
 export default nextConfig;
