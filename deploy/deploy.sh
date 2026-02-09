@@ -4,7 +4,7 @@
 
 set -e
 
-# โฟลเดอร์โปรเจกต์บน VPS (ตรงกับโฟลเดอร์จริงบนเซิร์ฟเวอร์.)
+# โฟลเดอร์โปรเจกต์บน VPS (ตรงกับโฟลเดอร์จริงบนเซิร์ฟเวอร์)
 APP_DIR="${APP_DIR:-/home/panat/apps/chh-ticket}"
 # ชื่อ process ใน pm2 — ต้องตรงกับชื่อที่ใช้ใน deploy-auto.sh
 PM2_APP_NAME="${PM2_APP_NAME:-chh-ticket}"
