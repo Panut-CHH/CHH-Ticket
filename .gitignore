@@ -120,4 +120,3 @@ temp/
 *.md
 *.sql
 .superdesign/
-*.sh
