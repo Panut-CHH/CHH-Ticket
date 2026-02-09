@@ -1,3 +1,6 @@
+# Shell scripts: use LF so they run on Linux (e.g. deploy on VPS)
+*.sh text eol=lf
+
 # Protect critical theme configuration files
 style/globals.css -diff
 tailwind.config.js -diff
