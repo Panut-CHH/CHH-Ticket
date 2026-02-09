@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Search, Filter, Edit, User, Clock, Loader, FileText, AlertCircle, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t, translations } from "@/utils/translations";
@@ -1370,6 +1371,8 @@ export default function UITicket() {
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
   function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
+    const cleanedRpd = String(ticket.rpd || ticket.id || '').replace(/^#/, '').trim();
+    const editHref = `/tickets/${encodeURIComponent(cleanedRpd)}/edit`;
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
@@ -1622,31 +1625,30 @@ export default function UITicket() {
             </div>
           </div>
           <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-shrink-0" style={{ minWidth: 0, maxWidth: '100%' }}>
-            <button 
-              onClick={() => canAction && onEdit(ticket)}
-              onContextMenu={(e) => {
-                if (canAction) {
-                  e.preventDefault();
-                  const rpdNo = ticket.rpd || ticket.id || "";
-                  const cleanedRpd = rpdNo.replace(/^#/,'');
-                  window.open(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`, '_blank');
-                }
-              }}
-              disabled={!canAction}
-              className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 ${
-                canAction 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-105 active:scale-95 cursor-pointer' 
-                  : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
-              }`}
-            >
-              <Edit className="w-3 h-3" />
-              <span>{t('editTicket', language)}</span>
-            </button>
+            {canAction ? (
+              <Link
+                href={editHref}
+                onClick={(e) => e.stopPropagation()}
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              >
+                <Edit className="w-3 h-3" />
+                <span>{t('editTicket', language)}</span>
+              </Link>
+            ) : (
+              <span
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 bg-gray-400 text-white opacity-50 cursor-not-allowed"
+                aria-disabled
+              >
+                <Edit className="w-3 h-3" />
+                <span>{t('editTicket', language)}</span>
+              </span>
+            )}
             {canAction && (
               <button
-                onClick={() => onDelete(ticket)}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onDelete(ticket); }}
                 disabled={isDeleting}
-                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-red-600 hover:bg-red-700 text-white hover:scale-105 active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed"
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-red-600 hover:bg-red-700 text-white hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Trash2 className="w-3 h-3" />
                 <span>{t('deleteTicket', language)}</span>
