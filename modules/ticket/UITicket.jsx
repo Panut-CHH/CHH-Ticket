@@ -2,7 +2,6 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { Search, Filter, Edit, User, Clock, Loader, FileText, AlertCircle, ChevronDown, ChevronRight, Trash2 } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t, translations } from "@/utils/translations";
@@ -46,6 +45,7 @@ export default function UITicket() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editingTicketId, setEditingTicketId] = useState(null);
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
@@ -1370,7 +1370,7 @@ export default function UITicket() {
 
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
-  function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
+  function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode, editingTicketId }) {
     const cleanedRpd = String(ticket.rpd || ticket.id || '').replace(/^#/, '').trim();
     const editHref = `/tickets/${encodeURIComponent(cleanedRpd)}/edit`;
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
@@ -1379,7 +1379,7 @@ export default function UITicket() {
     
     // ข้ามการหาจาก mock projects เดิม
     return (
-      <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 hover:shadow-lg hover:-translate-y-1 transition-all duration-300 overflow-hidden max-w-full">
+      <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 overflow-hidden max-w-full">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 min-w-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
@@ -1626,14 +1626,27 @@ export default function UITicket() {
           </div>
           <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-shrink-0" style={{ minWidth: 0, maxWidth: '100%' }}>
             {canAction ? (
-              <Link
-                href={editHref}
-                onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(ticket);
+                }}
+                disabled={editingTicketId === cleanedRpd}
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98] cursor-pointer disabled:opacity-70 disabled:cursor-wait min-w-[90px]"
               >
-                <Edit className="w-3 h-3" />
-                <span>{t('editTicket', language)}</span>
-              </Link>
+                {editingTicketId === cleanedRpd ? (
+                  <>
+                    <Loader className="w-3 h-3 animate-spin" />
+                    <span>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Edit className="w-3 h-3" />
+                    <span>{t('editTicket', language)}</span>
+                  </>
+                )}
+              </button>
             ) : (
               <span
                 className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 bg-gray-400 text-white opacity-50 cursor-not-allowed"
@@ -1662,12 +1675,13 @@ export default function UITicket() {
 
   const handleEdit = (ticket) => {
     try {
-      // ใช้ RPD No. แทน project_number
       const rpdNo = ticket.rpd || ticket.id || "";
       const cleanedRpd = rpdNo.replace(/^#/,'');
+      setEditingTicketId(cleanedRpd);
       router.push(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`);
     } catch (e) {
       console.error("Navigate to edit failed", e);
+      setEditingTicketId(null);
     }
   };
 
@@ -2063,6 +2077,7 @@ export default function UITicket() {
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
+                                        editingTicketId={editingTicketId}
                                       />
                                     </div>
                                   ))}
@@ -2206,6 +2221,7 @@ export default function UITicket() {
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
+                                        editingTicketId={editingTicketId}
                                       />
                                     </div>
                                   ))}
@@ -2235,6 +2251,7 @@ export default function UITicket() {
                   ticketBomStatus={ticketBomStatus}
                   ticketAssignmentStatus={ticketAssignmentStatus}
                   projectMapByItemCode={projectMapByItemCode}
+                  editingTicketId={editingTicketId}
                 />
               </div>
             ))}
@@ -2282,6 +2299,7 @@ export default function UITicket() {
                     ticketBomStatus={ticketBomStatus}
                     ticketAssignmentStatus={ticketAssignmentStatus}
                     projectMapByItemCode={projectMapByItemCode}
+                    editingTicketId={editingTicketId}
                   />
                 </div>
               ));
