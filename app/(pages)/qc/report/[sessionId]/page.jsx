@@ -60,7 +60,7 @@ export default function QCReportPage() {
         <h1 className="text-lg sm:text-xl font-semibold mb-1">QC Report</h1>
         <div className="text-xs sm:text-sm text-gray-600 mb-4">Session: {sessionId}</div>
 
-        {loading && <div className="text-sm">กำลังโหลด..</div>}
+        {loading && <div className="text-sm">กำลังโหลด...</div>}
         {!loading && session && (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm mb-4">
