@@ -46,7 +46,6 @@ export default function UITicket() {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [loadingTicketId, setLoadingTicketId] = useState(null);
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
@@ -127,24 +126,56 @@ export default function UITicket() {
             const json = await resp.json();
             const allTickets = json.data || [];
             
+            // Debug: เช็คว่ามี FG-00657-D301-D ใน itemCodesSet หรือไม่
+            const targetItemCode = 'FG-00657-D301-D';
+            const hasTargetItemCode = itemCodesSet.includes(targetItemCode);
+            console.log('🔍 DEBUG: มี FG-00657-D301-D ใน itemCodesSet หรือไม่?', hasTargetItemCode);
+            console.log('🔍 DEBUG: itemCodesSet ที่มี 00657:', itemCodesSet.filter(code => code && code.includes('00657')));
+            console.log('🔍 DEBUG: Total tickets from ERP =', allTickets.length);
+            
+            // Debug: หา tickets ที่มี RPD2602-116 และ RPD2511-201
+            const targetTickets = allTickets.filter(t => 
+              t.No === 'RPD2602-116' || t.No === 'RPD2511-201'
+            );
+            console.log('🎯 DEBUG: Target Tickets (RPD2602-116, RPD2511-201):', JSON.stringify(targetTickets.map(t => ({
+              No: t.No,
+              Source_No: t.Source_No,
+              Item_No: t.Item_No,
+              itemCode: t.itemCode,
+              Description: t.Description
+            })), null, 2));
+            
+            // Debug: หา tickets ทั้งหมดที่มี 00657 ใน Source_No
+            const ticket00657 = allTickets.filter(t => 
+              (t.Source_No && t.Source_No.includes('00657')) || 
+              (t.Item_No && t.Item_No.includes('00657'))
+            );
+            console.log('🎯 DEBUG: All tickets with 00657 in Source_No/Item_No:', JSON.stringify(ticket00657.map(t => ({
+              No: t.No,
+              Source_No: t.Source_No,
+              Item_No: t.Item_No
+            })), null, 2));
+            
             // Filter ตาม item_codes
             erpTickets = allTickets.filter(ticket => {
               const sourceNo = ticket?.Source_No || ticket?.Item_No || ticket?.itemCode;
-              return sourceNo && itemCodesSet.includes(sourceNo);
+              const matched = sourceNo && itemCodesSet.includes(sourceNo);
+              
+              // Debug specific tickets
+              if (ticket.No && (ticket.No.includes('00657') || ticket.No.includes('FG-00657') || ticket.No.includes('EX-00657'))) {
+                console.log('🎯 DEBUG Ticket:', {
+                  No: ticket.No,
+                  Source_No: ticket.Source_No,
+                  Item_No: ticket.Item_No,
+                  itemCode: ticket.itemCode,
+                  matched: matched
+                });
+              }
+              
+              return matched;
             });
             
             console.log(`✅ Fetched ${erpTickets.length} tickets from ERP (filtered from ${allTickets.length} total)`);
-            
-            // Debug: Log first 3 tickets to see RPD format
-            if (erpTickets.length > 0) {
-              console.log('🔍 [RPD FORMAT] First 3 tickets from ERP:', erpTickets.slice(0, 3).map(t => ({
-                No: t.No,
-                no: t.no,
-                RPD_No: t.RPD_No,
-                Source_No: t.Source_No,
-                Description: t.Description
-              })));
-            }
           } else {
             throw new Error(`ERP API failed: ${resp.status}`);
           }
@@ -171,19 +202,6 @@ export default function UITicket() {
         for (const erpTicket of erpTickets) {
           const rpdNo = erpTicket.No || erpTicket.no || erpTicket.RPD_No;
           const itemCode = erpTicket.Source_No || erpTicket.itemCode;
-          
-          // Debug: Log first 3 tickets to check RPD format
-          if (newTickets.length < 3) {
-            console.log('🔍 [RPD DEBUG] Ticket from ERP:', {
-              No: erpTicket.No,
-              no: erpTicket.no,
-              RPD_No: erpTicket.RPD_No,
-              rpdNo: rpdNo,
-              Source_No: erpTicket.Source_No,
-              itemCode: itemCode,
-              Description: erpTicket.Description
-            });
-          }
           
           // ไม่ log debug เพราะสร้าง noise
           if (false && rpdNo === 'RPD2510-199') {
@@ -430,40 +448,20 @@ export default function UITicket() {
 
   // โหลด item codes และ ERP ทั้งหมด แล้ว map เป็นกลุ่มตาม itemcode
   useEffect(() => {
-    console.log('🔍 [LOAD ITEM CODES] useEffect triggered');
     let active = true;
     const loadItemCodesAndErpAll = async () => {
       try {
-        // ดึง item_code ทั้งหมดจาก project_items และ projects
+        // ดึง item_code ทั้งหมดจาก project_items
         const { data: items, error: itemsError } = await supabase
           .from('project_items')
           .select('item_code');
         if (itemsError) throw itemsError;
 
-        const { data: projects, error: projectsError } = await supabase
-          .from('projects')
-          .select('item_code');
-        if (projectsError) throw projectsError;
-
-        // รวม item codes จากทั้งสองแหล่งและลบค่าซ้ำ
-        const allItemCodes = [
-          ...(items || []).map(i => i?.item_code).filter(Boolean),
-          ...(projects || []).map(p => p?.item_code).filter(Boolean)
-        ];
-        const codes = [...new Set(allItemCodes)];
-        
-        console.log('🔍 [ITEM CODES DEBUG]', {
-          fromProjectItems: (items || []).map(i => i?.item_code).filter(Boolean).length,
-          fromProjects: (projects || []).map(p => p?.item_code).filter(Boolean).length,
-          totalUnique: codes.length,
-          codes: codes
-        });
-        
+        const codes = [...new Set((items || []).map(i => i?.item_code).filter(Boolean))];
         if (active) setItemCodes(codes);
 
         // ถ้าไม่มี item code ให้จบ
         if (!codes.length) {
-          console.log('⚠️ [ITEM CODES] No item codes found - grouped view will be empty');
           if (active) setGroupedByItem([]);
           return;
         }
@@ -497,102 +495,65 @@ export default function UITicket() {
         } catch (erpError) {
           console.warn('ERP API failed for grouped view, using database data instead:', erpError.message);
           
-          // ใช้ข้อมูลจากฐานข้อมูลแทน ERP - ดึง tickets จริงจาก DB
-          const { data: dbTickets, error: dbError } = await supabase
-            .from('ticket')
-            .select(`
-              *,
-              projects (
-                id, item_code, project_number, project_name, description
-              )
-            `)
-            .not('no', 'like', 'TICKET-%')
-            .in('source_no', codes);
-          
-          if (dbError) {
-            console.error('Failed to fetch tickets from database:', dbError);
-            grouped = [];
-          } else {
-            // จัดกลุ่ม tickets ตาม item_code (source_no)
-            const groups = new Map();
+          // ใช้ข้อมูลจากฐานข้อมูลแทน ERP
+          const groups = new Map();
+          for (const code of codes) {
+            // หาโปรเจ็คที่มี item_code นี้
+            const { data: projects } = await supabase
+              .from('projects')
+              .select('project_number, project_name, item_code, description')
+              .eq('item_code', code);
             
-            for (const dbTicket of (dbTickets || [])) {
-              const itemCode = dbTicket.source_no;
-              if (!itemCode || !codes.includes(itemCode)) continue;
-              
-              const rpdNo = dbTicket.no;
-              const project = dbTicket.projects;
-              
-              // สร้าง ticket object
-              const ticket = {
-                id: rpdNo,
-                rpd: rpdNo,
-                title: dbTicket.description || '',
-                priority: dbTicket.priority || 'ยังไม่ได้กำหนด Priority',
-                priorityClass: dbTicket.priority === "High" || dbTicket.priority === "High Priority"
-                  ? "bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400"
-                  : dbTicket.priority === "Medium" || dbTicket.priority === "Medium Priority"
-                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400"
-                  : dbTicket.priority === "Low" || dbTicket.priority === "Low Priority"
-                  ? "bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400"
-                  : "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
-                status: dbTicket.status || 'Pending',
-                statusClass: dbTicket.status === 'Finish' 
-                  ? 'text-green-600'
-                  : dbTicket.status === 'In Progress'
-                  ? 'text-blue-600'
-                  : 'text-blue-600',
-                assignee: '-',
-                time: '',
-                route: itemCode || rpdNo,
-                routeClass: 'bg-blue-100 text-blue-800',
-                dueDate: dbTicket.due_date || '',
-                quantity: typeof dbTicket.pass_quantity === 'number' && dbTicket.pass_quantity !== null
-                  ? dbTicket.pass_quantity
-                  : (dbTicket.quantity || 0),
-                itemCode: itemCode,
-                projectCode: itemCode || rpdNo,
-                projectName: project?.project_name || project?.description || dbTicket.description || rpdNo,
-                description: dbTicket.description || '',
-                description2: dbTicket.description_2 || '',
-                customerName: dbTicket.customer_name || '',
-                project_id: dbTicket.project_id,
-                started_at: dbTicket.started_at,
-                finished_at: dbTicket.finished_at,
-                roadmap: [],
-                stations: [],
+            if (projects && projects.length > 0) {
+              const tickets = projects.map(p => {
+                const projectId = p.project_number || p.item_code;
+                return {
+                  id: projectId,
+                  title: p.project_name || p.description || `Project ${projectId}`,
+                  priority: "ยังไม่ได้กำหนด Priority",
+                  priorityClass: "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300",
+                  status: "Pending",
+                  statusClass: "text-blue-600",
+                  assignee: "-",
+                  time: "",
+                  route: projectId,
+                  routeClass: "bg-blue-100 text-blue-800",
+                  dueDate: "",
+                  quantity: 0,
+                  rpd: projectId,
+                  itemCode: code,
+                  projectCode: code,
+                  projectName: p.project_name || p.description || `Project ${projectId}`,
+                  description: p.project_name || p.description || `Project ${projectId}`,
+                  description2: "",
+                  shortcutDimension1: "",
+                  shortcutDimension2: code,
+                  locationCode: "",
+                  startingDateTime: "",
+                endingDateTime: "",
+                bwkRemainingConsumption: 0,
+                searchDescription: p.project_name || p.description || `Project ${projectId}`,
+                erpCode: `ERP-${code}`,
+                projectId: code,
+                customerName: "",
                 bom: [],
-                inDatabase: true,
-                hasStationFlow: false
+                stations: [],
+                roadmap: [],
               };
+              });
               
-              if (!groups.has(itemCode)) {
-                groups.set(itemCode, []);
-              }
-              groups.get(itemCode).push(ticket);
+              groups.set(code, tickets);
             }
-            
-            grouped = [...groups.entries()].map(([code, tickets]) => ({
-              itemCode: code,
-              rpdCount: tickets.length,
-              items: tickets
-            }));
-            
-            console.log('🔍 [FALLBACK] Using database tickets:', {
-              dbTicketsCount: (dbTickets || []).length,
-              groupedCount: grouped.length
-            });
           }
+
+          grouped = [...groups.entries()].map(([code, tickets]) => ({
+            itemCode: code,
+            rpdCount: tickets.length,
+            items: tickets
+          }));
         }
 
-        if (active) {
-          setGroupedByItem(grouped);
-          console.log('🔍 [GROUPED DEBUG] Set groupedByItem:', {
-            groupCount: grouped.length,
-            itemCodes: grouped.map(g => g.itemCode),
-            totalTickets: grouped.reduce((sum, g) => sum + g.items.length, 0)
-          });
-        }
+        if (active) setGroupedByItem(grouped);
       } catch (e) {
         console.error('Load item codes & ERP all failed', e);
         if (active) setErrorMessage(typeof e === 'object' ? (e?.message || JSON.stringify(e)) : String(e));
@@ -1028,10 +989,11 @@ export default function UITicket() {
         // Debug: ตรวจสอบเฉพาะเมื่อมีปัญหา (flows มากกว่า 7 แต่ roadmap ไม่ครบ)
         if (ticketFlows.length > 7 && merged.roadmap.length !== ticketFlows.length) {
           console.warn(`⚠️ [ROADMAP] Ticket ${ticketNo}: ${ticketFlows.length} flows but only ${merged.roadmap.length} roadmap steps created`);
-        } else if (ticketFlows.length > 7) {
-          // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
-          console.log(`✅ [ROADMAP] Ticket ${ticketNo}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
         }
+        // else if (ticketFlows.length > 7) {
+        //   // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
+        //   console.log(`✅ [ROADMAP] Ticket ${ticketNo}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
+        // }
         
         // คำนวณสถานะตามการ assign และความคืบหน้า
         const stations = ticketFlows.map(flow => ({
@@ -1296,13 +1258,9 @@ export default function UITicket() {
 
   // Merge station flows เข้ากับ tickets ใน groupedByItem
   const groupedByItemWithFlows = useMemo(() => {
-    console.log('🔍 [GROUPED WITH FLOWS] Creating groupedByItemWithFlows:', {
-      groupedByItemLength: groupedByItem.length,
-      dbTicketsLength: dbTickets.length,
-      dbStationFlowsLength: dbStationFlows.length
-    });
+    // ไม่ log เพราะสร้าง noise
     
-    const result = groupedByItem.map(group => ({
+    return groupedByItem.map(group => ({
       ...group,
       items: group.items.map(ticket => {
         const merged = { ...ticket };
@@ -1356,10 +1314,11 @@ export default function UITicket() {
             // Debug: ตรวจสอบเฉพาะเมื่อมีปัญหา (flows มากกว่า 7 แต่ roadmap ไม่ครบ)
             if (ticketFlows.length > 7 && merged.roadmap.length !== ticketFlows.length) {
               console.warn(`⚠️ [ROADMAP] Ticket ${ticketId}: ${ticketFlows.length} flows but only ${merged.roadmap.length} roadmap steps created`);
-            } else if (ticketFlows.length > 7) {
-              // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
-              console.log(`✅ [ROADMAP] Ticket ${ticketId}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
             }
+            // else if (ticketFlows.length > 7) {
+            //   // Log เฉพาะเมื่อมี flows มากกว่า 7 และ roadmap ถูกต้อง
+            //   console.log(`✅ [ROADMAP] Ticket ${ticketId}: ${ticketFlows.length} flows → ${merged.roadmap.length} roadmap steps`);
+            // }
             
             // คำนวณสถานะตามการ assign และความคืบหน้า
             const stations = ticketFlows.map(flow => ({
@@ -1392,16 +1351,6 @@ export default function UITicket() {
         return merged;
       })
     }));
-    
-    console.log('🔍 [GROUPED WITH FLOWS] Result:', {
-      resultLength: result.length,
-      groups: result.map(g => ({
-        itemCode: g.itemCode,
-        ticketCount: g.items.length
-      }))
-    });
-    
-    return result;
   }, [groupedByItem, dbTickets, dbStationFlows]);
 
   // คำนวณจำนวนตั๋วที่เปิดจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
@@ -1466,65 +1415,20 @@ export default function UITicket() {
 
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
-  function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode, loadingTicketId }) {
+  function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
     const cleanedRpd = String(ticket.rpd || ticket.id || '').replace(/^#/, '').trim();
     const editHref = `/tickets/${encodeURIComponent(cleanedRpd)}/edit`;
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
-    const isLoading = loadingTicketId === cleanedRpd;
     
     // ข้ามการหาจาก mock projects เดิม
-    
-    // แสดง skeleton loading overlay เมื่อกำลังโหลด
-    if (isLoading) {
-      return (
-        <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 overflow-hidden max-w-full animate-pulse">
-          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 min-w-0">
-            <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex items-center gap-2 sm:gap-3">
-                <div className="h-6 bg-gray-200 dark:bg-slate-700 rounded w-32"></div>
-                <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-24"></div>
-              </div>
-              <div className="p-3 bg-gray-50 dark:bg-slate-700 rounded-lg">
-                <div className="flex items-center flex-wrap gap-3">
-                  <div className="h-6 bg-gray-200 dark:bg-slate-600 rounded-full w-20"></div>
-                  <div className="h-4 bg-gray-200 dark:bg-slate-600 rounded w-32"></div>
-                  <div className="h-4 bg-gray-200 dark:bg-slate-600 rounded w-24"></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="h-5 bg-gray-200 dark:bg-slate-700 rounded w-3/4"></div>
-                <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-1/2"></div>
-              </div>
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-20"></div>
-                <div className="h-4 bg-gray-200 dark:bg-slate-700 rounded w-24"></div>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 w-full lg:w-auto">
-              <div className="h-10 bg-gray-200 dark:bg-slate-700 rounded-lg w-full lg:w-32"></div>
-              <div className="h-10 bg-gray-200 dark:bg-slate-700 rounded-lg w-full lg:w-32"></div>
-            </div>
-          </div>
-          <div className="absolute inset-0 flex items-center justify-center bg-white/50 dark:bg-slate-800/50 backdrop-blur-sm">
-            <div className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-slate-800 rounded-lg shadow-lg border border-gray-200 dark:border-slate-700">
-              <Loader className="w-5 h-5 animate-spin text-blue-600" />
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    
     return (
-      <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 hover:shadow-lg transition-shadow duration-300 overflow-hidden max-w-full relative">
+      <div className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm p-3 sm:p-4 border border-gray-200 dark:border-slate-700 overflow-hidden max-w-full">
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-3 min-w-0">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 sm:gap-3 mb-2 flex-wrap">
-              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-gray-100">{ticket.rpd || ticket.id}</h3>
+              <h3 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 dark:text-gray-100">{ticket.id}</h3>
               {/* ข้อมูลรหัสต่างๆ - ย้ายมาด้านบนข้างๆ เลขตั๋ว (ลบ RPD ออกเพราะซ้ำกับเลขตั๋ว) */}
               <div className="flex items-center flex-wrap gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-600 dark:text-gray-400">
                 {ticket.itemCode && (
@@ -1653,7 +1557,7 @@ export default function UITicket() {
               </div>
               
                {ticket.description2 && (
-                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 italic mt-1">
+                 <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 italic">
                    {ticket.description2}
                  </p>
                )}
@@ -1770,7 +1674,7 @@ export default function UITicket() {
               <Link
                 href={editHref}
                 onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98] cursor-pointer"
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-transform duration-150 bg-blue-600 text-white active:scale-[0.98] cursor-pointer"
               >
                 <Edit className="w-3 h-3" />
                 <span>{t('editTicket', language)}</span>
@@ -1789,7 +1693,7 @@ export default function UITicket() {
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onDelete(ticket); }}
                 disabled={isDeleting}
-                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-all duration-150 bg-red-600 hover:bg-red-700 text-white hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-transform duration-150 bg-red-600 text-white active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 <Trash2 className="w-3 h-3" />
                 <span>{t('deleteTicket', language)}</span>
@@ -1806,11 +1710,9 @@ export default function UITicket() {
       // ใช้ RPD No. แทน project_number
       const rpdNo = ticket.rpd || ticket.id || "";
       const cleanedRpd = rpdNo.replace(/^#/,'');
-      setLoadingTicketId(cleanedRpd);
       router.push(`/tickets/${encodeURIComponent(cleanedRpd)}/edit`);
     } catch (e) {
       console.error("Navigate to edit failed", e);
-      setLoadingTicketId(null);
     }
   };
 
@@ -2080,15 +1982,7 @@ export default function UITicket() {
         ) : currentTab ? (
           <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
             {/* แสดงผลแบบกลุ่มตาม Item Code ก่อน */}
-            {(() => {
-              const shouldShowGrouped = activeTab === "open" && groupedByItemWithFlows.length > 0;
-              console.log('🔍 [RENDER GROUPED VIEW]', {
-                activeTab,
-                groupedByItemWithFlowsLength: groupedByItemWithFlows.length,
-                shouldShowGrouped
-              });
-              return shouldShowGrouped;
-            })() && (
+            {activeTab === "open" && groupedByItemWithFlows.length > 0 && (
               <div className="mb-6" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
                   {language === 'th' ? 'จัดกลุ่มตาม Item Code' : 'Grouped by Item Code'}
@@ -2214,7 +2108,6 @@ export default function UITicket() {
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
-                                        loadingTicketId={loadingTicketId}
                                       />
                                     </div>
                                   ))}
@@ -2358,7 +2251,6 @@ export default function UITicket() {
                                         ticketBomStatus={ticketBomStatus}
                                         ticketAssignmentStatus={ticketAssignmentStatus}
                                         projectMapByItemCode={projectMapByItemCode}
-                                        loadingTicketId={loadingTicketId}
                                       />
                                     </div>
                                   ))}
@@ -2388,7 +2280,6 @@ export default function UITicket() {
                   ticketBomStatus={ticketBomStatus}
                   ticketAssignmentStatus={ticketAssignmentStatus}
                   projectMapByItemCode={projectMapByItemCode}
-                  loadingTicketId={loadingTicketId}
                 />
               </div>
             ))}
