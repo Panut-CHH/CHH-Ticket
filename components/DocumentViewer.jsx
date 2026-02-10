@@ -23,9 +23,14 @@ export default function DocumentViewer({ url, className = "", height = 640 }) {
   if (isImage) {
     return (
       <div className={`border rounded-lg sm:rounded-xl bg-white overflow-hidden ${className}`} style={{ height: responsiveHeight }}>
-        <div className="w-full h-full overflow-auto flex items-start justify-center bg-gray-50">
+        <div className="w-full h-full overflow-auto flex items-center justify-center bg-gray-50 p-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="document" className="max-w-none object-contain" />
+          <img
+            src={url}
+            alt="document"
+            className="max-w-full max-h-full w-auto h-auto object-contain"
+            style={{ maxHeight: responsiveHeight }}
+          />
         </div>
       </div>
     );

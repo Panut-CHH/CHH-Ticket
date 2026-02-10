@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -400,6 +400,15 @@ export default function UIProject() {
     return matchesSearch && matchesDate;
   });
 
+  // เรียงจากเลขโปรเจ็ค (projectNumber) — เลขเยอะสุดขึ้นก่อน (มากไปน้อย)
+  const sortedFilteredProjects = useMemo(() => {
+    return [...filteredProjects].sort((a, b) => {
+      const na = (a.projectNumber ?? a.projectCode ?? "").toString().trim();
+      const nb = (b.projectNumber ?? b.projectCode ?? "").toString().trim();
+      return nb.localeCompare(na, undefined, { numeric: true });
+    });
+  }, [filteredProjects]);
+
   // สถิติโปรเจ็คตามวันที่
   const stats = {
     total: projects.length,
@@ -798,17 +807,17 @@ export default function UIProject() {
         {/* Projects List */}
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fadeInUpSmall" style={{ animationDelay: '0.6s' }}>
           <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700">
-            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">{t('projectList', language)} ({filteredProjects.length})</h2>
+            <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">{t('projectList', language)} ({sortedFilteredProjects.length})</h2>
           </div>
           
           <div className="divide-y divide-slate-200 dark:divide-slate-700">
-            {filteredProjects.length === 0 ? (
+            {sortedFilteredProjects.length === 0 ? (
               <div className="p-6 sm:p-8 text-center text-gray-500 dark:text-gray-400">
                 <FolderOpen className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 opacity-50" />
                 <p className="text-sm sm:text-base">{t('noProjectsFound', language)}</p>
               </div>
             ) : (
-              filteredProjects.map((project, index) => (
+              sortedFilteredProjects.map((project, index) => (
                 <div
                   key={project.id}
                   className="group p-4 sm:p-6 transition-colors animate-fadeInUpSmall border-l-4 border-emerald-500/60 bg-gradient-to-r from-emerald-50/60 to-blue-50/40 dark:from-emerald-900/10 dark:to-blue-900/10 hover:from-emerald-100/60 hover:to-blue-100/40 dark:hover:from-emerald-900/20 dark:hover:to-blue-900/20"
