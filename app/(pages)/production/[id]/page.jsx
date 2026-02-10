@@ -660,6 +660,11 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           {typeof ticket.quantity === 'number' ? (
             <div>จำนวนที่ต้องผลิต: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.quantity.toLocaleString()} ชิ้น</span></div>
           ) : null}
+          {(ticket.totalDefectCount || 0) > 0 ? (
+            <div className="text-amber-600 dark:text-amber-400 font-medium">
+              มี defect ไปแล้ว: <span>{ticket.totalDefectCount.toLocaleString()} ชิ้น</span>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -1427,8 +1432,9 @@ export default function ProductionDetailPage() {
       // 5) Merge flows + assignments
       const merged = mergeFlowsIntoTicket(erpTicket, Array.isArray(flows) ? flows : [], assignments);
       
-      // Add defect counts to merged ticket
+      // Add defect counts to merged ticket (per QC step) และรวมเป็นจำนวน defect ทั้งตั๋ว
       merged.defectCounts = defectCounts;
+      merged.totalDefectCount = Object.values(defectCounts || {}).reduce((sum, n) => sum + (Number(n) || 0), 0);
       
       // Apply priority/quantity from Supabase if available
       if (dbTicket && dbTicket.priority) {
@@ -1445,11 +1451,8 @@ export default function ProductionDetailPage() {
         }
       }
       if (dbTicket && typeof dbTicket.quantity === 'number') {
-        // displayCount = COALESCE(pass_quantity, quantity)
-        const passQ = (typeof dbTicket.pass_quantity === 'number' && dbTicket.pass_quantity !== null)
-          ? dbTicket.pass_quantity
-          : dbTicket.quantity;
-        merged.quantity = passQ;
+        // แสดงจำนวนเต็มเสมอ (ไม่ลดเมื่อ QC พบ defect)
+        merged.quantity = dbTicket.quantity;
       }
       if (dbTicket && typeof dbTicket.initial_quantity === 'number') {
         merged.initialQuantity = dbTicket.initial_quantity;

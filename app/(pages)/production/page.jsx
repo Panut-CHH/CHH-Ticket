@@ -276,12 +276,42 @@ export default function ProductionPage() {
         console.warn('[PRODUCTION] Exception while building projectMap:', e?.message);
       }
 
-      // 3) Map DB tickets to base ticket objects (DB-first)
+      // โหลดจำนวน defect รวมต่อตั๋ว (จาก qc_sessions + qc_rows ที่ pass = false)
+      const defectCountByTicket = new Map();
+      try {
+        const { data: qcSessions, error: qcSessErr } = await supabase
+          .from('qc_sessions')
+          .select('id, ticket_no')
+          .in('ticket_no', allTicketNumbers);
+        if (!qcSessErr && Array.isArray(qcSessions) && qcSessions.length > 0) {
+          const sessionIds = qcSessions.map(s => s.id);
+          const { data: qcRows, error: rowsErr } = await supabase
+            .from('qc_rows')
+            .select('session_id, actual_qty')
+            .in('session_id', sessionIds)
+            .eq('pass', false);
+          if (!rowsErr && Array.isArray(qcRows)) {
+            const defectBySession = {};
+            qcRows.forEach(row => {
+              const qty = Number(row.actual_qty) || 0;
+              defectBySession[row.session_id] = (defectBySession[row.session_id] || 0) + qty;
+            });
+            qcSessions.forEach(s => {
+              const defect = defectBySession[s.id] || 0;
+              if (defect > 0) {
+                defectCountByTicket.set(s.ticket_no, (defectCountByTicket.get(s.ticket_no) || 0) + defect);
+              }
+            });
+          }
+        }
+      } catch (e) {
+        console.warn('[PRODUCTION] Load defect counts error:', e?.message);
+      }
+
+      // 3) Map DB tickets to base ticket objects (DB-first) — แสดงจำนวนเต็มเสมอ (ไม่ใช้ pass_quantity ลดเมื่อมี defect)
       const baseMapped = (ticketData || []).map(t => {
         const id = (t.no || '').replace('#','');
-        const displayQty = (typeof t.pass_quantity === 'number' && t.pass_quantity !== null)
-          ? t.pass_quantity
-          : (t.quantity || 0);
+        const fullQuantity = typeof t.quantity === 'number' ? t.quantity : (t.quantity || 0);
 
         // ดึงชื่อโปรเจ็คจาก projectMap ตาม itemCode/source_no
         const projectFromMap = t.source_no ? projectMap.get(t.source_no) : null;
@@ -302,7 +332,8 @@ export default function ProductionPage() {
           route: t.source_no || id,
           routeClass: 'bg-blue-100 text-blue-800',
           dueDate: t.due_date || '',
-          quantity: displayQty,
+          quantity: fullQuantity,
+          totalDefectCount: defectCountByTicket.get(t.no) || 0,
           rpd: id,
           itemCode: t.source_no || '',
           projectCode: t.source_no || id,
@@ -375,7 +406,20 @@ export default function ProductionPage() {
             console.error('[PRODUCTION] Failed to load station flows:', flowError);
             flows = [];
           } else {
-            flows = allFlows;
+            // Remove duplicates by creating unique key (ticket_no + station_id + step_order)
+            const flowMap = new Map();
+            allFlows.forEach(flow => {
+              const key = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
+              if (!flowMap.has(key)) {
+                flowMap.set(key, flow);
+              }
+            });
+            flows = Array.from(flowMap.values());
+            
+            if (flows.length !== allFlows.length) {
+              console.warn(`[PRODUCTION] ⚠️ Removed ${allFlows.length - flows.length} duplicate flows (had ${allFlows.length}, now ${flows.length})`);
+            }
+            
             console.log(`[PRODUCTION] Loaded ${flows.length} flows for ${allTicketNumbers.length} tickets (filtered by ticket_no)`);
           }
         }
@@ -476,13 +520,25 @@ export default function ProductionPage() {
         console.log(`[PRODUCTION] Ticket ${ticketNo} roadmap:`, roadmap.map(r => ({ step: r.step, status: r.status, step_order: r.step_order })));
 
         // Build stations with price for amount calc
-        const stations = sortedTicketFlows.map(flow => ({
-          name: flow.stations?.name_th || '',
-          technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || '',
-          priceType: flow.price_type || 'flat',
-          price: Number(flow.price) || 0,
-          status: flow.status || 'pending'
-        }));
+        const stations = sortedTicketFlows.map(flow => {
+          const station = {
+            name: flow.stations?.name_th || '',
+            technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || '',
+            priceType: flow.price_type || 'flat',
+            price: Number(flow.price) || 0,
+            status: flow.status || 'pending'
+          };
+          
+          console.log(`💰 [LOAD_FLOW] Ticket ${ticketNo} - Station ${flow.step_order}:`, {
+            name: station.name,
+            raw_price: flow.price,
+            converted_price: station.price,
+            priceType: station.priceType,
+            has_price: flow.price !== null && flow.price !== undefined
+          });
+          
+          return station;
+        });
 
         const currentFlow = sortedTicketFlows.find(f => f.status === 'current');
         let assignee = currentFlow ? (assignmentMap[`${currentFlow.ticket_no}-${currentFlow.station_id}-${currentFlow.step_order}`] || '') : '';
@@ -932,13 +988,49 @@ export default function ProductionPage() {
     const steps = Array.isArray(ticket.stations) ? ticket.stations : [];
     const quantity = Number(ticket.quantity) || 0;
     
+    // Debug specific ticket
+    if (ticket.id === 'RPD2602-030') {
+      console.log(`🔍 [DEBUG_RPD2602-030] FULL TICKET DATA:`, {
+        id: ticket.id,
+        quantity,
+        hasStations: !!ticket.stations,
+        stationsIsArray: Array.isArray(ticket.stations),
+        stationsLength: steps.length,
+        stations_raw: ticket.stations,
+        stations: steps.map((s, idx) => ({
+          index: idx,
+          name: s.name,
+          price: s.price,
+          priceType: s.priceType,
+          status: s.status
+        }))
+      });
+    }
+    
+    console.log(`💰 [SUM_TICKET] Ticket ${ticket.id}:`, {
+      hasStations: !!ticket.stations,
+      stationsLength: steps.length,
+      quantity,
+      stations: steps.map(s => ({
+        name: s.name,
+        price: s.price,
+        priceType: s.priceType
+      }))
+    });
+    
     let productionPrice = 0;
     let colorPrice = 0;
     
-    steps.forEach((station) => {
+    steps.forEach((station, index) => {
       const stationName = (station.name || '').toLowerCase();
       const price = Number(station.price) || 0;
       const priceType = station.priceType || 'flat';
+      
+      console.log(`💰 [SUM_TICKET] Station ${index + 1}/${steps.length} - ${stationName}:`, {
+        price,
+        priceType,
+        quantity
+      });
       
       // Check if this is color station (สถานีสี)
       // Only "สี" (paint) station goes to colorPrice
@@ -956,6 +1048,8 @@ export default function ProductionPage() {
         stationTotal = price;
       }
       
+      console.log(`💰 [SUM_TICKET] Station ${stationName} - isColor: ${isColorStation}, total: ${stationTotal}`);
+      
       if (isColorStation) {
         colorPrice += stationTotal;
       } else {
@@ -969,6 +1063,14 @@ export default function ProductionPage() {
     });
     
     const total = productionPrice + colorPrice;
+    
+    console.log(`💰 [SUM_TICKET] Ticket ${ticket.id} - FINAL:`, {
+      productionPrice,
+      colorPrice,
+      total,
+      isCorrect: total === (productionPrice + colorPrice)
+    });
+    
     return total;
   };
 
@@ -1777,6 +1879,11 @@ export default function ProductionPage() {
                             <span className="font-medium text-gray-800 dark:text-gray-200">
                               {ticket.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'}
                             </span>
+                            {(ticket.totalDefectCount || 0) > 0 && (
+                              <span className="ml-1.5 text-amber-600 dark:text-amber-400 text-[11px] sm:text-xs">
+                                ({language === 'th' ? 'มี defect' : 'defect'}{' '}{ticket.totalDefectCount} {language === 'th' ? 'ชิ้น' : 'pcs'})
+                              </span>
+                            )}
                           </span>
                           <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${getPriorityChipClass(ticket.priority)}`}>
                             {ticket.priority}

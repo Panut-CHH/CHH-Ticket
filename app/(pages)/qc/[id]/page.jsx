@@ -426,10 +426,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       return { passQuantity: 0, failQuantity: 0, totalQuantity: 0, passRate: 0 };
     }
 
-    // จำนวนชิ้นงานทั้งหมดจากตั๋ว (DB-first)
-    const totalTicketQuantity = (typeof ticketData?.pass_quantity === 'number' && ticketData?.pass_quantity !== null)
-      ? ticketData.pass_quantity
-      : (ticketData?.quantity || 0);
+    // จำนวนชิ้นงานทั้งหมดจากตั๋ว — แสดงจำนวนเต็มเสมอ (ไม่ลดเมื่อมี defect)
+    const totalTicketQuantity = ticketData?.quantity ?? 0;
     
     if (totalTicketQuantity === 0) {
       // ถ้าไม่มีข้อมูลตั๋ว ให้ใช้วิธีเดิม
@@ -1041,7 +1039,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     <p className="text-xs sm:text-sm">
                       <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
                       <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
-                        {(((typeof ticketData?.pass_quantity === 'number' && ticketData?.pass_quantity !== null) ? ticketData.pass_quantity : (ticketData?.quantity || 0)) || 0).toLocaleString()} ชิ้น
+                        {(ticketData?.quantity ?? 0).toLocaleString()} ชิ้น
                       </span>
                     </p>
                     <p className="text-xs sm:text-sm">

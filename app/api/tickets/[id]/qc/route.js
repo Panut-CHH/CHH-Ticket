@@ -385,40 +385,8 @@ export async function POST(request, context) {
     const failedRows = insertedRows.filter((r) => r.pass === false);
     const failedQtyFromRows = failedRows.reduce((sum, r) => sum + (Number(r.actual_qty) || 0), 0);
 
-    // อัปเดตจำนวนผ่าน/ตั้งต้นใน ticket (ใช้ DB เป็น source of truth)
-    try {
-      const { data: ticketRow } = await admin
-        .from('ticket')
-        .select('quantity, pass_quantity, initial_quantity')
-        .eq('no', ticketNo)
-        .single();
-
-      const initialQty = Number(ticketRow?.initial_quantity);
-      const quantity = Number(ticketRow?.quantity) || 0;
-      const hasInitial = Number.isFinite(initialQty);
-      const currentPass = Number.isFinite(ticketRow?.pass_quantity) ? Number(ticketRow?.pass_quantity) : null;
-      const baseForCalc = Number.isFinite(currentPass) ? currentPass : quantity; // COALESCE(pass_quantity, quantity)
-
-      const providedFail = Number(bodyFailQty);
-      const failQty = Number.isFinite(providedFail) ? providedFail : failedQtyFromRows;
-
-      // Authoritative calculation on server: newPass = COALESCE(pass_quantity, quantity) - failQty
-      let newPassQuantity = Math.max(0, baseForCalc - (Number(failQty) || 0));
-
-      if (newPassQuantity !== null) {
-        const updatePayload = { pass_quantity: newPassQuantity };
-        if (!hasInitial) updatePayload.initial_quantity = quantity; // lock initial once
-        const { error: updateTicketErr } = await admin
-          .from('ticket')
-          .update(updatePayload)
-          .eq('no', ticketNo);
-        if (updateTicketErr) {
-          console.warn('Failed updating ticket pass_quantity:', updateTicketErr.message);
-        }
-      }
-    } catch (e) {
-      console.warn('Ticket quantity update failed (non-fatal):', e.message);
-    }
+    // ไม่ลดจำนวนชิ้นในตั๋วเมื่อ QC พบ defect แล้ว — แสดงจำนวนเต็มเสมอ และแสดงจำนวน defect แยก
+    // (เดิมอัปเดต pass_quantity = quantity - failQty ตอนนี้ไม่ทำแล้ว)
 
     // Create QC defect alert when there are failed pieces
     try {
