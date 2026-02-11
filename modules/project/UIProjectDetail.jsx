@@ -106,6 +106,7 @@ export default function UIProjectDetail({ projectId }) {
   const [productUnits, setProductUnits] = useState([]);
   const [loadingUnits, setLoadingUnits] = useState(false);
   const [showAddUnitModal, setShowAddUnitModal] = useState(false);
+  const [showDeleteCustomUnitsBox, setShowDeleteCustomUnitsBox] = useState(false);
   const [newUnitForm, setNewUnitForm] = useState({ code: '', name_th: '', name_en: '' });
   const [isAddingUnit, setIsAddingUnit] = useState(false);
   const [addUnitError, setAddUnitError] = useState('');
@@ -1371,7 +1372,7 @@ export default function UIProjectDetail({ projectId }) {
                 className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
               >
                 <option value="FG">{t('itemTypeFG', language)}</option>
-                <option value="SM">{t('itemTypeSM', language)}</option>
+                <option value="RM">{t('itemTypeRM', language)}</option>
                 <option value="WP">{t('itemTypeWP', language)}</option>
                 <option value="EX">{t('itemTypeEX', language)}</option>
               </select>
@@ -1391,82 +1392,91 @@ export default function UIProjectDetail({ projectId }) {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {t('itemUnit', language)} *
-                </label>
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
-                    const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
-                    return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
-                      <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                        <span>{language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}</span>
-                      </div>
-                    );
-                  })()}
-                  {isAdminOrAbove(user) && (
-                    <button
-                      type="button"
-                      onClick={() => setShowAddUnitModal(true)}
-                      className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>{language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <select
-                  value={itemForm.itemUnit}
-                  onChange={(e) => setItemForm(prev => ({ ...prev, itemUnit: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-                  disabled={loadingUnits}
-                >
-                  {productUnits.map((unit) => (
-                    <option key={unit.code} value={unit.code}>
-                      {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
-                      {unit.is_custom && ' (Custom)'}
-                    </option>
-                  ))}
-                </select>
-                {/* แสดงรายการ custom units พร้อมปุ่มลบ (เฉพาะ SuperAdmin) */}
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                {t('itemUnit', language)} *
+              </label>
+              <select
+                value={itemForm.itemUnit}
+                onChange={(e) => setItemForm(prev => ({ ...prev, itemUnit: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                disabled={loadingUnits}
+              >
+                {productUnits.map((unit) => (
+                  <option key={unit.code} value={unit.code}>
+                    {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                    {unit.is_custom && ' (Custom)'}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-2 mt-2">
                 {(() => {
                   const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
                   const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
                   return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
-                    <div className="space-y-1 max-h-32 overflow-y-auto">
-                      {productUnits
-                        .filter(u => u.is_custom)
-                        .map((unit) => (
-                          <div
-                            key={unit.id}
-                            className="flex items-center justify-between px-2 py-1.5 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600"
-                          >
-                            <span className="text-xs text-gray-700 dark:text-gray-300">
-                              {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                if (confirm(language === 'th' 
-                                  ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
-                                  : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
-                                  await handleDeleteUnit(unit.id);
-                                }
-                              }}
-                              className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                              title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setShowDeleteCustomUnitsBox(prev => !prev)}
+                        title={language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}
+                        className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                      >
+                        <Trash2 className="w-4 h-4 flex-shrink-0" />
+                        <span className="overflow-hidden max-w-0 opacity-0 group-hover:max-w-[11rem] group-hover:opacity-100 transition-all duration-200 whitespace-nowrap text-xs">
+                          {language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}
+                        </span>
+                      </button>
+                      {showDeleteCustomUnitsBox && (
+                        <div className="absolute left-0 top-full mt-1 z-20 min-w-[220px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-2 max-h-48 overflow-y-auto">
+                          <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-600">
+                            {language === 'th' ? 'รายการหน่วยที่เพิ่มเอง' : 'Custom units list'}
                           </div>
-                        ))}
+                          <div className="space-y-0.5 px-2">
+                            {productUnits
+                              .filter(u => u.is_custom)
+                              .map((unit) => (
+                                <div
+                                  key={unit.id}
+                                  className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                                >
+                                  <span className="text-xs text-gray-700 dark:text-gray-300">
+                                    {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={async (e) => {
+                                      e.stopPropagation();
+                                      if (confirm(language === 'th' 
+                                        ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
+                                        : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
+                                        await handleDeleteUnit(unit.id);
+                                      }
+                                    }}
+                                    className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                    title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
+                {isAdminOrAbove(user) && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUnitModal(true)}
+                    title={language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}
+                    className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    <Plus className="w-4 h-4 flex-shrink-0" />
+                    <span className="overflow-hidden max-w-0 opacity-0 group-hover:max-w-[8rem] group-hover:opacity-100 transition-all duration-200 whitespace-nowrap text-xs">
+                      {language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1700,7 +1710,7 @@ export default function UIProjectDetail({ projectId }) {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
                 >
                   <option value="FG">{t('itemTypeFG', language)}</option>
-                  <option value="SM">{t('itemTypeSM', language)}</option>
+                  <option value="RM">{t('itemTypeRM', language)}</option>
                   <option value="WP">{t('itemTypeWP', language)}</option>
                   <option value="EX">{t('itemTypeEX', language)}</option>
                 </select>
@@ -1724,85 +1734,94 @@ export default function UIProjectDetail({ projectId }) {
               </div>
 
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300">
-                    {t('itemUnit', language)} *
-                  </label>
-                  <div className="flex items-center gap-2">
-                    {(() => {
-                      const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
-                      const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
-                      return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
-                        <div className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                          <span>{language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}</span>
-                        </div>
-                      );
-                    })()}
-                    {isAdminOrAbove(user) && (
-                      <button
-                        type="button"
-                        onClick={() => setShowAddUnitModal(true)}
-                        className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1"
-                      >
-                        <Plus className="w-3 h-3" />
-                        <span>{language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <select
-                    value={editForm.itemUnit}
-                    onChange={(e) => {
-                      setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
-                      setPreviewUpdate(null);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
-                    disabled={loadingUnits}
-                  >
-                    {productUnits.map((unit) => (
-                      <option key={unit.code} value={unit.code}>
-                        {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
-                        {unit.is_custom && ' (Custom)'}
-                      </option>
-                    ))}
-                  </select>
-                  {/* แสดงรายการ custom units พร้อมปุ่มลบ (เฉพาะ SuperAdmin) */}
+                <label className="block text-xs sm:text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {t('itemUnit', language)} *
+                </label>
+                <select
+                  value={editForm.itemUnit}
+                  onChange={(e) => {
+                    setEditForm(prev => ({ ...prev, itemUnit: e.target.value }));
+                    setPreviewUpdate(null);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+                  disabled={loadingUnits}
+                >
+                  {productUnits.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                      {unit.is_custom && ' (Custom)'}
+                    </option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2 mt-2">
                   {(() => {
                     const userRoles = Array.isArray(user?.roles) ? user.roles : (user?.role ? [user.role] : []);
                     const isSuperAdmin = userRoles.some(r => String(r).toLowerCase() === 'superadmin');
                     return isSuperAdmin && productUnits.filter(u => u.is_custom).length > 0 && (
-                      <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {productUnits
-                          .filter(u => u.is_custom)
-                          .map((unit) => (
-                            <div
-                              key={unit.id}
-                              className="flex items-center justify-between px-2 py-1.5 bg-gray-50 dark:bg-slate-700/50 rounded border border-gray-200 dark:border-slate-600"
-                            >
-                              <span className="text-xs text-gray-700 dark:text-gray-300">
-                                {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  if (confirm(language === 'th' 
-                                    ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
-                                    : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
-                                    await handleDeleteUnit(unit.id);
-                                  }
-                                }}
-                                className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
-                                title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowDeleteCustomUnitsBox(prev => !prev)}
+                          title={language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}
+                          className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4 flex-shrink-0" />
+                          <span className="overflow-hidden max-w-0 opacity-0 group-hover:max-w-[11rem] group-hover:opacity-100 transition-all duration-200 whitespace-nowrap text-xs">
+                            {language === 'th' ? 'ลบหน่วยที่เพิ่มเอง' : 'Delete custom units'}
+                          </span>
+                        </button>
+                        {showDeleteCustomUnitsBox && (
+                          <div className="absolute left-0 top-full mt-1 z-20 min-w-[220px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-2 max-h-48 overflow-y-auto">
+                            <div className="px-3 py-1.5 text-xs font-medium text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-slate-600">
+                              {language === 'th' ? 'รายการหน่วยที่เพิ่มเอง' : 'Custom units list'}
                             </div>
-                          ))}
+                            <div className="space-y-0.5 px-2">
+                              {productUnits
+                                .filter(u => u.is_custom)
+                                .map((unit) => (
+                                  <div
+                                    key={unit.id}
+                                    className="flex items-center justify-between px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-slate-700/50"
+                                  >
+                                    <span className="text-xs text-gray-700 dark:text-gray-300">
+                                      {unit.code} - {language === 'th' ? unit.name_th : (unit.name_en || unit.name_th)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={async (e) => {
+                                        e.stopPropagation();
+                                        if (confirm(language === 'th' 
+                                          ? `คุณแน่ใจหรือไม่ว่าต้องการลบหน่วยสินค้า "${unit.code} - ${unit.name_th}"?` 
+                                          : `Are you sure you want to delete product unit "${unit.code} - ${unit.name_th}"?`)) {
+                                          await handleDeleteUnit(unit.id);
+                                        }
+                                      }}
+                                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
+                                      title={language === 'th' ? 'ลบหน่วยสินค้านี้' : 'Delete this unit'}
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ))}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
+                  {isAdminOrAbove(user) && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAddUnitModal(true)}
+                      title={language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}
+                      className="group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                    >
+                      <Plus className="w-4 h-4 flex-shrink-0" />
+                      <span className="overflow-hidden max-w-0 opacity-0 group-hover:max-w-[8rem] group-hover:opacity-100 transition-all duration-200 whitespace-nowrap text-xs">
+                        {language === 'th' ? 'เพิ่มหน่วยสินค้า' : 'Add Unit'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
 
