@@ -1350,7 +1350,7 @@ export default function ProductionDetailPage() {
             station_id,
             step_order,
             technician_id,
-            users(name)
+            users!ticket_assignments_technician_fk(name)
           `)
           .eq('ticket_no', ticketId);
         if (!assignmentError && Array.isArray(assignmentData)) {

@@ -41,11 +41,27 @@ async function loadAssignmentMap() {
 
 // Load QC queue tickets (pending/current QC as first active step)
 export async function loadActiveQcQueue() {
-  // 1) Load tickets base info from DB only
-  const { data: dbTickets } = await client
-    .from('ticket')
-    .select('no, source_no, description, priority, quantity, pass_quantity')
-    .order('created_at', { ascending: false });
+  // 1) Load tickets base info from DB only — ใช้ pagination เพราะอาจเกิน 1000
+  let dbTickets = [];
+  {
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page } = await client
+        .from('ticket')
+        .select('no, source_no, description, priority, quantity, pass_quantity')
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
+      if (page && page.length > 0) {
+        dbTickets = dbTickets.concat(page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
+    }
+  }
 
   const baseTickets = (dbTickets || []).map(t => {
     const id = normalizeTicketNo(t.no);

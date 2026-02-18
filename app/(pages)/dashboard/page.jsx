@@ -76,9 +76,24 @@ export default function DashboardPage() {
 
   // Load real data (KPIs, charts, kanban, queue)
   const loadAll = async () => {
-      // 1) Tickets base for KPIs and charts
+      // 1) Tickets base for KPIs and charts — ใช้ pagination เพราะอาจเกิน 1000 แถว
       try {
-        const { data: tickets } = await supabase.from('ticket').select('status, created_at');
+        let tickets = [];
+        {
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page } = await supabase.from('ticket').select('status, created_at').range(from, from + pageSize - 1);
+            if (page && page.length > 0) {
+              tickets = tickets.concat(page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
+            }
+          }
+        }
         const now = new Date();
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const toLower = (s) => String(s || '').toLowerCase();
@@ -168,9 +183,24 @@ export default function DashboardPage() {
         setChartsReady(true);
       } catch {}
 
-      // 2) Kanban lanes from tickets
+      // 2) Kanban lanes from tickets — ใช้ pagination เพราะอาจเกิน 1000 แถว
       try {
-        const { data } = await supabase.from('ticket').select('no, status, source_no, priority');
+        let data = [];
+        {
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page } = await supabase.from('ticket').select('no, status, source_no, priority').range(from, from + pageSize - 1);
+            if (page && page.length > 0) {
+              data = data.concat(page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
+            }
+          }
+        }
         const bucket = { open: [], in_progress: [], waiting: [], done: [] };
         (data||[]).forEach(t=>{
           const s = normalizeStatus(t.status);

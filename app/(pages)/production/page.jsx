@@ -39,6 +39,7 @@ export default function ProductionPage() {
   const hasCNCRole = hasRole('CNC');
   const hasPackingRole = hasRole('Packing');
   const hasPaintingRole = hasRole('Painting');
+  const hasProductionRole = hasRole('Production');
   const hasStorageRole = hasRole('Storage');
   const hasViewerRole = hasRole('Viewer');
   const hasSupervisorProductionRole = hasRole('Supervisor Production');
@@ -177,20 +178,32 @@ export default function ProductionPage() {
       }
       
       // Method 2: Also load from ticket_assignments to catch any technicians that might be missing
+      // ใช้ pagination เพราะ ticket_assignments เกิน 1000 แถวแล้ว
       try {
-        const { data: assignmentData, error: assignmentError } = await supabase
-          .from('ticket_assignments')
-          .select(`
-            technician_id,
-            users(name)
-          `);
-        
-        if (!assignmentError && Array.isArray(assignmentData)) {
-          assignmentData.forEach(assignment => {
-            if (assignment.users?.name && assignment.users.name.trim()) {
-              technicianNames.add(assignment.users.name.trim());
-            }
-          });
+        let assignFrom = 0;
+        const assignPageSize = 1000;
+        let assignHasMore = true;
+        while (assignHasMore) {
+          const { data: assignmentData, error: assignmentError } = await supabase
+            .from('ticket_assignments')
+            .select(`
+              technician_id,
+              users!ticket_assignments_technician_fk(name)
+            `)
+            .range(assignFrom, assignFrom + assignPageSize - 1);
+
+          if (assignmentError) break;
+          if (assignmentData && assignmentData.length > 0) {
+            assignmentData.forEach(assignment => {
+              if (assignment.users?.name && assignment.users.name.trim()) {
+                technicianNames.add(assignment.users.name.trim());
+              }
+            });
+            assignFrom += assignPageSize;
+            assignHasMore = assignmentData.length === assignPageSize;
+          } else {
+            assignHasMore = false;
+          }
         }
       } catch (e) {
         console.warn('Failed to load technicians from ticket_assignments:', e);
@@ -223,12 +236,28 @@ export default function ProductionPage() {
         }
       } catch {}
 
-      // 1) Load tickets from DB (base info)
-      const { data: ticketData, error: ticketError } = await supabase
-        .from('ticket')
-        .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status')
-        .order('created_at', { ascending: false });
-      if (ticketError) throw ticketError;
+      // 1) Load tickets from DB (base info) — ใช้ pagination เพราะตั๋วอาจเกิน 1000
+      let ticketData = [];
+      {
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: page, error: pageError } = await supabase
+            .from('ticket')
+            .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status')
+            .order('created_at', { ascending: false })
+            .range(from, from + pageSize - 1);
+          if (pageError) throw pageError;
+          if (page && page.length > 0) {
+            ticketData = ticketData.concat(page);
+            from += pageSize;
+            hasMore = page.length === pageSize;
+          } else {
+            hasMore = false;
+          }
+        }
+      }
 
       // ดึงตั๋วทั้งหมด
       const allTicketNumbers = (ticketData || [])
@@ -427,36 +456,68 @@ export default function ProductionPage() {
 
       // console.log('[PRODUCTION] Loaded flows:', flows?.length);
 
-      // assignments
+      // assignments — ใช้ pagination เพราะ Supabase default limit 1000 แถว
       let assignments = [];
       try {
-        const { data: assignmentData, error: assignmentError } = await supabase
-          .from('ticket_assignments')
-          .select(`
-            ticket_no,
-            station_id,
-            step_order,
-            technician_id,
-            users(name)
-          `);
-        if (!assignmentError && Array.isArray(assignmentData)) {
-          assignments = assignmentData;
-        } else {
-            const { data: simpleData } = await supabase
-              .from('ticket_assignments')
-              .select('ticket_no, station_id, step_order, technician_id');
-          if (Array.isArray(simpleData) && simpleData.length > 0) {
-            const technicianIds = [...new Set(simpleData.map(a => a.technician_id))];
-            const { data: userData } = await supabase
-              .from('users')
-              .select('id, name')
-              .in('id', technicianIds);
-            assignments = simpleData.map(a => ({
-              ...a,
-              users: (userData || []).find(u => u.id === a.technician_id) || null
-            }));
+        let allAssignments = [];
+        let assignFrom = 0;
+        const assignPageSize = 1000;
+        let assignHasMore = true;
+
+        while (assignHasMore) {
+          const { data: assignmentData, error: assignmentError } = await supabase
+            .from('ticket_assignments')
+            .select(`
+              ticket_no,
+              station_id,
+              step_order,
+              technician_id,
+              users!ticket_assignments_technician_fk(name)
+            `)
+            .range(assignFrom, assignFrom + assignPageSize - 1);
+
+          if (assignmentError) {
+            // Fallback: query without join + fetch users separately
+            let fallbackAssignments = [];
+            let fbFrom = 0;
+            let fbHasMore = true;
+            while (fbHasMore) {
+              const { data: simpleData } = await supabase
+                .from('ticket_assignments')
+                .select('ticket_no, station_id, step_order, technician_id')
+                .range(fbFrom, fbFrom + assignPageSize - 1);
+              if (simpleData && simpleData.length > 0) {
+                fallbackAssignments = fallbackAssignments.concat(simpleData);
+                fbFrom += assignPageSize;
+                fbHasMore = simpleData.length === assignPageSize;
+              } else {
+                fbHasMore = false;
+              }
+            }
+            if (fallbackAssignments.length > 0) {
+              const technicianIds = [...new Set(fallbackAssignments.map(a => a.technician_id))];
+              const { data: userData } = await supabase
+                .from('users')
+                .select('id, name')
+                .in('id', technicianIds);
+              allAssignments = fallbackAssignments.map(a => ({
+                ...a,
+                users: (userData || []).find(u => u.id === a.technician_id) || null
+              }));
+            }
+            break;
+          }
+
+          if (assignmentData && assignmentData.length > 0) {
+            allAssignments = allAssignments.concat(assignmentData);
+            assignFrom += assignPageSize;
+            assignHasMore = assignmentData.length === assignPageSize;
+          } else {
+            assignHasMore = false;
           }
         }
+
+        assignments = allAssignments;
       } catch {}
 
       // console.log('[PRODUCTION] Loaded assignments:', assignments?.length);
@@ -862,6 +923,19 @@ export default function ProductionPage() {
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
+        // สำหรับ Production role ให้เห็นตั๋วที่ assign ให้ตัวเอง
+        if (hasProductionRole) {
+          const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
+          if (assigneeLower.includes(myNameLower)) return true;
+          
+          const stations = Array.isArray(t.stations) ? t.stations : [];
+          if (stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower))) {
+            return true;
+          }
+          
+          return false;
+        }
+        
         // สำหรับ Painting role ให้เช็คเฉพาะสถานีสีที่ assign ให้ตัวเองเท่านั้น
         if (hasPaintingRole) {
           const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
@@ -972,7 +1046,7 @@ export default function ProductionPage() {
     console.log('[PRODUCTION] My tickets:', filtered.length);
     
     return filtered;
-  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasPaintingRole, hasStorageRole, hasViewerRole, hasSupervisorProductionRole, hasSupervisorPaintingRole, user]);
+  }, [myName, myNameLower, tickets, isAdmin, hasCNCRole, hasPackingRole, hasPaintingRole, hasProductionRole, hasStorageRole, hasViewerRole, hasSupervisorProductionRole, hasSupervisorPaintingRole, user]);
 
   // Filter tickets by tab (completed vs incomplete)
   const filteredTickets = useMemo(() => {

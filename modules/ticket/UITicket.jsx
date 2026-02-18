@@ -184,17 +184,33 @@ export default function UITicket() {
           // Fallback: ใช้ข้อมูลจาก DB
         }
         
-        // 3. ดึง tickets ที่มีอยู่ใน DB (เฉพาะที่มี RPD No. จริง)
-        const { data: dbTickets } = await supabase
-          .from('ticket')
-          .select(`
-            *,
-            projects (
-              id, item_code, project_number, project_name
-            )
-          `)
-          .not('no', 'like', 'TICKET-%'); // ไม่ดึง tickets ที่สร้างจาก project_id
-        
+        // 3. ดึง tickets ที่มีอยู่ใน DB (เฉพาะที่มี RPD No. จริง) — ใช้ pagination เพราะอาจเกิน 1000
+        let dbTickets = [];
+        {
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page } = await supabase
+              .from('ticket')
+              .select(`
+                *,
+                projects (
+                  id, item_code, project_number, project_name
+                )
+              `)
+              .not('no', 'like', 'TICKET-%')
+              .range(from, from + pageSize - 1);
+            if (page && page.length > 0) {
+              dbTickets = dbTickets.concat(page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
+            }
+          }
+        }
+
         const dbTicketMap = new Map((dbTickets || []).map(t => [t.no, t]));
         
         // 4. ตรวจสอบ RPD ใหม่ → บันทึกเข้า DB อัตโนมัติ
@@ -574,25 +590,35 @@ export default function UITicket() {
     let active = true;
     const loadDbTickets = async () => {
       try {
-        // ดึงข้อมูล tickets แบบง่ายก่อน (ไม่ join ซับซ้อน) - ไม่ดึง tickets ที่สร้างจาก project_id
-        const { data: tickets, error } = await supabase
-          .from('ticket')
-          .select('*')
-          .not('no', 'like', 'TICKET-%') // ไม่ดึง tickets ที่สร้างจาก project_id
-          .order('no', { ascending: false });
-
-        if (error) {
-          console.error('Error loading tickets from database:', error);
-          console.error('Error details:', {
-            message: error.message,
-            details: error.details,
-            hint: error.hint,
-            code: error.code
-          });
-          return;
+        // ดึงข้อมูล tickets แบบง่ายก่อน (ไม่ join ซับซ้อน) — ใช้ pagination เพราะอาจเกิน 1000
+        let tickets = [];
+        {
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page, error: pageError } = await supabase
+              .from('ticket')
+              .select('*')
+              .not('no', 'like', 'TICKET-%')
+              .order('no', { ascending: false })
+              .range(from, from + pageSize - 1);
+            if (pageError) {
+              console.error('Error loading tickets from database:', pageError);
+              hasMore = false;
+              break;
+            }
+            if (page && page.length > 0) {
+              tickets = tickets.concat(page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
+            }
+          }
         }
 
-        if (active && tickets) {
+        if (active && tickets.length > 0) {
           // แปลงข้อมูลให้อยู่ในรูปแบบที่ใช้งานง่าย
           const processed = tickets.map(ticket => ({
             no: ticket.no,
@@ -678,43 +704,69 @@ export default function UITicket() {
         const flows = allFlows;
 
         if (active) {
-          // Load assignments separately and merge with flows
+          // Load assignments separately and merge with flows — ใช้ pagination เพราะอาจเกิน 1000 แถว
           let assignments = [];
           try {
-            const { data: assignmentData, error: assignmentError } = await supabase
-              .from('ticket_assignments')
-              .select(`
-                ticket_no,
-                station_id,
-                step_order,
-                technician_id,
-                users(name)
-              `);
-              
-            if (assignmentError) {
-              console.warn('Assignment query failed:', assignmentError.message);
-              // Try simpler query without join
-              const { data: simpleData } = await supabase
+            let allAssignments = [];
+            let assignFrom = 0;
+            const assignPageSize = 1000;
+            let assignHasMore = true;
+
+            while (assignHasMore) {
+              const { data: assignmentData, error: assignmentError } = await supabase
                 .from('ticket_assignments')
-                .select('ticket_no, station_id, step_order, technician_id');
-              
-              if (simpleData && simpleData.length > 0) {
-                // Get technician names separately
-                const technicianIds = [...new Set(simpleData.map(a => a.technician_id))];
-                const { data: userData } = await supabase
-                  .from('users')
-                  .select('id, name')
-                  .in('id', technicianIds);
-                
-                // Merge data
-                assignments = simpleData.map(assignment => ({
-                  ...assignment,
-                  users: userData?.find(u => u.id === assignment.technician_id) || null
-                }));
+                .select(`
+                  ticket_no,
+                  station_id,
+                  step_order,
+                  technician_id,
+                  users!ticket_assignments_technician_fk(name)
+                `)
+                .range(assignFrom, assignFrom + assignPageSize - 1);
+
+              if (assignmentError) {
+                console.warn('Assignment query failed:', assignmentError.message);
+                // Fallback: query without join + fetch users separately
+                let fallbackAssignments = [];
+                let fbFrom = 0;
+                let fbHasMore = true;
+                while (fbHasMore) {
+                  const { data: simpleData } = await supabase
+                    .from('ticket_assignments')
+                    .select('ticket_no, station_id, step_order, technician_id')
+                    .range(fbFrom, fbFrom + assignPageSize - 1);
+                  if (simpleData && simpleData.length > 0) {
+                    fallbackAssignments = fallbackAssignments.concat(simpleData);
+                    fbFrom += assignPageSize;
+                    fbHasMore = simpleData.length === assignPageSize;
+                  } else {
+                    fbHasMore = false;
+                  }
+                }
+                if (fallbackAssignments.length > 0) {
+                  const technicianIds = [...new Set(fallbackAssignments.map(a => a.technician_id))];
+                  const { data: userData } = await supabase
+                    .from('users')
+                    .select('id, name')
+                    .in('id', technicianIds);
+                  allAssignments = fallbackAssignments.map(a => ({
+                    ...a,
+                    users: (userData || []).find(u => u.id === a.technician_id) || null
+                  }));
+                }
+                break;
               }
-            } else {
-              assignments = assignmentData || [];
+
+              if (assignmentData && assignmentData.length > 0) {
+                allAssignments = allAssignments.concat(assignmentData);
+                assignFrom += assignPageSize;
+                assignHasMore = assignmentData.length === assignPageSize;
+              } else {
+                assignHasMore = false;
+              }
             }
+
+            assignments = allAssignments;
           } catch (err) {
             console.warn('Failed to load assignments separately:', err.message);
           }
