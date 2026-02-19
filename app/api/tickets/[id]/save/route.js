@@ -179,7 +179,8 @@ export async function POST(request, { params }) {
       const key = `${flow.station_id}_${flow.step_order}`;
       existingFlowMap[key] = {
         status: flow.status,
-        completed_at: flow.completed_at
+        completed_at: flow.completed_at,
+        planned_at: flow.planned_at
       };
     });
 
@@ -211,7 +212,7 @@ export async function POST(request, { params }) {
         continue;
       }
 
-      // เก็บ status และ completed_at จาก flow เดิม (ถ้ามี) - ใช้ station_id + step_order เป็น key
+      // เก็บ status, completed_at และ planned_at จาก flow เดิม (ถ้ามี) - ใช้ station_id + step_order เป็น key
       const flowKey = `${stationId}_${i + 1}`;
       const existingFlow = existingFlowMap[flowKey];
       const preservedStatus = existingFlow?.status || 'pending';
@@ -228,7 +229,26 @@ export async function POST(request, { params }) {
         } catch {}
       }
 
-      console.log(`[API SAVE] Station ${station.name} (${stationId}) step ${i + 1}: preserving status=${preservedStatus}, completed_at=${completedAt}`);
+      // Parse planned time to ISO (nullable)
+      // ถ้า plannedTime มีอยู่ใน station object = ใช้ค่าจาก form (รวมถึงกรณีที่ user ลบออก)
+      // ถ้า plannedTime ไม่มีใน station object (undefined) = ใช้ค่าเดิมจาก database
+      let plannedAt = null;
+      if ('plannedTime' in station) {
+        if (station.plannedTime && String(station.plannedTime).trim() !== '') {
+          try {
+            const dt = new Date(station.plannedTime);
+            if (!isNaN(dt.getTime())) {
+              plannedAt = dt.toISOString();
+            }
+          } catch {}
+        }
+        // ถ้า plannedTime เป็น empty string = user ลบออก → planned_at = null
+      } else {
+        // ไม่มี plannedTime key → ใช้ค่าเดิมจาก database
+        plannedAt = existingFlow?.planned_at || null;
+      }
+
+      console.log(`[API SAVE] Station ${station.name} (${stationId}) step ${i + 1}: preserving status=${preservedStatus}, completed_at=${completedAt}, planned_at=${plannedAt}`);
 
       const flowData = {
         ticket_no: ticketId,
@@ -238,6 +258,7 @@ export async function POST(request, { params }) {
         price_type: station.priceType || 'flat',
         price: station.price || 0,
         completed_at: completedAt,
+        planned_at: plannedAt,
       };
 
       console.log(`[API SAVE] Inserting flow data:`, flowData);

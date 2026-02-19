@@ -592,6 +592,7 @@ const STATION_PRESETS = {
               priceType: flow.price_type || "flat",
               price: flow.price || '',
               completionTime: toLocalInput(flow.completed_at) || "",
+              plannedTime: toLocalInput(flow.planned_at) || "",
             }));
             
             console.log('Setting stations with data from database:', dbStations);
@@ -844,6 +845,7 @@ const STATION_PRESETS = {
       priceType: "flat",
       price: '',
       completionTime: "",
+      plannedTime: "",
     }));
 
     setStations(newStations);
@@ -1042,6 +1044,7 @@ const STATION_PRESETS = {
       priceType: "flat",
       price: '',
       completionTime: "",
+      plannedTime: "",
     };
     
     setStations((prev) => [...prev, newStation]);
@@ -1403,7 +1406,7 @@ const STATION_PRESETS = {
                 <div className="text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500 w-6 text-center">{index + 1}</div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-3 flex-1">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 block">สถานี</label>
@@ -1502,7 +1505,24 @@ const STATION_PRESETS = {
                 )}
 
                 <div>
-                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">เวลาที่จะเสร็จ</label>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">แผน</label>
+                  <DatePicker
+                    selected={s.plannedTime ? new Date(s.plannedTime) : null}
+                    onChange={(date) => {
+                      const iso = date && !isNaN(date.getTime()) ? date.toISOString() : '';
+                      updateStation(index, { plannedTime: iso });
+                    }}
+                    showTimeSelect
+                    timeFormat="HH:mm"
+                    timeIntervals={15}
+                    dateFormat="yyyy-MM-dd HH:mm"
+                    placeholderText="วันเวลาตามแผน"
+                    className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500 mb-1 block">เสร็จจริง</label>
                   <DatePicker
                     selected={s.completionTime ? new Date(s.completionTime) : null}
                     onChange={(date) => {
