@@ -1455,7 +1455,7 @@ export default function ProductionPage() {
       const priority = (t.priority || "").toString();
       const status = (t.status || "").toString();
       const isHighPriority = priority === "High Priority" || priority.toLowerCase() === "high";
-      const isFinished = status === "Finish" || status === "Finished";
+      const isFinished = status === "Finish";
       return isHighPriority && !isFinished;
     }).length;
     

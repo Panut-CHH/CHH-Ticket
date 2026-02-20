@@ -76,7 +76,7 @@ export async function completeQCStation(ticketNo) {
         await admin
           .from("ticket")
           .update({ 
-            status: "Finished",
+            status: "Finish",
             finished_at: finishedAt
           })
           .eq("no", ticketNo);
@@ -171,7 +171,7 @@ export async function flagForRework(ticketNo, qcSessionId, failedRows) {
         await admin
           .from("ticket")
           .update({ 
-            status: "Finished",
+            status: "Finish",
             finished_at: finishedAt
           })
           .eq("no", ticketNo);

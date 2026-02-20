@@ -392,7 +392,7 @@ export async function POST(request, { params }) {
             await supabaseAdmin
               .from('ticket')
               .update({ 
-                status: 'Finished',
+                status: 'Finish',
                 finished_at: completedAt
               })
               .eq('no', ticketNo);

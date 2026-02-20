@@ -401,7 +401,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   // Calculate total duration for finished ticket
   const calculateTotalDuration = useMemo(() => {
     // Check if ticket is finished (both from roadmap and status)
-    const ticketFinished = ticket.status === "Finish" || ticket.status === "Finished" || isFinished;
+    const ticketFinished = ticket.status === "Finish" || isFinished;
     
     if (!ticketFinished) {
       console.log('[DURATION] Ticket is not finished');
@@ -928,6 +928,12 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                         {isMyStation && <span className="ml-1 text-blue-600">✓</span>}
                       </div>
                     )}
+                    {step.assignedAt && (
+                      <div className="mt-1 text-[11px] text-gray-400 dark:text-gray-500">
+                        มอบหมาย: {new Date(step.assignedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}{' '}
+                        {new Date(step.assignedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1350,6 +1356,7 @@ export default function ProductionDetailPage() {
             station_id,
             step_order,
             technician_id,
+            created_at,
             users!ticket_assignments_technician_fk(name)
           `)
           .eq('ticket_no', ticketId);
@@ -1358,7 +1365,7 @@ export default function ProductionDetailPage() {
         } else {
             const { data: simpleData } = await supabase
               .from('ticket_assignments')
-              .select('ticket_no, station_id, step_order, technician_id')
+              .select('ticket_no, station_id, step_order, technician_id, created_at')
               .eq('ticket_no', ticketId);
           if (Array.isArray(simpleData) && simpleData.length > 0) {
             const techIds = [...new Set(simpleData.map(a => a.technician_id))];
@@ -1826,13 +1833,25 @@ export default function ProductionDetailPage() {
     });
     
     console.log('[MERGE] Assignment map:', assignmentMap);
-    
+
+    // สร้าง map สำหรับ วันที่มอบหมาย (ใช้ created_at ที่เก่าที่สุดของแต่ละ step)
+    const assignedAtMap = {};
+    (assignments || []).forEach(a => {
+      const key = `${a.ticket_no}-${a.station_id}-${a.step_order || 0}`;
+      if (a.created_at) {
+        if (!assignedAtMap[key] || a.created_at < assignedAtMap[key]) {
+          assignedAtMap[key] = a.created_at;
+        }
+      }
+    });
+
     const roadmap = flows.map(flow => {
       const techKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
       return {
         step: flow.stations?.name_th || '',
         status: flow.status || 'pending',
         technician: assignmentMap[techKey] || '',
+        assignedAt: assignedAtMap[techKey] || null,
         qc_task_uuid: flow.qc_task_uuid || null
       };
     });
