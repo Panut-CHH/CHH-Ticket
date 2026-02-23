@@ -64,30 +64,31 @@ export default function ProductionPage() {
   const initialTab = searchParams.get('tab') === 'completed' ? 'completed' : 'incomplete';
   const [activeTab, setActiveTab] = useState(initialTab); // 'completed' or 'incomplete'
 
-  // Search / Filter / Sort state
-  // Initialize from URL parameters to persist filters when navigating back
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showFilter, setShowFilter] = useState(false);
-  const [selectedStatuses, setSelectedStatuses] = useState(new Set());
-  const [selectedPriorities, setSelectedPriorities] = useState(new Set());
-  const [selectedStoreStatuses, setSelectedStoreStatuses] = useState(new Set());
-  const [selectedStation, setSelectedStation] = useState(searchParams.get('station') || ""); // Filter by station name
-  const [selectedTechnician, setSelectedTechnician] = useState(searchParams.get('technician') || ""); // Filter by technician name
-  const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || ""); // Filter by project name
-  const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
-  const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
-  const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
-  const [expandedGroups, setExpandedGroups] = useState(() => {
-    // Restore expanded groups from sessionStorage (saved before navigating to detail)
+  // Restore saved view state from sessionStorage (when returning from detail page)
+  const savedViewState = useMemo(() => {
     if (typeof window !== 'undefined') {
-      const saved = sessionStorage.getItem('productionExpandedGroups');
+      const saved = sessionStorage.getItem('productionViewState');
       if (saved) {
-        sessionStorage.removeItem('productionExpandedGroups');
-        try { return new Set(JSON.parse(saved)); } catch { /* ignore */ }
+        sessionStorage.removeItem('productionViewState');
+        try { return JSON.parse(saved); } catch { /* ignore */ }
       }
     }
-    return new Set();
-  }); // Track which project groups are expanded
+    return null;
+  }, []);
+
+  // Search / Filter / Sort state
+  const [searchTerm, setSearchTerm] = useState(savedViewState?.searchTerm || "");
+  const [showFilter, setShowFilter] = useState(savedViewState?.showFilter || false);
+  const [selectedStatuses, setSelectedStatuses] = useState(() => new Set(savedViewState?.selectedStatuses || []));
+  const [selectedPriorities, setSelectedPriorities] = useState(() => new Set(savedViewState?.selectedPriorities || []));
+  const [selectedStoreStatuses, setSelectedStoreStatuses] = useState(() => new Set(savedViewState?.selectedStoreStatuses || []));
+  const [selectedStation, setSelectedStation] = useState(searchParams.get('station') || "");
+  const [selectedTechnician, setSelectedTechnician] = useState(searchParams.get('technician') || "");
+  const [selectedProject, setSelectedProject] = useState(searchParams.get('project') || "");
+  const [hasDueDateOnly, setHasDueDateOnly] = useState(savedViewState?.hasDueDateOnly || false);
+  const [sortKey, setSortKey] = useState(savedViewState?.sortKey || 'dueDate');
+  const [sortDir, setSortDir] = useState(savedViewState?.sortDir || 'asc');
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set(savedViewState?.expandedGroups || []));
   const [groupByProject, setGroupByProject] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('productionGroupByProject') === '1';
@@ -654,13 +655,10 @@ export default function ProductionPage() {
   const hasRestoredScroll = useRef(false);
   useEffect(() => {
     if (hasRestoredScroll.current || loadingTickets || tickets.length === 0) return;
-    const savedScrollY = sessionStorage.getItem('productionScrollY');
-    if (savedScrollY) {
+    if (savedViewState?.scrollY != null) {
       hasRestoredScroll.current = true;
-      sessionStorage.removeItem('productionScrollY');
-      // Use requestAnimationFrame to wait for DOM to render with expanded groups
       requestAnimationFrame(() => {
-        window.scrollTo(0, parseInt(savedScrollY, 10));
+        window.scrollTo(0, savedViewState.scrollY);
       });
     }
   }, [loadingTickets, tickets]);
@@ -1634,8 +1632,19 @@ export default function ProductionPage() {
                   if (currentParams) {
                     sessionStorage.setItem('productionPageParams', currentParams);
                   }
-                  sessionStorage.setItem('productionExpandedGroups', JSON.stringify([...expandedGroups]));
-                  sessionStorage.setItem('productionScrollY', String(window.scrollY));
+                  // Save all filter/sort/UI state for restore on back
+                  sessionStorage.setItem('productionViewState', JSON.stringify({
+                    expandedGroups: [...expandedGroups],
+                    scrollY: window.scrollY,
+                    searchTerm,
+                    sortKey,
+                    sortDir,
+                    selectedStatuses: [...selectedStatuses],
+                    selectedPriorities: [...selectedPriorities],
+                    selectedStoreStatuses: [...selectedStoreStatuses],
+                    hasDueDateOnly,
+                    showFilter,
+                  }));
                   router.push(`/production/${encodeURIComponent(cleanedId)}`);
                 }
               }}
