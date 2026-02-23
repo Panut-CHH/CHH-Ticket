@@ -24,13 +24,25 @@ export async function GET(request, { params }) {
   // Create a readable stream for SSE
   const stream = new ReadableStream({
     start(controller) {
+      let isClosed = false;
+
+      const safeSend = (msg) => {
+        if (!isClosed) {
+          try {
+            controller.enqueue(`data: ${msg}\n\n`);
+          } catch {
+            isClosed = true;
+          }
+        }
+      };
+
       // Send initial connection message
       const data = JSON.stringify({
         type: 'connected',
         ticketNo,
         timestamp: new Date().toISOString()
       });
-      controller.enqueue(`data: ${data}\n\n`);
+      safeSend(data);
 
       // Set up Supabase realtime subscription
       const channel = supabaseAdmin
@@ -50,7 +62,7 @@ export async function GET(request, { params }) {
               payload,
               timestamp: new Date().toISOString()
             });
-            controller.enqueue(`data: ${data}\n\n`);
+            safeSend(data);
           }
         )
         .on(
@@ -68,7 +80,7 @@ export async function GET(request, { params }) {
               payload,
               timestamp: new Date().toISOString()
             });
-            controller.enqueue(`data: ${data}\n\n`);
+            safeSend(data);
           }
         )
         .subscribe((status) => {
@@ -78,7 +90,7 @@ export async function GET(request, { params }) {
             status,
             timestamp: new Date().toISOString()
           });
-          controller.enqueue(`data: ${data}\n\n`);
+          safeSend(data);
         });
 
       // Fallback: Polling mechanism (every 2 seconds)
@@ -107,9 +119,9 @@ export async function GET(request, { params }) {
               timestamp: new Date().toISOString(),
               source: 'polling'
             });
-            controller.enqueue(`data: ${data}\n\n`);
+            safeSend(data);
           }
-          
+
           lastData = currentData;
         } catch (e) {
           console.error('[SSE] Polling failed:', e);
@@ -118,9 +130,14 @@ export async function GET(request, { params }) {
 
       // Store cleanup function
       this.cleanup = () => {
-        supabaseAdmin.removeChannel(channel);
+        isClosed = true;
         clearInterval(pollInterval);
-        controller.close();
+        supabaseAdmin.removeChannel(channel);
+        try {
+          controller.close();
+        } catch {
+          // Already closed
+        }
       };
     },
     cancel() {

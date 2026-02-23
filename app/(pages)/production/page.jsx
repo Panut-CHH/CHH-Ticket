@@ -7,7 +7,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
-import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2, ChevronDown, ChevronRight } from "lucide-react";
+import { ClipboardList, CheckCircle2, Clock3, Coins, Search, ArrowUpDown, AlertCircle, ArrowUp, ArrowDown, CheckCircle, Clock, XCircle, Filter, X, Building2, User, Settings2, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { canPerformActions, hasPageAccess } from "@/utils/rolePermissions";
 
@@ -77,7 +77,23 @@ export default function ProductionPage() {
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [sortKey, setSortKey] = useState('dueDate'); // 'dueDate' | 'priority' | 'value' | 'id' | 'status' | 'storeStatus'
   const [sortDir, setSortDir] = useState('asc'); // 'asc' | 'desc'
-  const [expandedGroups, setExpandedGroups] = useState(new Set()); // Track which project groups are expanded
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    // Restore expanded groups from sessionStorage (saved before navigating to detail)
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('productionExpandedGroups');
+      if (saved) {
+        sessionStorage.removeItem('productionExpandedGroups');
+        try { return new Set(JSON.parse(saved)); } catch { /* ignore */ }
+      }
+    }
+    return new Set();
+  }); // Track which project groups are expanded
+  const [groupByProject, setGroupByProject] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('productionGroupByProject') === '1';
+    }
+    return false;
+  }); // Toggle group by project, persisted in localStorage
   const [updatingStatus, setUpdatingStatus] = useState(new Set());
 
   // Function to update URL params when filters change
@@ -633,6 +649,21 @@ export default function ProductionPage() {
       setLoadingTickets(false);
     }
   };
+
+  // Restore scroll position after tickets have loaded (when returning from detail page)
+  const hasRestoredScroll = useRef(false);
+  useEffect(() => {
+    if (hasRestoredScroll.current || loadingTickets || tickets.length === 0) return;
+    const savedScrollY = sessionStorage.getItem('productionScrollY');
+    if (savedScrollY) {
+      hasRestoredScroll.current = true;
+      sessionStorage.removeItem('productionScrollY');
+      // Use requestAnimationFrame to wait for DOM to render with expanded groups
+      requestAnimationFrame(() => {
+        window.scrollTo(0, parseInt(savedScrollY, 10));
+      });
+    }
+  }, [loadingTickets, tickets]);
 
   // Track if we're updating from URL to prevent loops
   const isUpdatingFromURL = useRef(false);
@@ -1466,6 +1497,216 @@ export default function ProductionPage() {
     };
   }, [myTickets]);
 
+  // Shared ticket card renderer for both flat list and grouped views
+  const renderTicketCard = (ticket) => {
+    const total = sumTicketAmount(ticket);
+    const cleanedId = (ticket.id || "").replace(/^#/, "");
+    const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
+    const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+    const currentStep = roadmap.find(step => step.status === 'current');
+    const currentStation = currentStep?.step || null;
+    const currentTechnician = currentStep?.technician || null;
+    const firstPendingStep = roadmap.find(step => step.status === 'pending');
+    const pendingStation = firstPendingStep?.step || null;
+    const pendingTechnician = firstPendingStep?.technician || null;
+    const isUpdatingStatus = updatingStatus.has(ticket.id);
+
+    return (
+      <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-4">
+          <div className="flex-1 min-w-0">
+            {/* Header row: RPD + Item Code + Project name */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {ticket.id}
+              </div>
+              {ticket.route && (
+                <span className={`text-xs px-2 py-1 rounded-full font-mono ${ticket.routeClass}`}>
+                  {ticket.route}
+                </span>
+              )}
+              {ticket.projectName && (
+                <span className="text-xs sm:text-sm font-medium text-blue-300">
+                  {ticket.projectName}
+                </span>
+              )}
+            </div>
+
+            {/* Current Station and Assigned Technician Info */}
+            {(currentStation || pendingStation) && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                {currentStation ? (
+                  <>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] sm:text-xs font-medium border border-amber-200/50 dark:border-amber-800/50 hover:bg-amber-200/80 dark:hover:bg-amber-900/40 transition-colors duration-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse"></span>
+                      {language === 'th' ? 'สถานี:' : 'Station:'} {currentStation}
+                    </span>
+                    {currentTechnician && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
+                        <span className="text-[8px]">👤</span>
+                        {currentTechnician}
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 text-[10px] sm:text-xs font-medium border border-gray-200/50 dark:border-gray-700/50 hover:bg-gray-200/80 dark:hover:bg-gray-700/50 transition-colors duration-200">
+                      {language === 'th' ? 'ถัดไป:' : 'Next:'} {pendingStation}
+                    </span>
+                    {pendingTechnician && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
+                        <span className="text-[8px]">👤</span>
+                        {pendingTechnician}
+                      </span>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Meta row */}
+            <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
+              <span>
+                {language === 'th' ? 'มูลค่าตั๋ว:' : 'Total price:'}{' '}
+                <span className="font-medium text-gray-900 dark:text-gray-100">
+                  {total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}
+                </span>
+              </span>
+              {ticket.dueDate && (
+                <span>
+                  {language === 'th' ? 'กำหนดส่ง:' : 'Due:'}{' '}
+                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                    {new Date(ticket.dueDate).toLocaleDateString('th-TH')}
+                  </span>
+                </span>
+              )}
+              <span>
+                {language === 'th' ? 'จำนวน:' : 'Qty:'}{' '}
+                <span className="font-medium text-gray-800 dark:text-gray-200">
+                  {ticket.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'}
+                </span>
+                {(ticket.totalDefectCount || 0) > 0 && (
+                  <span className="ml-1.5 text-amber-600 dark:text-amber-400 text-[11px] sm:text-xs">
+                    ({language === 'th' ? 'มี defect' : 'defect'}{' '}{ticket.totalDefectCount} {language === 'th' ? 'ชิ้น' : 'pcs'})
+                  </span>
+                )}
+              </span>
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${getPriorityChipClass(ticket.priority)}`}>
+                {ticket.priority}
+              </span>
+              <span className={`inline-flex items-center rounded-full border border-transparent px-2 py-0.5 text-[11px] sm:text-xs font-medium ${ticket.statusClass}`}>
+                {ticket.status}
+              </span>
+              {ticketBatches.length > 0 && (
+                <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                  {ticketBatches.length} {language === 'th' ? 'Batch' : 'Batch'}
+                </span>
+              )}
+              {getStatusDisplay(ticket.storeStatus)}
+            </div>
+
+            {/* Batch Details */}
+            {ticketBatches.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {ticketBatches.map((batch) => (
+                  <div key={batch.id} className="flex items-center gap-2 text-xs">
+                    <span className={`px-2 py-1 rounded-full ${
+                      batch.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
+                      batch.status === 'rework' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
+                      batch.status === 'waiting_merge' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400' :
+                      'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
+                    }`}>
+                      {batch.batch_name} ({batch.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'})
+                    </span>
+                    <span className="text-gray-500 dark:text-gray-400">
+                      {batch.stations?.name_th || batch.stations?.code || 'Unknown Station'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="shrink-0 flex flex-col items-stretch gap-2 w-full md:w-auto">
+            <button
+              onClick={() => {
+                if (canViewProductionDetail) {
+                  const currentParams = searchParams.toString();
+                  if (currentParams) {
+                    sessionStorage.setItem('productionPageParams', currentParams);
+                  }
+                  sessionStorage.setItem('productionExpandedGroups', JSON.stringify([...expandedGroups]));
+                  sessionStorage.setItem('productionScrollY', String(window.scrollY));
+                  router.push(`/production/${encodeURIComponent(cleanedId)}`);
+                }
+              }}
+              onContextMenu={(e) => {
+                if (canViewProductionDetail) {
+                  e.preventDefault();
+                  window.open(`/production/${encodeURIComponent(cleanedId)}`, '_blank');
+                }
+              }}
+              disabled={!canViewProductionDetail}
+              className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto ${
+                canViewProductionDetail
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                  : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
+              }`}
+            >
+              {t('detailsMore', language)}
+            </button>
+            {canUpdateStoreStatus && (
+              <div className="flex flex-wrap gap-1.5 w-full">
+                {STORE_STATUSES.map((statusOption) => {
+                  const IconComponent = statusOption.icon;
+                  const isSelected = ticket.storeStatus === statusOption.value;
+                  return (
+                    <button
+                      key={statusOption.value}
+                      onClick={() => {
+                        if (!isUpdatingStatus) {
+                          const newStatus = isSelected ? null : statusOption.value;
+                          updateStoreStatus(ticket.id, newStatus);
+                        }
+                      }}
+                      disabled={isUpdatingStatus}
+                      className={`
+                        flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
+                        ${isSelected
+                          ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
+                          : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
+                        }
+                        ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
+                      `}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <IconComponent className="w-4 h-4" />
+                        {t(statusOption.label, language)}
+                      </span>
+                      {isSelected && <X className="w-3.5 h-3.5 opacity-75" />}
+                    </button>
+                  );
+                })}
+                {ticket.storeStatus && (
+                  <button
+                    onClick={() => !isUpdatingStatus && updateStoreStatus(ticket.id, null)}
+                    disabled={isUpdatingStatus}
+                    className={`
+                      px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600 border border-transparent hover:border-gray-300 dark:hover:border-slate-500
+                      ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
+                    `}
+                  >
+                    <XCircle className="w-4 h-4 inline mr-1.5" />
+                    {language === 'th' ? 'ล้างสถานะ' : 'Clear'}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <ProtectedRoute>
       <RoleGuard pagePath="/production">
@@ -1793,7 +2034,26 @@ export default function ProductionPage() {
               </div>
             </div>
 
-            <div className="mt-6 sm:mt-8 space-y-3 sm:space-y-4">
+            {/* Group by Project Toggle */}
+            <div className="mt-4 sm:mt-6 flex items-center">
+              <button
+                onClick={() => setGroupByProject(prev => {
+                  const next = !prev;
+                  localStorage.setItem('productionGroupByProject', next ? '1' : '0');
+                  return next;
+                })}
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border shadow-sm ${
+                  groupByProject
+                    ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500 shadow-blue-200 dark:shadow-blue-900/30'
+                    : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Layers className="w-4 h-4" />
+                {language === 'th' ? 'จัดกลุ่มตามโครงการ' : 'Group by Project'}
+              </button>
+            </div>
+
+            <div className="mt-3 sm:mt-4 space-y-3 sm:space-y-4">
               {loadingTickets && (
                 <div className="p-3 sm:p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-blue-800 dark:text-blue-300 text-sm sm:text-base">
                   {language === 'th' ? 'กำลังโหลดตั๋วของคุณจาก ERP/ฐานข้อมูล...' : 'Loading your tickets from ERP/DB...'}
@@ -1824,9 +2084,13 @@ export default function ProductionPage() {
                 </>
               )}
 
-              {groupedTickets.map((group) => {
+              {/* Flat list (no grouping) */}
+              {!groupByProject && displayedTickets.map((ticket) => renderTicketCard(ticket))}
+
+              {/* Grouped by project (tray view) */}
+              {groupByProject && groupedTickets.map((group) => {
                 const isExpanded = expandedGroups.has(group.projectName);
-                
+
                 return (
                   <div key={group.projectName} className="space-y-2">
                     {/* Group Header - Clickable to expand/collapse */}
@@ -1860,222 +2124,7 @@ export default function ProductionPage() {
                     {/* Group Tickets - Only show when expanded */}
                     {isExpanded && (
                       <div className="space-y-3 sm:space-y-4 pl-4 sm:pl-6 border-l-2 border-blue-200 dark:border-blue-800">
-                        {group.tickets.map((ticket) => {
-                const total = sumTicketAmount(ticket);
-                const cleanedId = (ticket.id || "").replace(/^#/, "");
-                
-                // Get batches for this ticket
-                const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
-                
-                // Find current station and assigned technician
-                const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
-                const currentStep = roadmap.find(step => step.status === 'current');
-                const currentStation = currentStep?.step || null;
-                const currentTechnician = currentStep?.technician || null;
-                
-                // If no current step, find first pending step
-                const firstPendingStep = roadmap.find(step => step.status === 'pending');
-                const pendingStation = firstPendingStep?.step || null;
-                const pendingTechnician = firstPendingStep?.technician || null;
-                const isUpdatingStatus = updatingStatus.has(ticket.id);
-                
-                return (
-                  <div key={ticket.id} className="ticket-card bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-5 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3 sm:gap-4">
-                      <div className="flex-1 min-w-0">
-                        {/* Header row: RPD + Item Code + Project name */}
-                        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
-                          <div className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100">
-                            {ticket.id}
-                          </div>
-                          {ticket.route && (
-                            <span className={`text-xs px-2 py-1 rounded-full font-mono ${ticket.routeClass}`}>
-                              {ticket.route}
-                            </span>
-                          )}
-                          {ticket.projectName && (
-                            <span className="text-xs sm:text-sm font-medium text-blue-300">
-                              {ticket.projectName}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Current Station and Assigned Technician Info - Minimal */}
-                        {(currentStation || pendingStation) && (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                            {currentStation ? (
-                              <>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-100/80 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-[10px] sm:text-xs font-medium border border-amber-200/50 dark:border-amber-800/50 hover:bg-amber-200/80 dark:hover:bg-amber-900/40 transition-colors duration-200">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 dark:bg-amber-400 animate-pulse"></span>
-                                  {language === 'th' ? 'สถานี:' : 'Station:'} {currentStation}
-                                </span>
-                                {currentTechnician && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
-                                    <span className="text-[8px]">👤</span>
-                                    {currentTechnician}
-                                  </span>
-                                )}
-                              </>
-                            ) : (
-                              <>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-gray-100/80 dark:bg-gray-800/50 text-gray-700 dark:text-gray-300 text-[10px] sm:text-xs font-medium border border-gray-200/50 dark:border-gray-700/50 hover:bg-gray-200/80 dark:hover:bg-gray-700/50 transition-colors duration-200">
-                                  {language === 'th' ? 'ถัดไป:' : 'Next:'} {pendingStation}
-                                </span>
-                                {pendingTechnician && (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 text-[10px] sm:text-xs font-medium border border-blue-200/50 dark:border-blue-800/50 hover:bg-blue-100/80 dark:hover:bg-blue-900/30 transition-colors duration-200">
-                                    <span className="text-[8px]">👤</span>
-                                    {pendingTechnician}
-                                  </span>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Meta row */}
-                        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] sm:text-xs text-gray-500 dark:text-gray-400">
-                          <span>
-                            {language === 'th' ? 'มูลค่าตั๋ว:' : 'Total price:'}{' '}
-                            <span className="font-medium text-gray-900 dark:text-gray-100">
-                              {total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}
-                            </span>
-                          </span>
-                          {ticket.dueDate && (
-                            <span>
-                              {language === 'th' ? 'กำหนดส่ง:' : 'Due:'}{' '}
-                              <span className="font-medium text-gray-800 dark:text-gray-200">
-                                {new Date(ticket.dueDate).toLocaleDateString('th-TH')}
-                              </span>
-                            </span>
-                          )}
-                          <span>
-                            {language === 'th' ? 'จำนวน:' : 'Qty:'}{' '}
-                            <span className="font-medium text-gray-800 dark:text-gray-200">
-                              {ticket.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'}
-                            </span>
-                            {(ticket.totalDefectCount || 0) > 0 && (
-                              <span className="ml-1.5 text-amber-600 dark:text-amber-400 text-[11px] sm:text-xs">
-                                ({language === 'th' ? 'มี defect' : 'defect'}{' '}{ticket.totalDefectCount} {language === 'th' ? 'ชิ้น' : 'pcs'})
-                              </span>
-                            )}
-                          </span>
-                          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs ${getPriorityChipClass(ticket.priority)}`}>
-                            {ticket.priority}
-                          </span>
-                          <span className={`inline-flex items-center rounded-full border border-transparent px-2 py-0.5 text-[11px] sm:text-xs font-medium ${ticket.statusClass}`}>
-                            {ticket.status}
-                          </span>
-                          {/* Batch count pill */}
-                          {ticketBatches.length > 0 && (
-                            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] sm:text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
-                              {ticketBatches.length} {language === 'th' ? 'Batch' : 'Batch'}
-                            </span>
-                          )}
-                          {/* Store status pill */}
-                          {getStatusDisplay(ticket.storeStatus)}
-                        </div>
-                        
-                        {/* Batch Details */}
-                        {ticketBatches.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            {ticketBatches.map((batch, index) => (
-                              <div key={batch.id} className="flex items-center gap-2 text-xs">
-                                <span className={`px-2 py-1 rounded-full ${
-                                  batch.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                                  batch.status === 'rework' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400' :
-                                  batch.status === 'waiting_merge' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400' :
-                                  'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
-                                }`}>
-                                  {batch.batch_name} ({batch.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'})
-                                </span>
-                                <span className="text-gray-500 dark:text-gray-400">
-                                  {batch.stations?.name_th || batch.stations?.code || 'Unknown Station'}
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="shrink-0 flex flex-col items-stretch gap-2 w-full md:w-auto">
-                        <button
-                          onClick={() => {
-                            if (canViewProductionDetail) {
-                              // Store current search params before navigating to detail
-                              const currentParams = searchParams.toString();
-                              if (currentParams) {
-                                sessionStorage.setItem('productionPageParams', currentParams);
-                              }
-                              router.push(`/production/${encodeURIComponent(cleanedId)}`);
-                            }
-                          }}
-                          onContextMenu={(e) => {
-                            if (canViewProductionDetail) {
-                              e.preventDefault();
-                              window.open(`/production/${encodeURIComponent(cleanedId)}`, '_blank');
-                            }
-                          }}
-                          disabled={!canViewProductionDetail}
-                          className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-medium w-full md:w-auto ${
-                            canViewProductionDetail 
-                              ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
-                              : 'bg-gray-400 text-white opacity-50 cursor-not-allowed'
-                          }`}
-                        >
-                          {t('detailsMore', language)}
-                        </button>
-                        {canUpdateStoreStatus && (
-                          <div className="flex flex-wrap gap-1.5 w-full">
-                            {STORE_STATUSES.map((statusOption) => {
-                              const IconComponent = statusOption.icon;
-                              const isSelected = ticket.storeStatus === statusOption.value;
-
-                              return (
-                                <button
-                                  key={statusOption.value}
-                                  onClick={() => {
-                                    if (!isUpdatingStatus) {
-                                      const newStatus = isSelected ? null : statusOption.value;
-                                      updateStoreStatus(ticket.id, newStatus);
-                                    }
-                                  }}
-                                  disabled={isUpdatingStatus}
-                                  className={`
-                                    flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm
-                                    ${isSelected
-                                      ? `${statusOption.color} ring-1 ring-offset-1 ring-offset-white dark:ring-offset-slate-800`
-                                      : 'bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-600 hover:border-gray-300 dark:hover:border-slate-500'
-                                    }
-                                    ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
-                                  `}
-                                >
-                                  <span className="flex items-center gap-1.5">
-                                    <IconComponent className="w-4 h-4" />
-                                    {t(statusOption.label, language)}
-                                  </span>
-                                  {isSelected && <X className="w-3.5 h-3.5 opacity-75" />}
-                                </button>
-                              );
-                            })}
-                            {ticket.storeStatus && (
-                              <button
-                                onClick={() => !isUpdatingStatus && updateStoreStatus(ticket.id, null)}
-                                disabled={isUpdatingStatus}
-                                className={`
-                                  px-3 py-1.5 rounded-md text-xs font-semibold transition-all shadow-sm bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-slate-600 border border-transparent hover:border-gray-300 dark:hover:border-slate-500
-                                  ${isUpdatingStatus ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:translate-y-[-1px] active:translate-y-[1px]'}
-                                `}
-                              >
-                                <XCircle className="w-4 h-4 inline mr-1.5" />
-                                {language === 'th' ? 'ล้างสถานะ' : 'Clear'}
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                        );
-                      })}
+                        {group.tickets.map((ticket) => renderTicketCard(ticket))}
                       </div>
                     )}
                   </div>
