@@ -627,17 +627,18 @@ export default function ProductionPage() {
         const status = calculateTicketStatus(stations, roadmap, sortedTicketFlows);
         const statusClass = getStatusClass(status);
 
-        return { 
-          ...t, 
-          roadmap, 
-          stations, 
-          assignee: assignee || '-', 
-          status, 
+        return {
+          ...t,
+          roadmap,
+          stations,
+          assignee: assignee || '-',
+          status,
           statusClass,
           priority: t.priority,
           priorityClass: t.priorityClass,
           customerName: dbTicket?.customer_name || t.customerName,
-          storeStatus: dbTicket?.store_status || t.storeStatus
+          storeStatus: dbTicket?.store_status || t.storeStatus,
+          firstAssignedDate: sortedTicketFlows[0]?.created_at || null
         };
       });
       
@@ -1570,6 +1571,14 @@ export default function ProductionPage() {
                   {total.toLocaleString()} {language === 'th' ? 'บาท' : 'Baht'}
                 </span>
               </span>
+              {ticket.firstAssignedDate && (
+                <span>
+                  {language === 'th' ? 'วันที่มอบหมาย:' : 'Assigned:'}{' '}
+                  <span className="font-medium text-gray-800 dark:text-gray-200">
+                    {new Date(ticket.firstAssignedDate).toLocaleDateString('th-TH')}
+                  </span>
+                </span>
+              )}
               {ticket.dueDate && (
                 <span>
                   {language === 'th' ? 'กำหนดส่ง:' : 'Due:'}{' '}
