@@ -2051,10 +2051,10 @@ export default function ProductionPage() {
                   localStorage.setItem('productionGroupByProject', next ? '1' : '0');
                   return next;
                 })}
-                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border shadow-sm ${
+                className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all duration-200 border shadow-sm cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 active:shadow-sm focus:outline-none select-none ${
                   groupByProject
-                    ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500 shadow-blue-200 dark:shadow-blue-900/30'
-                    : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700'
+                    ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500 shadow-blue-200 dark:shadow-blue-900/30 hover:bg-blue-700 dark:hover:bg-blue-600'
+                    : 'bg-white dark:bg-slate-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-slate-700 hover:bg-gray-50 dark:hover:bg-slate-700 hover:border-gray-300 dark:hover:border-slate-600'
                 }`}
               >
                 <Layers className="w-4 h-4" />
