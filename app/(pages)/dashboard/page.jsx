@@ -137,11 +137,20 @@ export default function DashboardPage() {
         let backlogLabels = [];
         let backlogCounts = [];
         try {
-          const { data: flows } = await supabase
-            .from('ticket_station_flow')
-            .select('station_id, status, stations(name_th)');
+          let allFlows = [];
+          let flowFrom = 0;
+          const flowPageSize = 1000;
+          while (true) {
+            const { data: flowPage } = await supabase
+              .from('ticket_station_flow')
+              .select('station_id, status, stations(name_th)')
+              .range(flowFrom, flowFrom + flowPageSize - 1);
+            allFlows = allFlows.concat(flowPage || []);
+            if (!flowPage || flowPage.length < flowPageSize) break;
+            flowFrom += flowPageSize;
+          }
           const map = new Map();
-          (flows||[]).forEach(f=>{
+          allFlows.forEach(f=>{
             if (toLower(f.status) === 'completed') return;
             const name = f.stations?.name_th || f.station_id || 'Unknown';
             map.set(name, (map.get(name)||0)+1);
@@ -157,10 +166,19 @@ export default function DashboardPage() {
         let mtbfSeries = new Array(7).fill(0);
         try {
           const since = new Date(); since.setDate(since.getDate()-6); since.setHours(0,0,0,0);
-          const { data: sessions } = await supabase
-            .from('technician_work_sessions')
-            .select('started_at, completed_at')
-            .gte('started_at', since.toISOString());
+          let sessions = [];
+          let sessFrom = 0;
+          const sessPageSize = 1000;
+          while (true) {
+            const { data: sessPage } = await supabase
+              .from('technician_work_sessions')
+              .select('started_at, completed_at')
+              .gte('started_at', since.toISOString())
+              .range(sessFrom, sessFrom + sessPageSize - 1);
+            sessions = sessions.concat(sessPage || []);
+            if (!sessPage || sessPage.length < sessPageSize) break;
+            sessFrom += sessPageSize;
+          }
           const buckets = days.map(()=>[]);
           (sessions||[]).forEach(s=>{
             const start = s.started_at ? new Date(s.started_at) : null;

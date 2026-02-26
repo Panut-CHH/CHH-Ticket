@@ -163,11 +163,20 @@ export default function QCPage() {
       let prevStationByQcTask = {}; // qc_task_uuid -> station name
       let prevStationIdByQcTask = {}; // qc_task_uuid -> station_id
       if (ticketNos.length > 0) {
-        const { data: flows } = await supabase
-          .from('ticket_station_flow')
-          .select('ticket_no, step_order, station_id, qc_task_uuid, stations(name_th, code)')
-          .in('ticket_no', ticketNos)
-          .order('step_order', { ascending: true });
+        // ใช้ chunking เพราะ ticketNos อาจมาก และ flows รวมอาจเกิน 1,000 rows
+        let allFlows = [];
+        const FLOW_CHUNK = 100;
+        for (let i = 0; i < ticketNos.length; i += FLOW_CHUNK) {
+          const chunk = ticketNos.slice(i, i + FLOW_CHUNK);
+          const { data: flowPage } = await supabase
+            .from('ticket_station_flow')
+            .select('ticket_no, step_order, station_id, qc_task_uuid, stations(name_th, code)')
+            .in('ticket_no', chunk)
+            .order('step_order', { ascending: true })
+            .limit(5000);
+          allFlows = allFlows.concat(flowPage || []);
+        }
+        const flows = allFlows;
         const byTicket = flows?.reduce((acc, f) => {
           const key = String(f.ticket_no);
           acc[key] = acc[key] || [];
@@ -233,22 +242,41 @@ export default function QCPage() {
     try {
       const start = new Date();
       start.setHours(0, 0, 0, 0);
-      const { data: sessions, error: sessionsError } = await supabase
-        .from('qc_sessions')
-        .select('id')
-        .gte('created_at', start.toISOString());
-      if (sessionsError) throw sessionsError;
-      const ids = Array.from(new Set((sessions || []).map((s) => s.id))).filter(Boolean);
+      // ดึง sessions วันนี้ด้วย pagination เพราะอาจเกิน 1,000 rows
+      let allSessions = [];
+      let sessionFrom = 0;
+      const sessionPageSize = 1000;
+      while (true) {
+        const { data: sessionPage, error: sessionsError } = await supabase
+          .from('qc_sessions')
+          .select('id')
+          .gte('created_at', start.toISOString())
+          .range(sessionFrom, sessionFrom + sessionPageSize - 1);
+        if (sessionsError) throw sessionsError;
+        allSessions = allSessions.concat(sessionPage || []);
+        if (!sessionPage || sessionPage.length < sessionPageSize) break;
+        sessionFrom += sessionPageSize;
+      }
+      const ids = Array.from(new Set(allSessions.map((s) => s.id))).filter(Boolean);
       setTodaySessions(ids.length);
       if (ids.length === 0) {
         setTodayPass(0);
         setTodayFail(0);
         return;
       }
-      const { data: rows, error: rowsError } = await supabase
-        .from('qc_rows')
-        .select('pass')
-        .in('session_id', ids);
+      // ดึง qc_rows ด้วย chunking เพราะ .in() + จำนวน rows อาจเกิน 1,000
+      let allRows = [];
+      const CHUNK = 200;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        const { data: rowPage, error: rowsError } = await supabase
+          .from('qc_rows')
+          .select('pass')
+          .in('session_id', chunk);
+        if (rowsError) throw rowsError;
+        allRows = allRows.concat(rowPage || []);
+      }
+      const rows = allRows;
       if (rowsError) throw rowsError;
       const pass = (rows || []).filter((r) => r.pass === true).length;
       const fail = (rows || []).filter((r) => r.pass === false).length;

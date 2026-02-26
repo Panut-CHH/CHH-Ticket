@@ -20,10 +20,21 @@ async function loadAssignmentMap() {
   const assignmentMap = {};
 
   // ticket_assignments -> key: `${ticket_no}-${station_id}-${step_order}` => technician name
+  // ใช้ pagination เพราะอาจเกิน 1,000 rows
   try {
-    const { data: assignments } = await client
-      .from('view_ticket_assignments_with_user')
-      .select('ticket_no, station_id, step_order, technician_name');
+    let allAssignments = [];
+    let aFrom = 0;
+    const aPageSize = 1000;
+    while (true) {
+      const { data: page } = await client
+        .from('view_ticket_assignments_with_user')
+        .select('ticket_no, station_id, step_order, technician_name')
+        .range(aFrom, aFrom + aPageSize - 1);
+      allAssignments = allAssignments.concat(page || []);
+      if (!page || page.length < aPageSize) break;
+      aFrom += aPageSize;
+    }
+    const assignments = allAssignments;
     (assignments || []).forEach(a => {
       const id = normalizeTicketNo(a.ticket_no);
       const step = a.step_order || 0;

@@ -203,7 +203,28 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
 
-      // 1) completed station flows - เฉพาะสถานี "ปรับขนาด" และ "สี"
+      // 1) ดึง station IDs สำหรับสถานีที่ต้องการ (ปรับขนาด, อัดบาน, สี)
+      const { data: reportStations, error: stationError } = await supabase
+        .from("stations")
+        .select("id, name_th, code");
+      if (stationError) throw stationError;
+
+      const targetStationIds = (reportStations || [])
+        .filter((s) => {
+          const name = (s.name_th || s.code || "").toLowerCase();
+          return name === "ปรับขนาด" || name === "อัดบาน" || name === "สี" ||
+                 name.includes("ปรับขนาด") || name.includes("อัดบาน") || name.includes("สี");
+        })
+        .map((s) => s.id);
+
+      if (targetStationIds.length === 0) {
+        setRows([]);
+        setPayments([]);
+        setLoading(false);
+        return;
+      }
+
+      // 2) completed station flows - filter สถานีที่ server-side เพื่อไม่ให้โดน row limit ตัด
       const { data: flows, error: flowError } = await supabase
         .from("ticket_station_flow")
         .select(`
@@ -217,50 +238,54 @@ export default function ReportPage() {
           stations ( name_th, code )
         `)
         .eq("status", "completed")
-        .not("completed_at", "is", null);
+        .not("completed_at", "is", null)
+        .in("station_id", targetStationIds)
+        .order("completed_at", { ascending: false })
+        .limit(5000);
 
       if (flowError) throw flowError;
 
-      // Filter เฉพาะสถานี "ปรับขนาด" และ "สี" (รองรับทั้งชื่อเก่าและใหม่)
-      const filteredFlows = (flows || []).filter((flow) => {
-        const stationName = (flow.stations?.name_th || flow.stations?.code || "").toLowerCase();
-        return stationName === "ปรับขนาด" || stationName === "อัดบาน" || stationName === "สี" || 
-               stationName.includes("ปรับขนาด") || stationName.includes("อัดบาน") || stationName.includes("สี");
-      });
+      const filteredFlows = flows || [];
 
-      // Debug: Log station names to see what we're getting
-      console.log("[REPORT] Total flows loaded:", flows?.length || 0);
-      const stationNames = (flows || []).map(f => f.stations?.name_th || f.stations?.code || "unknown");
-      const uniqueStations = [...new Set(stationNames)];
-      console.log("[REPORT] Unique stations found:", uniqueStations);
-      const colorStations = (flows || []).filter(f => {
-        const name = (f.stations?.name_th || f.stations?.code || "").toLowerCase();
-        return name.includes("สี") || name.includes("color") || name.includes("paint");
-      });
-      console.log("[REPORT] Color/painting stations found:", colorStations.length, colorStations.map(f => ({
-        station: f.stations?.name_th || f.stations?.code,
-        ticket: f.ticket_no,
-        status: f.status,
-        completed_at: f.completed_at
-      })));
+      console.log("[REPORT] Total flows loaded:", filteredFlows.length);
 
-      // 2) assignments
-      const { data: assignmentData, error: assignmentError } = await supabase
-        .from("ticket_assignments")
-        .select(`
-          ticket_no,
-          station_id,
-          step_order,
-          technician_id,
-          technician:users!ticket_assignments_technician_id_fkey ( name )
-        `);
-      if (assignmentError) throw assignmentError;
+      // 3) assignments - ดึงเฉพาะตั๋วที่มี flow ที่ตรงกัน + limit เพื่อป้องกัน row limit ตัด
+      const flowTicketNos = [...new Set(filteredFlows.map((f) => f.ticket_no))];
+      let assignmentData = [];
+      if (flowTicketNos.length > 0) {
+        // Supabase .in() supports up to ~300 items, chunk if needed
+        const CHUNK = 200;
+        for (let i = 0; i < flowTicketNos.length; i += CHUNK) {
+          const chunk = flowTicketNos.slice(i, i + CHUNK);
+          const { data: aData, error: aErr } = await supabase
+            .from("ticket_assignments")
+            .select(`
+              ticket_no,
+              station_id,
+              step_order,
+              technician_id,
+              technician:users!ticket_assignments_technician_id_fkey ( name )
+            `)
+            .in("ticket_no", chunk);
+          if (aErr) throw aErr;
+          assignmentData = assignmentData.concat(aData || []);
+        }
+      }
 
-      // 3) tickets (for qty/project)
-      const { data: ticketData, error: ticketError } = await supabase
-        .from("ticket")
-        .select("no, description, quantity, source_no");
-      if (ticketError) throw ticketError;
+      // 4) tickets (for qty/project) - ดึงเฉพาะตั๋วที่เกี่ยวข้อง
+      let ticketData = [];
+      if (flowTicketNos.length > 0) {
+        const CHUNK = 200;
+        for (let i = 0; i < flowTicketNos.length; i += CHUNK) {
+          const chunk = flowTicketNos.slice(i, i + CHUNK);
+          const { data: tData, error: tErr } = await supabase
+            .from("ticket")
+            .select("no, description, quantity, source_no")
+            .in("no", chunk);
+          if (tErr) throw tErr;
+          ticketData = ticketData.concat(tData || []);
+        }
+      }
 
       // 4) payments — ดึงผ่าน API (service role) เพื่อให้เห็น record ที่เพิ่ง insert หลังรีเฟรช
       let paymentData = [];
