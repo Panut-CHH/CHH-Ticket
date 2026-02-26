@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
-import { Search, Filter, ArrowUpDown, Calendar, User, Clock, History, CheckCircle, XCircle, TrendingUp, Timer, Activity, AlertCircle } from "lucide-react";
+import React, { useMemo, useState, useEffect, useCallback, useRef } from "react";
+import { Search, Filter, ArrowUpDown, Calendar, User, Clock, History, CheckCircle, XCircle, TrendingUp, Timer, Activity, AlertCircle, Loader2, ChevronDown } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
@@ -86,306 +86,257 @@ export default function UILog() {
   const [sortAsc, setSortAsc] = useState(false);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState(null);
+  const [hasMore, setHasMore] = useState(true);
   // Hide noisy system reads by default
   const [showSystemReads, setShowSystemReads] = useState(false);
+  const searchTimerRef = useRef(null);
+  const PAGE_SIZE = 1000;
 
-  // Fetch logs from database
-  useEffect(() => {
-    const fetchLogs = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  // Transform a raw log row into the display format
+  const transformLog = useCallback((log, userMap = {}, lang = 'th') => {
+    const userEmail = log.user_email;
+    const userName = log.user_name || (userEmail ? userMap[userEmail] : null) || userEmail || 'Unknown';
 
-        // Fetch logs
-        const { data: logData, error: fetchError } = await supabase
-          .from('activity_logs')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1000); // Limit to recent 1000 logs
-
-        if (fetchError) throw fetchError;
-
-        // Filter out System logs first
-        const filteredLogs = (logData || []).filter(log => {
-          const who = log.user_name || log.user_email;
-          return who && who.toLowerCase() !== 'system';
-        });
-
-        // Fetch user names separately
-        const userEmails = [...new Set(filteredLogs.map(log => log.user_email).filter(Boolean))];
-        let userMap = {};
-        
-        if (userEmails.length > 0) {
-          const { data: usersData } = await supabase
-            .from('users')
-            .select('email, name')
-            .in('email', userEmails);
-          
-          if (usersData) {
-            userMap = usersData.reduce((acc, user) => {
-              acc[user.email] = user.name || user.email; // Use name if available, fallback to email
-              return acc;
-            }, {});
-          }
+    return {
+      id: log.id,
+      ticketId: log.ticket_no || log.entity_id || '-',
+      title: (() => {
+        if (log.entity_type === 'ticket') return `Ticket ${log.ticket_no || log.entity_id}`;
+        if (log.entity_type === 'project') {
+          const projectName = log.details?.project_name || log.details?.item_code || log.entity_id;
+          return `Project ${projectName}`;
         }
-        
-        // Transform logs with user names
-        const transformedLogs = filteredLogs.map((log) => {
-          const userEmail = log.user_email;
-          // Priority: user_name > userMap[name] > userEmail
-          const userName = log.user_name || (userEmail ? userMap[userEmail] : null) || userEmail || 'Unknown';
-          
-          return {
-            id: log.id,
-            ticketId: log.ticket_no || log.entity_id || '-',
-            title: (() => {
-              if (log.entity_type === 'ticket') return `Ticket ${log.ticket_no || log.entity_id}`;
-              if (log.entity_type === 'project') {
-                const projectName = log.details?.project_name || log.details?.item_code || log.entity_id;
-                return `Project ${projectName}`;
-              }
-              if (log.entity_type === 'item_code') {
-                const itemCode = log.details?.item_code || log.entity_id;
-                return `Item Code ${itemCode}`;
-              }
-              if (log.entity_type === 'station') {
-                const stationName = log.details?.name_th || log.details?.code || log.entity_id;
-                return `Station ${stationName}`;
-              }
-              if (log.entity_type === 'ticket_bom') {
-                return `BOM ${log.ticket_no || log.entity_id}`;
-              }
-              if (log.entity_type === 'production_flow') {
-                const stationName = log.details?.station_name || '';
-                return `Production ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
-              }
-              if (log.entity_type === 'qc_workflow') {
-                const stationName = log.details?.station_name || '';
-                return `QC ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
-              }
-              if (log.entity_type === 'user') return `User ${log.entity_id}`;
-              if (log.entity_type === 'auth') return 'Authentication';
-              return log.entity_type || 'Unknown';
-            })(),
-            who: userName,
-            type: log.action,
-            detail: (() => {
-              if (log.details?.message) return log.details.message;
-              if (log.details?.ticket_no) return `Ticket ${log.details.ticket_no}`;
-              if (log.error_message) return log.error_message;
-              
-              // Generate descriptive message based on entity type and action
-              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'project') {
-                const projectName = log.details?.project_name || log.details?.item_code || '';
-                return language === 'th' 
-                  ? `สร้างโปรเจ็ค${projectName ? `: ${projectName}` : ''}`
-                  : `Create project${projectName ? `: ${projectName}` : ''}`;
-              }
-              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'item_code') {
-                const itemCode = log.details?.item_code || '';
-                return language === 'th' 
-                  ? `สร้าง Item Code${itemCode ? `: ${itemCode}` : ''}`
-                  : `Create Item Code${itemCode ? `: ${itemCode}` : ''}`;
-              }
-              if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'station') {
-                const stationName = log.details?.name_th || log.details?.code || '';
-                return language === 'th' 
-                  ? `เพิ่มสถานี${stationName ? `: ${stationName}` : ''}`
-                  : `Add station${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (log.action === 'update' && log.entity_type === 'ticket_bom') {
-                return language === 'th' 
-                  ? `เพิ่ม/แก้ไขวัสดุ (${log.details?.count || 0} รายการ)`
-                  : `Add/Update materials (${log.details?.count || 0} items)`;
-              }
-              if (log.action === 'step_started' && log.entity_type === 'production_flow') {
-                const stationName = log.details?.station_name || '';
-                return language === 'th' 
-                  ? `เริ่มขั้นตอน${stationName ? `: ${stationName}` : ''}`
-                  : `Start step${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (log.action === 'step_completed' && log.entity_type === 'production_flow') {
-                const stationName = log.details?.station_name || '';
-                return language === 'th' 
-                  ? `เสร็จสิ้นขั้นตอน${stationName ? `: ${stationName}` : ''}`
-                  : `Complete step${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (log.action === 'qc_started' && log.entity_type === 'qc_workflow') {
-                const stationName = log.details?.station_name || '';
-                return language === 'th' 
-                  ? `เริ่ม QC${stationName ? `: ${stationName}` : ''}`
-                  : `Start QC${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (log.action === 'qc_completed' && log.entity_type === 'qc_workflow') {
-                const stationName = log.details?.station_name || '';
-                const passRate = log.details?.pass_rate;
-                const passRateText = passRate !== undefined ? ` (${passRate}%)` : '';
-                return language === 'th' 
-                  ? `เสร็จสิ้น QC${stationName ? `: ${stationName}` : ''}${passRateText}`
-                  : `Complete QC${stationName ? `: ${stationName}` : ''}${passRateText}`;
-              }
-              
-              return getActionLabel(log.action, log.entity_type, language);
-            })(),
-            at: new Date(log.created_at).getTime(),
-            status: log.status,
-            errorMessage: log.error_message,
-            entityType: log.entity_type,
-            details: log.details,
-          };
-        });
+        if (log.entity_type === 'item_code') {
+          const itemCode = log.details?.item_code || log.entity_id;
+          return `Item Code ${itemCode}`;
+        }
+        if (log.entity_type === 'station') {
+          const stationName = log.details?.name_th || log.details?.code || log.entity_id;
+          return `Station ${stationName}`;
+        }
+        if (log.entity_type === 'ticket_bom') {
+          return `BOM ${log.ticket_no || log.entity_id}`;
+        }
+        if (log.entity_type === 'production_flow') {
+          const stationName = log.details?.station_name || '';
+          return `Production ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+        }
+        if (log.entity_type === 'qc_workflow') {
+          const stationName = log.details?.station_name || '';
+          return `QC ${log.ticket_no || log.entity_id}${stationName ? ` - ${stationName}` : ''}`;
+        }
+        if (log.entity_type === 'user') return `User ${log.entity_id}`;
+        if (log.entity_type === 'auth') return 'Authentication';
+        return log.entity_type || 'Unknown';
+      })(),
+      who: userName,
+      type: log.action,
+      detail: (() => {
+        if (log.details?.message) return log.details.message;
+        if (log.details?.ticket_no) return `Ticket ${log.details.ticket_no}`;
+        if (log.error_message) return log.error_message;
 
-        setLogs(transformedLogs);
-      } catch (err) {
-        console.error('Error fetching logs:', err);
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
+        if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'project') {
+          const projectName = log.details?.project_name || log.details?.item_code || '';
+          return lang === 'th'
+            ? `สร้างโปรเจ็ค${projectName ? `: ${projectName}` : ''}`
+            : `Create project${projectName ? `: ${projectName}` : ''}`;
+        }
+        if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'item_code') {
+          const itemCode = log.details?.item_code || '';
+          return lang === 'th'
+            ? `สร้าง Item Code${itemCode ? `: ${itemCode}` : ''}`
+            : `Create Item Code${itemCode ? `: ${itemCode}` : ''}`;
+        }
+        if ((log.action === 'created' || log.action === 'create') && log.entity_type === 'station') {
+          const stationName = log.details?.name_th || log.details?.code || '';
+          return lang === 'th'
+            ? `เพิ่มสถานี${stationName ? `: ${stationName}` : ''}`
+            : `Add station${stationName ? `: ${stationName}` : ''}`;
+        }
+        if (log.action === 'update' && log.entity_type === 'ticket_bom') {
+          return lang === 'th'
+            ? `เพิ่ม/แก้ไขวัสดุ (${log.details?.count || 0} รายการ)`
+            : `Add/Update materials (${log.details?.count || 0} items)`;
+        }
+        if (log.action === 'step_started' && log.entity_type === 'production_flow') {
+          const stationName = log.details?.station_name || '';
+          return lang === 'th'
+            ? `เริ่มขั้นตอน${stationName ? `: ${stationName}` : ''}`
+            : `Start step${stationName ? `: ${stationName}` : ''}`;
+        }
+        if (log.action === 'step_completed' && log.entity_type === 'production_flow') {
+          const stationName = log.details?.station_name || '';
+          return lang === 'th'
+            ? `เสร็จสิ้นขั้นตอน${stationName ? `: ${stationName}` : ''}`
+            : `Complete step${stationName ? `: ${stationName}` : ''}`;
+        }
+        if (log.action === 'qc_started' && log.entity_type === 'qc_workflow') {
+          const stationName = log.details?.station_name || '';
+          return lang === 'th'
+            ? `เริ่ม QC${stationName ? `: ${stationName}` : ''}`
+            : `Start QC${stationName ? `: ${stationName}` : ''}`;
+        }
+        if (log.action === 'qc_completed' && log.entity_type === 'qc_workflow') {
+          const stationName = log.details?.station_name || '';
+          const passRate = log.details?.pass_rate;
+          const passRateText = passRate !== undefined ? ` (${passRate}%)` : '';
+          return lang === 'th'
+            ? `เสร็จสิ้น QC${stationName ? `: ${stationName}` : ''}${passRateText}`
+            : `Complete QC${stationName ? `: ${stationName}` : ''}${passRateText}`;
+        }
+
+        return getActionLabel(log.action, log.entity_type, lang);
+      })(),
+      at: new Date(log.created_at).getTime(),
+      status: log.status,
+      errorMessage: log.error_message,
+      entityType: log.entity_type,
+      details: log.details,
     };
+  }, []);
 
+  // Build Supabase query with server-side filters
+  const buildQuery = useCallback((search, from, to, action, offset = 0) => {
+    let query = supabase
+      .from('activity_logs')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    // Server-side search: filter by ticket_no or entity_id
+    if (search) {
+      query = query.or(`ticket_no.ilike.%${search}%,entity_id.ilike.%${search}%,user_name.ilike.%${search}%`);
+    }
+
+    // Server-side date filters
+    if (from) {
+      query = query.gte('created_at', from + 'T00:00:00');
+    }
+    if (to) {
+      query = query.lte('created_at', to + 'T23:59:59');
+    }
+
+    // Server-side action/event type filter
+    if (action) {
+      query = query.eq('action', action);
+    }
+
+    query = query.range(offset, offset + PAGE_SIZE - 1);
+    return query;
+  }, []);
+
+  // Fetch and transform logs
+  const fetchLogs = useCallback(async (search = '', from = '', to = '', action = '', append = false) => {
+    try {
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+
+      const offset = append ? logs.length : 0;
+      const { data: logData, error: fetchError } = await buildQuery(search, from, to, action, offset);
+
+      if (fetchError) throw fetchError;
+
+      // Filter out System logs
+      const filteredLogs = (logData || []).filter(log => {
+        const who = log.user_name || log.user_email;
+        return who && who.toLowerCase() !== 'system';
+      });
+
+      // Fetch user names
+      const userEmails = [...new Set(filteredLogs.map(log => log.user_email).filter(Boolean))];
+      let userMap = {};
+      if (userEmails.length > 0) {
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('email, name')
+          .in('email', userEmails);
+        if (usersData) {
+          userMap = usersData.reduce((acc, u) => {
+            acc[u.email] = u.name || u.email;
+            return acc;
+          }, {});
+        }
+      }
+
+      const transformedLogs = filteredLogs.map(log => transformLog(log, userMap, language));
+
+      setHasMore((logData || []).length >= PAGE_SIZE);
+
+      if (append) {
+        setLogs(prev => [...prev, ...transformedLogs]);
+      } else {
+        setLogs(transformedLogs);
+      }
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [buildQuery, transformLog, language, logs.length]);
+
+  // Initial load
+  useEffect(() => {
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    // Set up real-time subscription
+  // Re-fetch when server-side filters change (search, dates, event type) with debounce for search
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    const delay = q.trim() ? 400 : 0; // debounce search input
+    searchTimerRef.current = setTimeout(() => {
+      fetchLogs(q.trim(), dateFrom, dateTo, eventType);
+    }, delay);
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q, dateFrom, dateTo, eventType]);
+
+  // Real-time subscription for new logs
+  useEffect(() => {
     const channel = supabase
       .channel('activity_logs_changes')
-      .on('postgres_changes', 
+      .on('postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'activity_logs' },
         async (payload) => {
           const newLog = payload.new;
-          
+
           // Filter out System logs
           const who = newLog.user_name || newLog.user_email;
-          if (!who || who.toLowerCase() === 'system') {
-            return; // Skip System logs
-          }
-          
+          if (!who || who.toLowerCase() === 'system') return;
+
           // Fetch user name if we have email
-          let userName = newLog.user_name;
-          if (!userName && newLog.user_email) {
+          let userMap = {};
+          if (!newLog.user_name && newLog.user_email) {
             const { data: userData } = await supabase
               .from('users')
               .select('name, email')
               .eq('email', newLog.user_email)
               .single();
-            
             if (userData) {
-              userName = userData.name || userData.email;
-            } else {
-              userName = newLog.user_email;
+              userMap[newLog.user_email] = userData.name || userData.email;
             }
-          } else if (!userName) {
-            userName = 'Unknown';
           }
-          
-          const transformedLog = {
-            id: newLog.id,
-            ticketId: newLog.ticket_no || newLog.entity_id || '-',
-            title: (() => {
-              if (newLog.entity_type === 'ticket') return `Ticket ${newLog.ticket_no || newLog.entity_id}`;
-              if (newLog.entity_type === 'project') {
-                const projectName = newLog.details?.project_name || newLog.details?.item_code || newLog.entity_id;
-                return `Project ${projectName}`;
-              }
-              if (newLog.entity_type === 'item_code') {
-                const itemCode = newLog.details?.item_code || newLog.entity_id;
-                return `Item Code ${itemCode}`;
-              }
-              if (newLog.entity_type === 'station') {
-                const stationName = newLog.details?.name_th || newLog.details?.code || newLog.entity_id;
-                return `Station ${stationName}`;
-              }
-              if (newLog.entity_type === 'ticket_bom') {
-                return `BOM ${newLog.ticket_no || newLog.entity_id}`;
-              }
-              if (newLog.entity_type === 'production_flow') {
-                const stationName = newLog.details?.station_name || '';
-                return `Production ${newLog.ticket_no || newLog.entity_id}${stationName ? ` - ${stationName}` : ''}`;
-              }
-              if (newLog.entity_type === 'qc_workflow') {
-                const stationName = newLog.details?.station_name || '';
-                return `QC ${newLog.ticket_no || newLog.entity_id}${stationName ? ` - ${stationName}` : ''}`;
-              }
-              if (newLog.entity_type === 'user') return `User ${newLog.entity_id}`;
-              if (newLog.entity_type === 'auth') return 'Authentication';
-              return newLog.entity_type || 'Unknown';
-            })(),
-            who: userName,
-            type: newLog.action,
-            detail: (() => {
-              if (newLog.details?.message) return newLog.details.message;
-              if (newLog.details?.ticket_no) return `Ticket ${newLog.details.ticket_no}`;
-              if (newLog.error_message) return newLog.error_message;
-              
-              // Generate descriptive message based on entity type and action
-              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'project') {
-                const projectName = newLog.details?.project_name || newLog.details?.item_code || '';
-                return language === 'th' 
-                  ? `สร้างโปรเจ็ค${projectName ? `: ${projectName}` : ''}`
-                  : `Create project${projectName ? `: ${projectName}` : ''}`;
-              }
-              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'item_code') {
-                const itemCode = newLog.details?.item_code || '';
-                return language === 'th' 
-                  ? `สร้าง Item Code${itemCode ? `: ${itemCode}` : ''}`
-                  : `Create Item Code${itemCode ? `: ${itemCode}` : ''}`;
-              }
-              if ((newLog.action === 'created' || newLog.action === 'create') && newLog.entity_type === 'station') {
-                const stationName = newLog.details?.name_th || newLog.details?.code || '';
-                return language === 'th' 
-                  ? `เพิ่มสถานี${stationName ? `: ${stationName}` : ''}`
-                  : `Add station${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (newLog.action === 'update' && newLog.entity_type === 'ticket_bom') {
-                return language === 'th' 
-                  ? `เพิ่ม/แก้ไขวัสดุ (${newLog.details?.count || 0} รายการ)`
-                  : `Add/Update materials (${newLog.details?.count || 0} items)`;
-              }
-              if (newLog.action === 'step_started' && newLog.entity_type === 'production_flow') {
-                const stationName = newLog.details?.station_name || '';
-                return language === 'th' 
-                  ? `เริ่มขั้นตอน${stationName ? `: ${stationName}` : ''}`
-                  : `Start step${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (newLog.action === 'step_completed' && newLog.entity_type === 'production_flow') {
-                const stationName = newLog.details?.station_name || '';
-                return language === 'th' 
-                  ? `เสร็จสิ้นขั้นตอน${stationName ? `: ${stationName}` : ''}`
-                  : `Complete step${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (newLog.action === 'qc_started' && newLog.entity_type === 'qc_workflow') {
-                const stationName = newLog.details?.station_name || '';
-                return language === 'th' 
-                  ? `เริ่ม QC${stationName ? `: ${stationName}` : ''}`
-                  : `Start QC${stationName ? `: ${stationName}` : ''}`;
-              }
-              if (newLog.action === 'qc_completed' && newLog.entity_type === 'qc_workflow') {
-                const stationName = newLog.details?.station_name || '';
-                const passRate = newLog.details?.pass_rate;
-                const passRateText = passRate !== undefined ? ` (${passRate}%)` : '';
-                return language === 'th' 
-                  ? `เสร็จสิ้น QC${stationName ? `: ${stationName}` : ''}${passRateText}`
-                  : `Complete QC${stationName ? `: ${stationName}` : ''}${passRateText}`;
-              }
-              
-              return getActionLabel(newLog.action, newLog.entity_type, language);
-            })(),
-            at: new Date(newLog.created_at).getTime(),
-            status: newLog.status,
-            errorMessage: newLog.error_message,
-            entityType: newLog.entity_type,
-            details: newLog.details,
-          };
-          setLogs(prev => [transformedLog, ...prev].slice(0, 1000));
+
+          const transformed = transformLog(newLog, userMap, language);
+          setLogs(prev => [transformed, ...prev]);
         }
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [language]);
+    return () => { supabase.removeChannel(channel); };
+  }, [language, transformLog]);
+
+  const handleLoadMore = () => {
+    fetchLogs(q.trim(), dateFrom, dateTo, eventType, true);
+  };
 
   // Extract unique assignees from logs (already filtered, no System)
   const assignees = useMemo(() => {
@@ -399,17 +350,10 @@ export default function UILog() {
   }, [logs]);
 
   const filtered = useMemo(() => {
-    const qnorm = q.trim().toLowerCase();
-    const from = dateFrom ? new Date(dateFrom + 'T00:00:00').getTime() : -Infinity;
-    const to = dateTo ? new Date(dateTo + 'T23:59:59').getTime() : Infinity;
-
+    // Search, dates, and event type are now filtered server-side.
+    // Client-side only handles: assignee, sort, noisy system reads.
     let rows = logs.filter((log) => {
-      const hay = `${log.ticketId} ${log.title} ${log.detail} ${log.who} ${log.entityType || ''}`.toLowerCase();
-      const matchQ = qnorm ? hay.includes(qnorm) : true;
-      const matchType = eventType ? log.type === eventType : true;
       const matchAssignee = assignee ? log.who === assignee : true;
-      const matchDate = log.at >= from && log.at <= to;
-      // Suppress noisy system 'read' logs unless explicitly enabled (already filtered System, but keep for ERP reads)
       const isNoisySystemRead =
         !showSystemReads &&
         log.type === 'read' &&
@@ -418,12 +362,12 @@ export default function UILog() {
           (log.entityType || '').includes('production_events')
         );
 
-      return matchQ && matchType && matchAssignee && matchDate && !isNoisySystemRead;
+      return matchAssignee && !isNoisySystemRead;
     });
 
     rows = rows.sort((a, b) => (sortAsc ? a.at - b.at : b.at - a.at));
     return rows;
-  }, [logs, q, eventType, assignee, dateFrom, dateTo, sortAsc, showSystemReads]);
+  }, [logs, assignee, sortAsc, showSystemReads]);
 
   const chips = useMemo(() => {
     const list = [];
@@ -719,10 +663,26 @@ export default function UILog() {
                 </div>
               </li>
             ))}
-            {filtered.length === 0 && (
+            {!loading && !error && filtered.length === 0 && (
               <li className="px-5 py-8 text-center text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-800">{language === 'th' ? 'ไม่พบข้อมูลตามเงื่อนไข' : 'No data found matching criteria'}</li>
             )}
           </ul>
+          {/* Load More */}
+          {hasMore && !loading && filtered.length > 0 && (
+            <div className="flex justify-center py-4 border-t border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700 text-sm disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> {language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</>
+                ) : (
+                  <><ChevronDown className="w-4 h-4" /> {language === 'th' ? 'โหลดเพิ่มเติม' : 'Load more'}</>
+                )}
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -64,7 +64,7 @@ export async function logActivity(options) {
       action,
       entity_type: entityType,
       entity_id: entityId,
-      ticket_no: entityType === 'ticket' ? entityId : null, // For backward compatibility
+      ticket_no: ['ticket', 'production_flow', 'qc_workflow', 'ticket_bom', 'notification_ticket'].includes(entityType) ? entityId : null,
       details: typeof details === 'object' ? details : { value: details },
       ip_address: ipAddress || null,
       user_agent: userAgent || null,
