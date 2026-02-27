@@ -68,7 +68,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
-    if (!ticket_no || !station_id || !step_order || !technician_id || !user_id) {
+    if (!ticket_no || !station_id || step_order === undefined || step_order === null || !technician_id || !user_id) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
