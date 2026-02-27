@@ -713,9 +713,10 @@ export default function ReportPage() {
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
   body{font-family:'Sarabun',sans-serif;font-size:10px;color:#000;padding:4px;}
   h2{margin:0 0 6px;font-size:12px;font-weight:700;}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px;}
-  th,td{border:1px solid #ccc;padding:3px 5px;vertical-align:top;}
-  th{background:#f3f4f6;font-weight:600;text-align:left;}
+  table{width:100%;border-collapse:separate;border-spacing:0;margin-bottom:8px;}
+  th,td{border-right:1px solid #ccc;border-bottom:1px solid #ccc;padding:3px 5px;vertical-align:top;}
+  th:first-child,td:first-child{border-left:1px solid #ccc;}
+  th{border-top:1px solid #ccc;background:#f3f4f6;font-weight:600;text-align:left;}
   tr:nth-child(even){background:#fafafa;}
   .summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
   .summary-item{border:1px solid #ddd;padding:4px 10px;border-radius:3px;min-width:110px;}
