@@ -332,6 +332,34 @@ export default function ReportPage() {
         }
       }
 
+      // 6) projects - สร้าง map item_code → project_name (เหมือน production page)
+      const projectMap = new Map();
+      try {
+        const { data: projectsData } = await supabase
+          .from("projects")
+          .select("id, item_code, project_name, description");
+        if (Array.isArray(projectsData)) {
+          projectsData.forEach((p) => {
+            if (p.item_code) projectMap.set(p.item_code, p);
+          });
+        }
+        // เติมจาก project_items
+        const { data: projectItems } = await supabase
+          .from("project_items")
+          .select("project_id, item_code");
+        if (Array.isArray(projectItems) && projectsData) {
+          const projectIdMap = new Map(projectsData.map((p) => [p.id, p]));
+          projectItems.forEach((it) => {
+            const proj = projectIdMap.get(it.project_id);
+            if (proj && it?.item_code && !projectMap.has(it.item_code)) {
+              projectMap.set(it.item_code, proj);
+            }
+          });
+        }
+      } catch (e) {
+        console.warn("[REPORT] Failed to load projectMap:", e?.message);
+      }
+
       const assignmentMap = {};
       (assignmentData || []).forEach((a) => {
         const key = `${a.ticket_no}-${a.station_id}-${a.step_order}`;
@@ -365,6 +393,9 @@ export default function ReportPage() {
         const flowKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}`;
         const qcCompletedAt = qcCompletedMap[flowKey] || flow.completed_at;
 
+        const projectFromMap = ticket?.source_no ? projectMap.get(ticket.source_no) : null;
+        const projectTitle = projectFromMap?.project_name || projectFromMap?.description || ticket?.source_no || "-";
+
         // ถ้ามี technician ให้แสดงแยกตาม technician แต่ละคน
         if (technicians.length > 0) {
           technicians.forEach((tech) => {
@@ -379,6 +410,7 @@ export default function ReportPage() {
               technicianName: tech.name || "-",
               stationName: flow.stations?.name_th || flow.stations?.code || "-",
               projectName: ticket?.description || ticket?.source_no || flow.ticket_no,
+              projectTitle,
               sourceNo: ticket?.source_no ?? null,
               quantity: qty,
               unit: "ชิ้น",
@@ -406,6 +438,7 @@ export default function ReportPage() {
             technicianName: language === "th" ? "ยังไม่ได้มอบหมาย" : "Not Assigned",
             stationName: flow.stations?.name_th || flow.stations?.code || "-",
             projectName: ticket?.description || ticket?.source_no || flow.ticket_no,
+            projectTitle,
             sourceNo: ticket?.source_no ?? null,
             quantity: qty,
             unit: "ชิ้น",
@@ -666,28 +699,30 @@ export default function ReportPage() {
         <td>${row.ticketNo}</td>
         <td>${row.technicianName}</td>
         <td>${row.stationName}</td>
+        <td>${row.projectTitle || '-'}</td>
         <td>${row.projectName}</td>
         <td>${formatQcCompletedAt(row.qcCompletedAt)}</td>
         <td style="text-align:center">${row.quantity}</td>
-        <td style="text-align:right">${Number(row.pricePerUnit).toLocaleString()} บาท</td>
-        <td style="text-align:right;font-weight:600">${Number(row.totalPrice).toLocaleString()} บาท</td>
+        <td style="text-align:right">${Number(row.pricePerUnit).toLocaleString()}</td>
+        <td style="text-align:right;font-weight:600">${Number(row.totalPrice).toLocaleString()}</td>
       </tr>
     `).join('');
     const html = `<!DOCTYPE html>
 <html lang="th"><head><meta charset="utf-8"><title>${tabLabel}</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
-  body{font-family:'Sarabun',sans-serif;font-size:12px;color:#000;padding:16px;}
-  h2{margin:0 0 10px;font-size:16px;font-weight:700;}
-  table{width:100%;border-collapse:collapse;margin-bottom:16px;}
-  th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top;}
+  body{font-family:'Sarabun',sans-serif;font-size:10px;color:#000;padding:4px;}
+  h2{margin:0 0 6px;font-size:12px;font-weight:700;}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px;}
+  th,td{border:1px solid #ccc;padding:3px 5px;vertical-align:top;}
   th{background:#f3f4f6;font-weight:600;text-align:left;}
   tr:nth-child(even){background:#fafafa;}
-  .summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
-  .summary-item{border:1px solid #ddd;padding:8px 16px;border-radius:4px;min-width:140px;}
-  .summary-item .label{font-size:10px;color:#666;margin-bottom:2px;}
-  .summary-item .value{font-size:16px;font-weight:700;}
-  @media print{@page{margin:16mm;size:A4 landscape;}}
+  .summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
+  .summary-item{border:1px solid #ddd;padding:4px 10px;border-radius:3px;min-width:110px;}
+  .summary-item .label{font-size:9px;color:#666;margin-bottom:1px;}
+  .summary-item .value{font-size:12px;font-weight:700;}
+  @page{margin:2mm;size:A4 portrait;}
+  @media print{body{padding:0;}}
 </style>
 </head><body>
 <h2>${tabLabel}</h2>
@@ -707,14 +742,14 @@ export default function ReportPage() {
 </div>
 <table>
   <thead><tr>
-    <th>No.</th><th>ช่าง</th><th>สถานี</th><th>Project</th>
-    <th>QC เสร็จเมื่อ</th><th style="text-align:center">จำนวน</th>
-    <th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">ยอดรวม</th>
+    <th>No.</th><th>ช่าง</th><th>สถานี</th><th>โปรเจ็ค</th><th>Description</th>
+    <th>QC</th><th style="text-align:center">จำนวน</th>
+    <th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th>
   </tr></thead>
   <tbody>${rowsHtml}</tbody>
 </table>
 </body></html>`;
-    const w = window.open('', '_blank', 'width=1200,height=800');
+    const w = window.open('', '_blank', 'width=800,height=1100');
     if (!w) { alert('กรุณาอนุญาต popup ในเบราว์เซอร์'); return; }
     w.document.write(html);
     w.document.close();
@@ -799,13 +834,14 @@ export default function ReportPage() {
         <thead className="bg-gray-50 dark:bg-slate-900/40">
           <tr className="text-left text-xs font-semibold text-gray-600 dark:text-gray-300">
             <SortableHeader sortKey="ticketNo" className="pl-4 pr-3">No.</SortableHeader>
-            <SortableHeader sortKey="technician" className="px-3">{t("technician", language) || "Technician"}</SortableHeader>
-            <SortableHeader sortKey="station" className="px-3">{language === "th" ? "สถานี" : "Station"}</SortableHeader>
-            <SortableHeader sortKey="project" className="pl-3 pr-6" style={{ width: PROJECT_CELL_WIDTH, maxWidth: PROJECT_CELL_WIDTH }}>Project</SortableHeader>
-            <SortableHeader sortKey="qcCompletedAt" className="pl-6 pr-3">{language === "th" ? "QC เสร็จเมื่อ" : "QC completed"}</SortableHeader>
-            <SortableHeader sortKey="quantity" className="px-3">{t("quantity", language)}</SortableHeader>
-            <SortableHeader sortKey="pricePerUnit" className="px-3">{t("price", language) || "Price/unit"}</SortableHeader>
-            <SortableHeader sortKey="totalPrice" className="px-3">{t("total", language) || "Total"}</SortableHeader>
+            <SortableHeader sortKey="technician" className="px-3">ช่าง</SortableHeader>
+            <SortableHeader sortKey="station" className="px-3">สถานี</SortableHeader>
+            <th className="px-3 py-3 text-xs font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">โปรเจ็ค</th>
+            <SortableHeader sortKey="project" className="pl-3 pr-6" style={{ width: PROJECT_CELL_WIDTH, maxWidth: PROJECT_CELL_WIDTH }}>Description</SortableHeader>
+            <SortableHeader sortKey="qcCompletedAt" className="pl-6 pr-3">QC</SortableHeader>
+            <SortableHeader sortKey="quantity" className="px-3">จำนวน</SortableHeader>
+            <SortableHeader sortKey="pricePerUnit" className="px-3">ราคา/หน่วย</SortableHeader>
+            <SortableHeader sortKey="totalPrice" className="px-3">รวม</SortableHeader>
             <th className="pl-3 pr-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
@@ -817,6 +853,7 @@ export default function ReportPage() {
               <td className="pl-4 pr-3 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">{row.ticketNo}</td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100 font-medium">{row.technicianName}</td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100">{row.stationName}</td>
+              <td className="px-3 py-3 text-xs text-gray-700 dark:text-gray-300 max-w-[120px] truncate" title={row.projectTitle}>{row.projectTitle || "-"}</td>
               <td className="pl-3 pr-6 py-3 text-gray-800 dark:text-gray-100 align-middle" style={{ width: PROJECT_CELL_WIDTH, maxWidth: PROJECT_CELL_WIDTH }}>
                 <ProjectCell text={row.projectName} onShow={tooltip?.showProjectTooltip} onHide={tooltip?.hideProjectTooltip} />
               </td>
@@ -825,10 +862,10 @@ export default function ReportPage() {
               </td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100">{row.quantity}</td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100">
-                {row.pricePerUnit.toLocaleString()} บาท
+                {row.pricePerUnit.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-gray-900 dark:text-gray-100 font-semibold">
-                {row.totalPrice.toLocaleString()} บาท
+                {row.totalPrice.toLocaleString()}
               </td>
               <td className="pl-3 pr-4 py-3 text-right">
                 {canManage ? (
