@@ -68,7 +68,7 @@ export async function POST(request) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
-    if (!ticket_no || !station_id || step_order === undefined || step_order === null || !technician_id || !user_id) {
+    if (!ticket_no || !station_id || step_order === undefined || step_order === null || !user_id) {
       return NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 });
     }
 
@@ -166,14 +166,15 @@ export async function POST(request) {
     }
 
     if (action === 'revert') {
-      const { error } = await supabaseAdmin
+      let revertQ = supabaseAdmin
         .from('technician_payments')
         .delete()
         .eq('ticket_no', ticket_no)
         .eq('station_id', station_id)
         .eq('step_order', step_order)
-        .eq('technician_id', technician_id)
         .eq('payment_round', paymentRound);
+      revertQ = technician_id ? revertQ.eq('technician_id', technician_id) : revertQ.is('technician_id', null);
+      const { error } = await revertQ;
 
       if (error) {
         console.error('[REPORT PAYMENT] revert error:', error);

@@ -619,7 +619,7 @@ export default function ReportPage() {
         ticket_no: row.ticketNo,
         station_id: row.stationId,
         step_order: row.stepOrder,
-        technician_id: row.technicianId,
+        technician_id: row.paymentRecord?.technician_id || row.technicianId,
         payment_amount: row.totalPrice,
         quantity: row.quantity,
         unit: row.unit,
