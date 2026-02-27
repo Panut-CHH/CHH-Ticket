@@ -10,6 +10,7 @@ import { loadActiveQcQueue } from "@/utils/ticketsDb";
 import { LayoutDashboard } from "lucide-react";
 import { useTheme } from "next-themes";
 import TechnicianPerformance from "@/components/TechnicianPerformance";
+import ProductionGantt from "@/components/ProductionGantt";
 import { canPerformActions } from "@/utils/rolePermissions";
 
 export default function DashboardPage() {
@@ -410,6 +411,9 @@ export default function DashboardPage() {
               </div>
             </div>
           </header>
+
+          {/* Production Gantt Chart */}
+          <ProductionGantt />
 
           {/* KPI Shelf */}
           <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">

@@ -1391,11 +1391,12 @@ export default function UITicket() {
             merged.statusClass = getStatusClass(merged.status);
             merged.hasStationFlow = true;
           } else {
-            // ถ้าไม่มี station flows ใน database ให้ใช้ roadmap เดิมจาก ERP
-            // ไม่ log เพราะมี ticket หลายตัวที่ยังไม่มี station flows (ปกติ)
-            // ตั้งสถานะเป็น Pending เพื่อให้รู้ว่าต้องรอ Admin เพิ่มสถานี
-            merged.status = "Pending";
-            merged.statusClass = "text-blue-600";
+            // ถ้าไม่มี station flows ให้ใช้ status จาก DB ถ้ามี (เช่น Finish)
+            // ไม่บังคับเป็น Pending ถ้า DB ตั้งสถานะไว้แล้ว
+            if (!merged.status || merged.status === "Pending") {
+              merged.status = dbTicket.status || "Pending";
+              merged.statusClass = getStatusClass(merged.status);
+            }
             merged.hasStationFlow = false;
           }
         }
@@ -2347,18 +2348,42 @@ export default function UITicket() {
             
             {/* แสดงผลตั๋วปกติสำหรับแท็บอื่นๆ - แสดงเฉพาะเมื่อไม่มี Item Code grouping */}
             {activeTab !== "open" && (() => {
-              // สำหรับแท็บ "ปิด" ให้แสดงตั๋วแบบปกติเฉพาะเมื่อไม่มี Item Code grouping
+              // สำหรับแท็บ "ปิด" แสดงตั๋วที่ไม่อยู่ใน grouped view (orphan tickets)
               if (activeTab === "closed") {
-                const hasGroupedClosedTickets = groupedByItemWithFlows.some(g => {
-                  const closedTickets = g.items.filter(ticket => ticket.status === "Finish");
-                  return closedTickets.length > 0;
-                });
-                
-                if (hasGroupedClosedTickets) {
-                  return null; // ไม่แสดงตั๋วแบบปกติเพราะมี Item Code grouping แล้ว
+                const groupedIds = new Set(closedTicketsFromGrouped.map(t => t.id || t.rpd));
+                const orphanClosedTickets = closedTickets.filter(t => !groupedIds.has(t.id || t.rpd));
+
+                // ถ้ามี grouped และไม่มี orphan → ซ่อน individual display
+                if (closedTicketsFromGrouped.length > 0 && orphanClosedTickets.length === 0) {
+                  return null;
                 }
+
+                // ถ้ามี orphan tickets (ไม่ว่าจะมี grouped หรือไม่) → แสดง orphan
+                if (orphanClosedTickets.length > 0) {
+                  return orphanClosedTickets.map((t, i) => (
+                    <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
+                      <TicketCard
+                        ticket={t}
+                        onEdit={handleEdit}
+                        onDelete={handleRequestDelete}
+                        ticketBomStatus={ticketBomStatus}
+                        ticketAssignmentStatus={ticketAssignmentStatus}
+                        projectMapByItemCode={projectMapByItemCode}
+                      />
+                    </div>
+                  ));
+                }
+
+                // ถ้าไม่มีทั้ง grouped และ orphan → แสดง empty state
+                return (
+                  <div className="text-center py-8">
+                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">{currentTab.emptyMessage}</p>
+                    <p className="text-xs text-gray-400">{currentTab.emptySubMessage}</p>
+                  </div>
+                );
               }
-              
+
               // แสดงตั๋วแบบปกติเมื่อไม่มี Item Code grouping
               if (currentTab.data.length === 0) {
                 return (
@@ -2369,7 +2394,7 @@ export default function UITicket() {
                   </div>
                 );
               }
-              
+
               return currentTab.data.map((t, i) => (
                 <div key={t.id} className="animate-fadeInUpSmall" style={{ animationDelay: `${0.06 * (i + 1)}s` }}>
                   <TicketCard
