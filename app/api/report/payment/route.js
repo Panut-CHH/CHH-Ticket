@@ -64,7 +64,7 @@ export async function POST(request) {
       user_id
     } = body || {};
 
-    if (!['confirm', 'cancel', 'revert'].includes(action)) {
+    if (!['confirm', 'cancel', 'revert', 'pending'].includes(action)) {
       return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
     }
 
@@ -96,6 +96,29 @@ export async function POST(request) {
       payment_date: payment_date ? new Date(payment_date).toISOString() : new Date().toISOString(),
       payment_round: paymentRound
     };
+
+    if (action === 'pending') {
+      const payload = {
+        ...baseRecord,
+        status: 'pending',
+        paid_by: null,
+        cancelled_by: null
+      };
+      const { data, error } = await supabaseAdmin
+        .from('technician_payments')
+        .upsert(payload, {
+          onConflict: 'ticket_no,station_id,step_order,technician_id,payment_round'
+        })
+        .select()
+        .maybeSingle();
+
+      if (error) {
+        console.error('[REPORT PAYMENT] pending error:', error);
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+
+      return NextResponse.json({ success: true, data });
+    }
 
     if (action === 'confirm') {
       const payload = {

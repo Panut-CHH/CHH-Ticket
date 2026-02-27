@@ -8,7 +8,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
-import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package } from "lucide-react";
+import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package, Printer, Clock, Pencil } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
 
 /** เซลล์ชื่อ Project: บรรทัดเดียว ตัดด้วย ... ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal tooltip) */
@@ -383,6 +383,7 @@ export default function ReportPage() {
               quantity: qty,
               unit: "ชิ้น",
               pricePerUnit: pricePerUnit,
+              priceType: priceType,
               totalPrice: total,
               round: paidRecord?.payment_round || roundFromCompleted,
               completedAt: flow.completed_at,
@@ -409,6 +410,7 @@ export default function ReportPage() {
             quantity: qty,
             unit: "ชิ้น",
             pricePerUnit: pricePerUnit,
+            priceType: priceType,
             totalPrice: total,
             round: paidRecord?.payment_round || roundFromCompleted,
             completedAt: flow.completed_at,
@@ -537,7 +539,12 @@ export default function ReportPage() {
   };
 
   const unpaidRows = useMemo(() => {
-    const base = rows.filter((r) => r.paymentStatus !== "paid" && r.paymentStatus !== "cancelled");
+    const base = rows.filter((r) => r.paymentStatus === "unpaid");
+    return filterAndSort(base);
+  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+
+  const pendingRows = useMemo(() => {
+    const base = rows.filter((r) => r.paymentStatus === "pending");
     return filterAndSort(base);
   }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
 
@@ -553,9 +560,10 @@ export default function ReportPage() {
 
   const currentTabRows = useMemo(() => {
     if (activeTab === "unpaid") return unpaidRows;
+    if (activeTab === "pending") return pendingRows;
     if (activeTab === "paid") return paidRows;
     return cancelledRows;
-  }, [activeTab, unpaidRows, paidRows, cancelledRows]);
+  }, [activeTab, unpaidRows, pendingRows, paidRows, cancelledRows]);
 
   const summary = useMemo(() => {
     const count = currentTabRows.length;
@@ -565,6 +573,8 @@ export default function ReportPage() {
   }, [currentTabRows]);
 
   const [actionLoadingKey, setActionLoadingKey] = useState(null);
+  const [editPriceModal, setEditPriceModal] = useState(null); // null | { row, price, priceType }
+  const [editPriceSaving, setEditPriceSaving] = useState(false);
 
   const handleAction = async (row, action) => {
     if (!canManage) return;
@@ -602,7 +612,15 @@ export default function ReportPage() {
         r.stepOrder === row.stepOrder &&
         r.technicianId === row.technicianId &&
         r.round === row.round;
-      if (action === "confirm") {
+      if (action === "pending") {
+        setRows((prev) =>
+          prev.map((r) =>
+            isSameRow(r)
+              ? { ...r, paymentStatus: "pending", paymentRecord: { ...(r.paymentRecord || {}), status: "pending", payment_round: row.round } }
+              : r
+          )
+        );
+      } else if (action === "confirm") {
         setRows((prev) =>
           prev.map((r) =>
             isSameRow(r)
@@ -610,7 +628,7 @@ export default function ReportPage() {
               : r
           )
         );
-        alert(language === "th" ? "ยืนยันการจ่ายแล้ว" : "Payment confirmed");
+        alert(language === "th" ? "จ่ายเงินสำเร็จ" : "Payment confirmed");
       } else if (action === "cancel") {
         setRows((prev) =>
           prev.map((r) =>
@@ -636,6 +654,114 @@ export default function ReportPage() {
       setActionLoadingKey(null);
     }
   };
+
+  const handlePrint = useCallback((printData, tabLabel) => {
+    const printSummary = {
+      count: printData.length,
+      totalAmount: printData.reduce((s, r) => s + (Number(r.totalPrice) || 0), 0),
+      totalQty: printData.reduce((s, r) => s + (Number(r.quantity) || 0), 0),
+    };
+    const rowsHtml = printData.map((row) => `
+      <tr>
+        <td>${row.ticketNo}</td>
+        <td>${row.technicianName}</td>
+        <td>${row.stationName}</td>
+        <td>${row.projectName}</td>
+        <td>${formatQcCompletedAt(row.qcCompletedAt)}</td>
+        <td style="text-align:center">${row.quantity}</td>
+        <td style="text-align:right">${Number(row.pricePerUnit).toLocaleString()} บาท</td>
+        <td style="text-align:right;font-weight:600">${Number(row.totalPrice).toLocaleString()} บาท</td>
+      </tr>
+    `).join('');
+    const html = `<!DOCTYPE html>
+<html lang="th"><head><meta charset="utf-8"><title>${tabLabel}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+  body{font-family:'Sarabun',sans-serif;font-size:12px;color:#000;padding:16px;}
+  h2{margin:0 0 10px;font-size:16px;font-weight:700;}
+  table{width:100%;border-collapse:collapse;margin-bottom:16px;}
+  th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top;}
+  th{background:#f3f4f6;font-weight:600;text-align:left;}
+  tr:nth-child(even){background:#fafafa;}
+  .summary{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .summary-item{border:1px solid #ddd;padding:8px 16px;border-radius:4px;min-width:140px;}
+  .summary-item .label{font-size:10px;color:#666;margin-bottom:2px;}
+  .summary-item .value{font-size:16px;font-weight:700;}
+  @media print{@page{margin:16mm;size:A4 landscape;}}
+</style>
+</head><body>
+<h2>${tabLabel}</h2>
+<div class="summary">
+  <div class="summary-item">
+    <div class="label">จำนวนรายการ</div>
+    <div class="value">${printSummary.count.toLocaleString()} รายการ</div>
+  </div>
+  <div class="summary-item">
+    <div class="label">ยอดรวม</div>
+    <div class="value">${printSummary.totalAmount.toLocaleString()} บาท</div>
+  </div>
+  <div class="summary-item">
+    <div class="label">จำนวนชิ้น</div>
+    <div class="value">${printSummary.totalQty.toLocaleString()} ชิ้น</div>
+  </div>
+</div>
+<table>
+  <thead><tr>
+    <th>No.</th><th>ช่าง</th><th>สถานี</th><th>Project</th>
+    <th>QC เสร็จเมื่อ</th><th style="text-align:center">จำนวน</th>
+    <th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">ยอดรวม</th>
+  </tr></thead>
+  <tbody>${rowsHtml}</tbody>
+</table>
+</body></html>`;
+    const w = window.open('', '_blank', 'width=1200,height=800');
+    if (!w) { alert('กรุณาอนุญาต popup ในเบราว์เซอร์'); return; }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => { w.print(); }, 500);
+  }, []);
+
+  const handleUpdatePrice = useCallback(async () => {
+    if (!editPriceModal) return;
+    const { row, price, priceType } = editPriceModal;
+    const newPrice = Number(price);
+    if (isNaN(newPrice) || newPrice < 0) {
+      alert(language === "th" ? "กรุณาระบุราคาที่ถูกต้อง" : "Please enter a valid price");
+      return;
+    }
+    setEditPriceSaving(true);
+    try {
+      const res = await fetch("/api/report/flow-price", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ticket_no: row.ticketNo,
+          station_id: row.stationId,
+          step_order: row.stepOrder,
+          price: newPrice,
+          price_type: priceType,
+          user_id: user?.id
+        })
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || !json.success) throw new Error(json.error || "Request failed");
+      // อัปเดต local state — ทุก row ที่ใช้ ticket+station+step เดิม (อาจมีหลายช่าง)
+      setRows((prev) =>
+        prev.map((r) => {
+          if (r.ticketNo !== row.ticketNo || r.stationId !== row.stationId || r.stepOrder !== row.stepOrder) return r;
+          const newTotal = priceType === "per_piece" ? newPrice * r.quantity : newPrice;
+          return { ...r, pricePerUnit: newPrice, priceType, totalPrice: newTotal };
+        })
+      );
+      setEditPriceModal(null);
+    } catch (e) {
+      console.error("[FLOW PRICE] update error:", e);
+      alert(e?.message || "ไม่สามารถอัปเดตราคาได้");
+    } finally {
+      setEditPriceSaving(false);
+    }
+  }, [editPriceModal, user?.id, language]);
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -739,13 +865,25 @@ export default function ReportPage() {
                             <button
                               type="button"
                               onClick={() => {
-                                handleAction(row, "confirm");
+                                setEditPriceModal({ row, price: String(row.pricePerUnit), priceType: row.priceType || "flat" });
                                 setOpenActionsKey(null);
                               }}
-                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-sky-50 dark:hover:bg-sky-900/30"
                             >
-                              <CheckCircle className="w-4 h-4 text-emerald-600" />
-                              {t("confirmPayment", language)}
+                              <Pencil className="w-4 h-4 text-sky-500" />
+                              {language === "th" ? "แก้ไขราคา" : "Edit price"}
+                            </button>
+                            <div className="my-0.5 mx-3 border-t border-gray-100 dark:border-slate-700" />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "pending");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/30"
+                            >
+                              <Clock className="w-4 h-4 text-amber-500" />
+                              {language === "th" ? "ยืนยันการจ่าย" : "Confirm payment"}
                             </button>
                             <button
                               type="button"
@@ -757,6 +895,32 @@ export default function ReportPage() {
                             >
                               <XCircle className="w-4 h-4" />
                               {t("cancelPayment", language)}
+                            </button>
+                          </>
+                        )}
+                        {tabType === "pending" && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "confirm");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/30"
+                            >
+                              <CheckCircle className="w-4 h-4 text-emerald-600" />
+                              {language === "th" ? "จ่ายแล้ว" : "Mark as paid"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleAction(row, "cancel");
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30"
+                            >
+                              <XCircle className="w-4 h-4" />
+                              {language === "th" ? "ยกเลิกจ่าย" : "Cancel payment"}
                             </button>
                           </>
                         )}
@@ -875,6 +1039,129 @@ export default function ReportPage() {
             </div>,
             document.body
           )}
+        {editPriceModal &&
+          createPortal(
+            <div
+              className="fixed inset-0 z-[9997] flex items-center justify-center bg-black/50 p-4"
+              onClick={() => { if (!editPriceSaving) setEditPriceModal(null); }}
+              role="dialog"
+              aria-modal="true"
+            >
+              <div
+                className="relative w-full max-w-sm rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-600 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <Pencil className="w-4 h-4 text-sky-500" />
+                    <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      {language === "th" ? "แก้ไขราคาค่าแรง" : "Edit labor price"}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditPriceModal(null)}
+                    disabled={editPriceSaving}
+                    className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {/* Body */}
+                <div className="px-4 py-4 space-y-4">
+                  {/* Info */}
+                  <div className="text-xs text-gray-500 dark:text-gray-400 space-y-0.5">
+                    <div><span className="font-medium">{language === "th" ? "ตั๋ว" : "Ticket"}:</span> {editPriceModal.row.ticketNo}</div>
+                    <div><span className="font-medium">{language === "th" ? "สถานี" : "Station"}:</span> {editPriceModal.row.stationName}</div>
+                    <div><span className="font-medium">{language === "th" ? "ช่าง" : "Tech"}:</span> {editPriceModal.row.technicianName}</div>
+                    <div className="pt-1 text-amber-600 dark:text-amber-400 text-xs">
+                      ⚠️ {language === "th" ? "การแก้ไขนี้จะ sync ไปยังหน้า production และ ticket ด้วย" : "This change will sync to production and ticket pages"}
+                    </div>
+                  </div>
+                  {/* Price type */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      {language === "th" ? "ประเภทราคา" : "Price type"}
+                    </label>
+                    <select
+                      value={editPriceModal.priceType}
+                      onChange={(e) => setEditPriceModal((m) => ({ ...m, priceType: e.target.value }))}
+                      disabled={editPriceSaving}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    >
+                      <option value="flat">{language === "th" ? "ราคาเหมา (รวมทุกชิ้น)" : "Flat rate (all pieces)"}</option>
+                      <option value="per_piece">{language === "th" ? "ราคาต่อชิ้น" : "Per piece"}</option>
+                    </select>
+                  </div>
+                  {/* Price input */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      {editPriceModal.priceType === "per_piece"
+                        ? (language === "th" ? "ราคาต่อชิ้น (บาท)" : "Price per piece (THB)")
+                        : (language === "th" ? "ราคาเหมา (บาท)" : "Flat price (THB)")}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={editPriceModal.price}
+                      onChange={(e) => setEditPriceModal((m) => ({ ...m, price: e.target.value }))}
+                      disabled={editPriceSaving}
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-700 border border-gray-200 dark:border-slate-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      autoFocus
+                      onKeyDown={(e) => { if (e.key === "Enter") handleUpdatePrice(); }}
+                    />
+                  </div>
+                  {/* Preview */}
+                  {editPriceModal.price !== "" && !isNaN(Number(editPriceModal.price)) && (
+                    <div className="rounded-lg bg-gray-50 dark:bg-slate-700/50 px-3 py-2 text-xs space-y-1">
+                      <div className="flex justify-between text-gray-600 dark:text-gray-400">
+                        <span>{language === "th" ? "จำนวน" : "Qty"}</span>
+                        <span>{editPriceModal.row.quantity} {language === "th" ? "ชิ้น" : "pcs"}</span>
+                      </div>
+                      <div className="flex justify-between font-semibold text-gray-800 dark:text-gray-100">
+                        <span>{language === "th" ? "ยอดรวมใหม่" : "New total"}</span>
+                        <span>
+                          {(editPriceModal.priceType === "per_piece"
+                            ? Number(editPriceModal.price) * editPriceModal.row.quantity
+                            : Number(editPriceModal.price)
+                          ).toLocaleString()} {language === "th" ? "บาท" : "THB"}
+                        </span>
+                      </div>
+                      {editPriceModal.row.pricePerUnit !== Number(editPriceModal.price) && (
+                        <div className="flex justify-between text-gray-400 line-through text-xs">
+                          <span>{language === "th" ? "ยอดเดิม" : "Old total"}</span>
+                          <span>{editPriceModal.row.totalPrice.toLocaleString()} {language === "th" ? "บาท" : "THB"}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {/* Footer */}
+                <div className="flex gap-2 px-4 pb-4">
+                  <button
+                    type="button"
+                    onClick={() => setEditPriceModal(null)}
+                    disabled={editPriceSaving}
+                    className="flex-1 px-3 py-2 rounded-lg border border-gray-200 dark:border-slate-600 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 disabled:opacity-50"
+                  >
+                    {language === "th" ? "ยกเลิก" : "Cancel"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleUpdatePrice}
+                    disabled={editPriceSaving || editPriceModal.price === "" || isNaN(Number(editPriceModal.price))}
+                    className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {editPriceSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pencil className="w-4 h-4" />}
+                    {language === "th" ? "บันทึก" : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )}
         <div className="min-h-screen container-safe px-3 sm:px-4 md:px-6 lg:px-8 py-6 space-y-4 max-w-full overflow-x-auto">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
@@ -899,7 +1186,7 @@ export default function ReportPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 border-b border-gray-200 dark:border-slate-700 pb-2">
+          <div className="flex items-center gap-2 border-b border-gray-200 dark:border-slate-700 pb-2 flex-wrap">
             <button
               onClick={() => setActiveTab("unpaid")}
               className={`px-3 py-2 text-sm font-medium rounded-lg ${
@@ -909,6 +1196,21 @@ export default function ReportPage() {
               }`}
             >
               {t("unpaidItems", language)}
+            </button>
+            <button
+              onClick={() => setActiveTab("pending")}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg ${
+                activeTab === "pending"
+                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+              }`}
+            >
+              {language === "th" ? "ยืนยันการจ่าย" : "Pending payment"}
+              {pendingRows.length > 0 && (
+                <span className="inline-flex items-center justify-center w-5 h-5 text-xs font-bold rounded-full bg-amber-500 text-white">
+                  {pendingRows.length}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setActiveTab("paid")}
@@ -924,7 +1226,7 @@ export default function ReportPage() {
               onClick={() => setActiveTab("cancelled")}
               className={`px-3 py-2 text-sm font-medium rounded-lg ${
                 activeTab === "cancelled"
-                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                  ? "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
                   : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
               }`}
             >
@@ -1098,11 +1400,41 @@ export default function ReportPage() {
             </div>
           ) : activeTab === "unpaid" ? (
             renderTable(unpaidRows, "unpaid", { showProjectTooltip, hideProjectTooltip })
+          ) : activeTab === "pending" ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <Clock className="w-4 h-4 text-amber-500" />
+                  {language === "th" ? "รายการรอยืนยันการจ่าย — กด \"จ่ายแล้ว\" เพื่อยืนยัน หรือ \"ยกเลิกจ่าย\" เพื่อยกเลิก" : "Items pending payment — confirm or cancel each item"}
+                </div>
+                {pendingRows.length > 0 && (
+                  <button
+                    onClick={() => handlePrint(pendingRows, language === "th" ? "ยืนยันการจ่าย" : "Pending Payment")}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0"
+                  >
+                    <Printer className="w-4 h-4" />
+                    {language === "th" ? "สั่งพิมพ์" : "Print"}
+                  </button>
+                )}
+              </div>
+              {renderTable(pendingRows, "pending", { showProjectTooltip, hideProjectTooltip })}
+            </div>
           ) : activeTab === "paid" ? (
             <div className="space-y-3">
-              <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                <Calendar className="w-4 h-4" />
-                {language === "th" ? "แสดงรายการจ่ายแล้ว" : "Showing paid items"}
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                  <Calendar className="w-4 h-4" />
+                  {language === "th" ? "แสดงรายการจ่ายแล้ว" : "Showing paid items"}
+                </div>
+                {paidRows.length > 0 && (
+                  <button
+                    onClick={() => handlePrint(paidRows, language === "th" ? "จ่ายแล้ว" : "Paid")}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-slate-600 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700 shrink-0"
+                  >
+                    <Printer className="w-4 h-4" />
+                    {language === "th" ? "สั่งพิมพ์" : "Print"}
+                  </button>
+                )}
               </div>
               {renderTable(paidRows, "paid", { showProjectTooltip, hideProjectTooltip })}
             </div>
