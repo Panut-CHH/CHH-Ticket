@@ -843,6 +843,7 @@ export default function ReportPage() {
             <SortableHeader sortKey="quantity" className="px-3">จำนวน</SortableHeader>
             <SortableHeader sortKey="pricePerUnit" className="px-3">ราคา/หน่วย</SortableHeader>
             <SortableHeader sortKey="totalPrice" className="px-3">รวม</SortableHeader>
+            <th className="w-8 py-3"></th>
             <th className="pl-3 pr-4 py-3 text-right">Actions</th>
           </tr>
         </thead>
@@ -868,6 +869,16 @@ export default function ReportPage() {
               <td className="px-3 py-3 text-gray-900 dark:text-gray-100 font-semibold">
                 {row.totalPrice.toLocaleString()}
               </td>
+              <td className="py-3 text-center">
+                <button
+                  type="button"
+                  onClick={() => openPlanModal(row)}
+                  className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-400 hover:text-sky-500 dark:hover:text-sky-400 transition-colors"
+                  title={language === "th" ? "แสดงภาพแปลน" : "View plan"}
+                >
+                  <ImageIcon className="w-4 h-4" />
+                </button>
+              </td>
               <td className="pl-3 pr-4 py-3 text-right">
                 {canManage ? (
                   <div className="report-actions-dropdown relative flex justify-end">
@@ -890,14 +901,6 @@ export default function ReportPage() {
                     </button>
                     {openActionsKey === rowKey && (
                       <div className="absolute right-0 top-full z-10 mt-1 min-w-[180px] rounded-lg border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 py-1 shadow-lg">
-                        <button
-                          type="button"
-                          onClick={() => openPlanModal(row)}
-                          className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
-                        >
-                          <ImageIcon className="w-4 h-4 shrink-0 text-slate-600 dark:text-slate-400" />
-                          {language === "th" ? "แสดงภาพแปลน" : "View plan"}
-                        </button>
                         {tabType === "unpaid" && (
                           <>
                             <button
@@ -1006,7 +1009,7 @@ export default function ReportPage() {
           })}
           {data.length === 0 && (
             <tr>
-              <td colSpan={9} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              <td colSpan={11} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                 {t("noData", language)}
               </td>
             </tr>
