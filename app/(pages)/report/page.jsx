@@ -944,6 +944,18 @@ export default function ReportPage() {
                             <button
                               type="button"
                               onClick={() => {
+                                setEditPriceModal({ row, price: String(row.pricePerUnit), priceType: row.priceType || "flat" });
+                                setOpenActionsKey(null);
+                              }}
+                              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-sky-50 dark:hover:bg-sky-900/30"
+                            >
+                              <Pencil className="w-4 h-4 text-sky-500" />
+                              {language === "th" ? "แก้ไขราคา" : "Edit price"}
+                            </button>
+                            <div className="my-0.5 mx-3 border-t border-gray-100 dark:border-slate-700" />
+                            <button
+                              type="button"
+                              onClick={() => {
                                 handleAction(row, "confirm");
                                 setOpenActionsKey(null);
                               }}
