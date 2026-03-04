@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -26,7 +26,8 @@ import {
   Save,
   Pencil,
   DollarSign,
-  CheckCircle
+  CheckCircle,
+  Search
 } from "lucide-react";
 import Modal from "@/components/Modal";
 
@@ -111,6 +112,9 @@ export default function UIProjectDetail({ projectId }) {
   const [isAddingUnit, setIsAddingUnit] = useState(false);
   const [addUnitError, setAddUnitError] = useState('');
 
+  // Search state for items/files in this project folder
+  const [searchTerm, setSearchTerm] = useState("");
+
   // Toast state
   const [toast, setToast] = useState({ open: false, type: "info", message: "" });
   const showToast = (message, type = "info", timeoutMs = 3000) => {
@@ -119,6 +123,27 @@ export default function UIProjectDetail({ projectId }) {
       setTimeout(() => setToast((t) => ({ ...t, open: false })), timeoutMs);
     }
   };
+
+  // Filter item codes/files by search term
+  const filteredItemCodes = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return itemCodes;
+
+    return itemCodes.filter((item) => {
+      const code = (item.item_code || "").toLowerCase();
+      const name = (item.item_name || "").toLowerCase();
+      const filesText = (item.files || [])
+        .map((f) => f.file_name || f.file_path || "")
+        .join(" ")
+        .toLowerCase();
+
+      return (
+        code.includes(q) ||
+        name.includes(q) ||
+        filesText.includes(q)
+      );
+    });
+  }, [itemCodes, searchTerm]);
 
   // Load project data
   useEffect(() => {
@@ -1038,6 +1063,20 @@ export default function UIProjectDetail({ projectId }) {
               </div>
         </div>
 
+        {/* Search within this project/folder */}
+        <div className="mb-4">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={language === "th" ? "ค้นหาในโฟลเดอร์นี้ (Item Code / ชื่อไฟล์)..." : "Search in this folder (Item code / file name)..."}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm sm:text-base"
+            />
+          </div>
+        </div>
+
         {/* Item Codes List */}
         <div className="space-y-4">
           {itemCodes.length === 0 ? (
@@ -1052,8 +1091,15 @@ export default function UIProjectDetail({ projectId }) {
                 {t('addItemCode', language)}
                     </button>
               </div>
+          ) : filteredItemCodes.length === 0 ? (
+            <div className="bg-white dark:bg-slate-800 rounded-xl p-8 sm:p-10 border border-slate-200 dark:border-slate-700 text-center">
+              <FolderDown className="w-10 h-10 sm:w-12 sm:h-12 mx-auto mb-4 text-gray-400 opacity-60" />
+              <p className="text-sm sm:text-base text-gray-600 dark:text-gray-400 break-words">
+                {language === "th" ? "ไม่พบรายการที่ตรงกับการค้นหาในโฟลเดอร์นี้" : "No items match your search in this folder."}
+              </p>
+            </div>
           ) : (
-            itemCodes.map((item) => (
+            filteredItemCodes.map((item) => (
               <div key={item.id} className="relative pl-6">
                 {/* Vertical guide line indicating parent folder */}
                 <div className="pointer-events-none absolute left-3 top-0 bottom-0 w-px bg-emerald-500/30" />
