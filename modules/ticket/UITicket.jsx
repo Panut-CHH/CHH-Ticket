@@ -26,7 +26,12 @@ export default function UITicket() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('ticketSearchTerm') || "";
+    }
+    return "";
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -38,14 +43,33 @@ export default function UITicket() {
   const [projectMapByItemCode, setProjectMapByItemCode] = useState(new Map());
   const [expandedItems, setExpandedItems] = useState(new Set());
   // Filters
-  const [showFilter, setShowFilter] = useState(false);
+  const [showFilter, setShowFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem('ticketShowFilter') === 'true';
+    }
+    return false;
+  });
   const [selectedStatuses, setSelectedStatuses] = useState(new Set());
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
   const [selectedItemCodes, setSelectedItemCodes] = useState(new Set());
+  const [assignmentFilter, setAssignmentFilter] = useState("all"); // "all" | "assigned" | "unassigned"
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+
+  // Persist search term and filter panel state to sessionStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('ticketSearchTerm', searchTerm);
+    }
+  }, [searchTerm]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('ticketShowFilter', showFilter ? 'true' : 'false');
+    }
+  }, [showFilter]);
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
@@ -1269,6 +1293,12 @@ export default function UITicket() {
     if (hasDueDateOnly && !t.dueDate) return false;
     // Item code filter
     if (selectedItemCodes.size > 0 && !selectedItemCodes.has(t.itemCode)) return false;
+    // Assignment filter
+    if (assignmentFilter === "assigned") {
+      if (!t.assignee || t.assignee === '-') return false;
+    } else if (assignmentFilter === "unassigned") {
+      if (t.assignee && t.assignee !== '-') return false;
+    }
     return true;
   };
 
@@ -1278,8 +1308,9 @@ export default function UITicket() {
     if (selectedPriorities.size > 0) count += 1;
     if (hasDueDateOnly) count += 1;
     if (selectedItemCodes.size > 0) count += 1;
+    if (assignmentFilter !== "all") count += 1;
     return count;
-  }, [selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
+  }, [selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes, assignmentFilter]);
 
   const matchSearch = (t) => {
     if (!searchTerm) return true;
@@ -1306,7 +1337,7 @@ export default function UITicket() {
     const opens = filtered.filter((t) => t.status !== "Finish");
     const closed = filtered.filter((t) => t.status === "Finish");
     return { openTickets: opens, closedTickets: closed };
-  }, [tickets, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
+  }, [tickets, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes, assignmentFilter]);
 
   // Merge station flows เข้ากับ tickets ใน groupedByItem
   const groupedByItemWithFlows = useMemo(() => {
@@ -1426,7 +1457,7 @@ export default function UITicket() {
         .filter(filterPredicate);
       return total + filteredItems.length;
     }, 0);
-  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
+  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes, assignmentFilter]);
 
   // คำนวณตั๋วที่ปิดจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
   const closedTicketsFromGrouped = useMemo(() => {
@@ -1444,7 +1475,7 @@ export default function UITicket() {
         (ticket.description || "").toLowerCase().includes(q)
       );
     });
-  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes]);
+  }, [groupedByItemWithFlows, searchTerm, selectedStatuses, selectedPriorities, hasDueDateOnly, selectedItemCodes, assignmentFilter]);
 
   // กำหนด tabs
   const tabs = [
@@ -1899,7 +1930,7 @@ export default function UITicket() {
         </div>
         {showFilter && (
           <div className="mt-3 p-3 sm:p-4 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-lg animate-fadeInDown">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
               {/* Status filter */}
               <div>
                 <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'สถานะ' : 'Status'}</div>
@@ -1948,6 +1979,25 @@ export default function UITicket() {
                   <span>{language === 'th' ? 'แสดงเฉพาะที่มีวันกำหนดส่ง' : 'Only with due date'}</span>
                 </label>
               </div>
+              {/* Assignment filter */}
+              <div>
+                <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">{language === 'th' ? 'การมอบหมายงาน' : 'Assignment'}</div>
+                {[
+                  { value: "all", label: language === 'th' ? 'ทั้งหมด' : 'All' },
+                  { value: "assigned", label: language === 'th' ? 'มอบหมายแล้ว' : 'Assigned' },
+                  { value: "unassigned", label: language === 'th' ? 'ยังไม่มอบหมาย' : 'Not Assigned' },
+                ].map(opt => (
+                  <label key={opt.value} className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 mb-1">
+                    <input
+                      type="radio"
+                      name="assignmentFilter"
+                      checked={assignmentFilter === opt.value}
+                      onChange={() => setAssignmentFilter(opt.value)}
+                    />
+                    <span>{opt.label}</span>
+                  </label>
+                ))}
+              </div>
               {/* Item code filter */}
               <div>
                 <div className="text-xs font-semibold mb-2 text-gray-700 dark:text-gray-300">Item Code</div>
@@ -1985,6 +2035,7 @@ export default function UITicket() {
                   setSelectedPriorities(new Set());
                   setHasDueDateOnly(false);
                   setSelectedItemCodes(new Set());
+                  setAssignmentFilter("all");
                 }}
               >
                 {language === 'th' ? 'ล้างค่า' : 'Clear'}
