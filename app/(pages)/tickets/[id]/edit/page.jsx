@@ -205,6 +205,7 @@ export default function EditTicketPage() {
             projectCode: ticket.projects?.item_code,
             projectName: ticket.projects?.project_name,
             quantity: ticket.quantity || 0,
+            unit: ticket.unit || 'ชิ้น',
             dueDate: ticket.due_date || "",
             description: ticket.description || "",
             description2: ticket.description_2 || "",
@@ -1255,9 +1256,9 @@ const STATION_PRESETS = {
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
               <div>
-                <label className="text-sm text-blue-600 dark:text-blue-400 mb-1 block font-medium">จำนวนชิ้น</label>
+                <label className="text-sm text-blue-600 dark:text-blue-400 mb-1 block font-medium">จำนวน</label>
                 <div className="bg-white dark:bg-slate-800 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2 text-gray-900 dark:text-gray-100">
-                  {ticketView.quantity} ชิ้น
+                  {ticketView.quantity} {ticketView.unit || 'ชิ้น'}
                 </div>
               </div>
               <div>
@@ -1325,7 +1326,7 @@ const STATION_PRESETS = {
         {/* Priority & Customer Section - แก้ไขได้เพราะไม่ได้มาจาก ERP */}
         <div className="mb-6">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">การตั้งค่าเพิ่มเติม</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">ระดับความสำคัญ</label>
                   <div className="relative">
@@ -1341,6 +1342,17 @@ const STATION_PRESETS = {
                     <ChevronDown className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
                   </div>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ระดับความสำคัญสามารถแก้ไขได้</p>
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">หน่วยนับ</label>
+              <input
+                type="text"
+                value={ticketView?.unit ?? ''}
+                onChange={(e) => setTicketView(prev => ({ ...prev, unit: e.target.value }))}
+                className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                placeholder="เช่น ชิ้น, แผ่น, ชุด, ตัว"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">กำหนดหน่วยนับของตั๋วนี้</p>
             </div>
             <div>
               <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">ชื่อลูกค้า / บริษัท</label>

@@ -658,11 +658,11 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
           )}
           <div>ผู้รับผิดชอบ: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.assignee}</span></div>
           {typeof ticket.quantity === 'number' ? (
-            <div>จำนวนที่ต้องผลิต: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.quantity.toLocaleString()} ชิ้น</span></div>
+            <div>จำนวนที่ต้องผลิต: <span className="font-medium text-gray-800 dark:text-gray-200">{ticket.quantity.toLocaleString()} {ticket.unit || 'ชิ้น'}</span></div>
           ) : null}
           {(ticket.totalDefectCount || 0) > 0 ? (
             <div className="text-amber-600 dark:text-amber-400 font-medium">
-              มี defect ไปแล้ว: <span>{ticket.totalDefectCount.toLocaleString()} ชิ้น</span>
+              มี defect ไปแล้ว: <span>{ticket.totalDefectCount.toLocaleString()} {ticket.unit || 'ชิ้น'}</span>
             </div>
           ) : null}
         </div>
@@ -708,7 +708,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 {ticket.projectDoc.file_type !== 'pdf' && typeof ticket.quantity === 'number' && ticket.quantity > 0 && (
                   <div className="absolute top-3 left-3 z-10 px-3 py-1.5 bg-blue-600/90 text-white rounded-md shadow-lg backdrop-blur-sm">
                     <div className="text-sm font-semibold">
-                      จำนวนที่ต้องผลิต: <span className="font-bold">{ticket.quantity.toLocaleString()}</span> ชิ้น
+                      จำนวนที่ต้องผลิต: <span className="font-bold">{ticket.quantity.toLocaleString()}</span> {ticket.unit || 'ชิ้น'}
                     </div>
                   </div>
                 )}
@@ -919,7 +919,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                     {/* แสดงจำนวน defect เมื่อเป็น QC step ที่เสร็จแล้วและมี defect */}
                     {isQCStep && step.status === 'completed' && step.qc_task_uuid && ticket.defectCounts?.[step.qc_task_uuid] > 0 && (
                       <div className="mt-1 text-[11px] text-red-700 dark:text-red-400 font-medium">
-                        Defect: {ticket.defectCounts[step.qc_task_uuid]} ชิ้น
+                        Defect: {ticket.defectCounts[step.qc_task_uuid]} {ticket.unit || 'ชิ้น'}
                       </div>
                     )}
                     {!isQCStep && (
@@ -1243,6 +1243,7 @@ export default function ProductionDetailPage() {
           id: dbTicket.no,
           title: dbTicket.description || dbTicket.no,
           quantity: dbTicket.quantity || 0,
+          unit: dbTicket.unit || 'ชิ้น',
           itemCode: dbTicket.source_no || dbTicket.no,
           description: dbTicket.description || '',
           description2: dbTicket.description_2 || '',
@@ -1305,7 +1306,7 @@ export default function ProductionDetailPage() {
       try {
         const { data: ticketData, error: ticketError } = await supabase
           .from('ticket')
-          .select('no, priority, customer_name, quantity, initial_quantity, pass_quantity')
+          .select('no, priority, customer_name, quantity, initial_quantity, pass_quantity, unit')
           .eq('no', ticketId)
           .single();
         if (!ticketError && ticketData) {

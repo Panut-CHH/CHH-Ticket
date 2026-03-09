@@ -1039,7 +1039,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                     <p className="text-xs sm:text-sm">
                       <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
                       <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
-                        {(ticketData?.quantity ?? 0).toLocaleString()} ชิ้น
+                        {(ticketData?.quantity ?? 0).toLocaleString()} {ticketData?.unit || 'ชิ้น'}
                       </span>
                     </p>
                     <p className="text-xs sm:text-sm">

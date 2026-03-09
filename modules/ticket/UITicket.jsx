@@ -26,12 +26,7 @@ export default function UITicket() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
-  const [searchTerm, setSearchTerm] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('ticketSearchTerm') || "";
-    }
-    return "";
-  });
+  const [searchTerm, setSearchTerm] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [loadingInitial, setLoadingInitial] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
@@ -43,12 +38,7 @@ export default function UITicket() {
   const [projectMapByItemCode, setProjectMapByItemCode] = useState(new Map());
   const [expandedItems, setExpandedItems] = useState(new Set());
   // Filters
-  const [showFilter, setShowFilter] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('ticketShowFilter') === 'true';
-    }
-    return false;
-  });
+  const [showFilter, setShowFilter] = useState(false);
   const [selectedStatuses, setSelectedStatuses] = useState(new Set());
   const [selectedPriorities, setSelectedPriorities] = useState(new Set());
   const [hasDueDateOnly, setHasDueDateOnly] = useState(false);
@@ -58,25 +48,38 @@ export default function UITicket() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Persist search term and filter panel state to sessionStorage
+  // Restore search term and filter panel state from sessionStorage on mount
+  const mountedRef = React.useRef(false);
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('ticketSearchTerm', searchTerm);
+    if (!mountedRef.current) {
+      // First mount: restore from sessionStorage
+      const savedSearch = sessionStorage.getItem('ticketSearchTerm');
+      const savedFilter = sessionStorage.getItem('ticketShowFilter');
+      if (savedSearch) setSearchTerm(savedSearch);
+      if (savedFilter === 'true') setShowFilter(true);
+      // Mark as mounted after a tick so persist effects skip initial render
+      requestAnimationFrame(() => { mountedRef.current = true; });
     }
+  }, []);
+
+  // Persist to sessionStorage on change (skip until restored)
+  useEffect(() => {
+    if (!mountedRef.current) return;
+    sessionStorage.setItem('ticketSearchTerm', searchTerm);
   }, [searchTerm]);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      sessionStorage.setItem('ticketShowFilter', showFilter ? 'true' : 'false');
-    }
+    if (!mountedRef.current) return;
+    sessionStorage.setItem('ticketShowFilter', showFilter ? 'true' : 'false');
   }, [showFilter]);
 
   // โหลดรายการโปรเจ็คจาก Supabase เพื่อดึง RPD No. ที่เกี่ยวข้อง
   useEffect(() => {
     let active = true;
+    const isFirstLoad = refreshTrigger === 0;
     const loadProjectsAndErp = async () => {
       try {
-        setLoadingInitial(true);
+        if (isFirstLoad) setLoadingInitial(true);
         setErrorMessage("");
         // 1. ดึง projects (item_codes)
         const { data: projects, error: projectError } = await supabase
@@ -270,7 +273,8 @@ export default function UITicket() {
                 description_2: erpTicket.Description_2 || null,
                 status: 'Pending',
                 priority: 'Medium',
-                customer_name: erpTicket.Customer_Name || null
+                customer_name: erpTicket.Customer_Name || null,
+                unit: erpTicket.Unit_of_Measure || 'ชิ้น'
               };
               
               // ไม่ log debug เพราะสร้าง noise
@@ -355,7 +359,33 @@ export default function UITicket() {
               }
             }
           } else {
-            // ไม่ log เพราะมี ticket หลายตัวที่ already exists (ปกติ)
+            // Ticket มีอยู่แล้ว — sync quantity และ due_date จาก ERP ถ้าเปลี่ยน
+            const existingTicket = dbTicketMap.get(rpdNo);
+            const erpQuantity = Number(erpTicket.Quantity || 0);
+            const erpDueDate = erpTicket.Due_Date || erpTicket.Delivery_Date || erpTicket.Ending_Date || null;
+            const dbQuantity = existingTicket?.quantity || 0;
+            const dbDueDate = existingTicket?.due_date || null;
+
+            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate) {
+              try {
+                const updateData = {};
+                if (erpQuantity !== dbQuantity) updateData.quantity = erpQuantity;
+                if (erpDueDate !== dbDueDate) updateData.due_date = erpDueDate;
+
+                await supabase
+                  .from('ticket')
+                  .update(updateData)
+                  .eq('no', rpdNo);
+
+                // อัปเดต dbTicketMap ให้ตรงกับค่าใหม่
+                if (existingTicket) {
+                  Object.assign(existingTicket, updateData);
+                  dbTicketMap.set(rpdNo, existingTicket);
+                }
+              } catch (updateErr) {
+                console.error(`Error syncing ERP data for ${rpdNo}:`, updateErr);
+              }
+            }
           }
         }
         
@@ -381,13 +411,15 @@ export default function UITicket() {
               ...erpMapped,
               // บังคับใช้ชื่อโปรเจ็คจาก DB ถ้ามี (จะได้เป็น "Bristal Bangkok" แทน 00051)
               projectName: dbProjectName || erpMapped.projectName,
-              
+
               // ข้อมูลจาก DB (station flow, status, assignments)
               project_id: dbTicket?.project_id,
               status: dbTicket?.status || 'Pending',
               started_at: dbTicket?.started_at,
               finished_at: dbTicket?.finished_at,
-              
+              // ใช้หน่วยจาก DB เป็นหลัก (ผู้ใช้กำหนดเองได้)
+              unit: dbTicket?.unit || erpMapped.unit || 'ชิ้น',
+
               // Flags
               isNew: isNew,
               inDatabase: !!dbTicket
@@ -449,6 +481,7 @@ export default function UITicket() {
               quantity: typeof dbTicket.pass_quantity === 'number' && dbTicket.pass_quantity !== null
                 ? dbTicket.pass_quantity
                 : (dbTicket.quantity || 0),
+              unit: dbTicket.unit || 'ชิ้น',
               itemCode: itemCode,
               projectCode: itemCode || rpdNo,
               projectName: dbProjectName || dbTicket.description || rpdNo,
@@ -560,6 +593,7 @@ export default function UITicket() {
                   routeClass: "bg-blue-100 text-blue-800",
                   dueDate: "",
                   quantity: 0,
+                  unit: 'ชิ้น',
                   rpd: projectId,
                   itemCode: code,
                   projectCode: code,
@@ -648,6 +682,7 @@ export default function UITicket() {
             no: ticket.no,
             priority: ticket.priority === "High" ? "High Priority" : ticket.priority === "Low" ? "Low Priority" : "Medium Priority",
             customerName: ticket.customer_name,
+            unit: ticket.unit || null,
             stations: [], // เริ่มต้นเป็น array ว่าง - จะโหลดแยกทีหลัง
           }));
           setDbTickets(processed);
@@ -1038,6 +1073,7 @@ export default function UITicket() {
       
       if (dbTicket) {
         // ใช้ข้อมูลจาก database
+        if (dbTicket.unit) merged.unit = dbTicket.unit;
         if (dbTicket.customerName) merged.customerName = dbTicket.customerName;
         if (dbTicket.priority) {
           merged.priority = dbTicket.priority;
@@ -1254,6 +1290,7 @@ export default function UITicket() {
       routeClass: "bg-blue-100 text-blue-800",
       dueDate: dueDate || "",
       quantity: quantity || 0,
+      unit: rec?.Unit_of_Measure || 'ชิ้น',
       rpd: rpdNo,
       itemCode,
       projectCode,
@@ -1353,6 +1390,7 @@ export default function UITicket() {
         
         if (dbTicket) {
           // ใช้ข้อมูลจาก database
+          if (dbTicket.unit) merged.unit = dbTicket.unit;
           if (dbTicket.customerName) merged.customerName = dbTicket.customerName;
           if (dbTicket.priority) {
             merged.priority = dbTicket.priority;
@@ -1367,7 +1405,7 @@ export default function UITicket() {
               merged.priorityClass = "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
             }
           }
-          
+
           // หา station flows ที่เกี่ยวข้องกับ ticket นี้
           // เรียงลำดับตาม step_order เพื่อให้แน่ใจว่าได้ลำดับที่ถูกต้อง
           const ticketFlows = Array.isArray(dbStationFlows) 
@@ -1546,7 +1584,7 @@ export default function UITicket() {
                   })()}
                   </span>
                 <span className="inline-flex items-center gap-1 font-medium text-gray-700 dark:text-gray-300">
-                  จำนวน: {ticket.quantity} ชิ้น
+                  จำนวน: {ticket.quantity} {ticket.unit || 'ชิ้น'}
                 </span>
                 <span className="inline-flex items-center gap-1">
                   <Clock className="w-3 h-3" />
@@ -2163,7 +2201,8 @@ export default function UITicket() {
                                       : g.items.filter(ticket => ticket.status === "Finish");
                                     const relevantCount = relevantTickets.length;
                                     const totalQuantity = relevantTickets.reduce((sum, ticket) => sum + (Number(ticket.quantity) || 0), 0);
-                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${language === 'th' ? 'ชิ้น' : 'pcs'}` : ''}`;
+                                    const groupUnit = relevantTickets[0]?.unit || 'ชิ้น';
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${groupUnit}` : ''}`;
                                   })()}
                                 </span>
                                 {(() => {
@@ -2306,7 +2345,8 @@ export default function UITicket() {
                                       : g.items.filter(ticket => ticket.status === "Finish");
                                     const relevantCount = relevantTickets.length;
                                     const totalQuantity = relevantTickets.reduce((sum, ticket) => sum + (Number(ticket.quantity) || 0), 0);
-                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${language === 'th' ? 'ชิ้น' : 'pcs'}` : ''}`;
+                                    const groupUnit = relevantTickets[0]?.unit || 'ชิ้น';
+                                    return `${relevantCount} ${language === 'th' ? 'ตั๋ว' : 'tickets'}${totalQuantity > 0 ? ` • ${totalQuantity.toLocaleString()} ${groupUnit}` : ''}`;
                                   })()}
                                 </span>
                                 {(() => {

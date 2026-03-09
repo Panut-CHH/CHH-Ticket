@@ -262,7 +262,7 @@ export default function ProductionPage() {
         while (hasMore) {
           const { data: page, error: pageError } = await supabase
             .from('ticket')
-            .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status')
+            .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status, unit')
             .order('created_at', { ascending: false })
             .range(from, from + pageSize - 1);
           if (pageError) throw pageError;
@@ -390,7 +390,8 @@ export default function ProductionPage() {
           stations: [],
           roadmap: [],
           customerName: t.customer_name || '',
-          storeStatus: t.store_status || null
+          storeStatus: t.store_status || null,
+          unit: t.unit || 'ชิ้น'
         };
       });
       
@@ -1590,11 +1591,11 @@ export default function ProductionPage() {
               <span>
                 {language === 'th' ? 'จำนวน:' : 'Qty:'}{' '}
                 <span className="font-medium text-gray-800 dark:text-gray-200">
-                  {ticket.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'}
+                  {ticket.quantity} {ticket.unit || 'ชิ้น'}
                 </span>
                 {(ticket.totalDefectCount || 0) > 0 && (
                   <span className="ml-1.5 text-amber-600 dark:text-amber-400 text-[11px] sm:text-xs">
-                    ({language === 'th' ? 'มี defect' : 'defect'}{' '}{ticket.totalDefectCount} {language === 'th' ? 'ชิ้น' : 'pcs'})
+                    ({language === 'th' ? 'มี defect' : 'defect'}{' '}{ticket.totalDefectCount} {ticket.unit || 'ชิ้น'})
                   </span>
                 )}
               </span>
@@ -1623,7 +1624,7 @@ export default function ProductionPage() {
                       batch.status === 'waiting_merge' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-400' :
                       'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400'
                     }`}>
-                      {batch.batch_name} ({batch.quantity} {language === 'th' ? 'ชิ้น' : 'pcs'})
+                      {batch.batch_name} ({batch.quantity} {ticket.unit || 'ชิ้น'})
                     </span>
                     <span className="text-gray-500 dark:text-gray-400">
                       {batch.stations?.name_th || batch.stations?.code || 'Unknown Station'}

@@ -280,7 +280,7 @@ export default function ReportPage() {
           const chunk = flowTicketNos.slice(i, i + CHUNK);
           const { data: tData, error: tErr } = await supabase
             .from("ticket")
-            .select("no, description, quantity, source_no")
+            .select("no, description, quantity, source_no, unit")
             .in("no", chunk);
           if (tErr) throw tErr;
           ticketData = ticketData.concat(tData || []);
@@ -413,7 +413,7 @@ export default function ReportPage() {
               projectTitle,
               sourceNo: ticket?.source_no ?? null,
               quantity: qty,
-              unit: "ชิ้น",
+              unit: ticket?.unit || "ชิ้น",
               pricePerUnit: pricePerUnit,
               priceType: priceType,
               totalPrice: total,

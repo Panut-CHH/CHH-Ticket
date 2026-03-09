@@ -152,6 +152,7 @@ export async function POST(request, { params }) {
         customer_name: customerName || "",
         source_no: ticketView?.itemCode || null,
         quantity: ticketView?.quantity || 0,
+        unit: ticketView?.unit || 'ชิ้น',
         due_date: ticketView?.dueDate || null,
         description: ticketView?.description || null,
         description_2: ticketView?.description2 || null,
