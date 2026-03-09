@@ -2158,25 +2158,14 @@ export default function UITicket() {
                 <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                   {groupedByItemWithFlows
                     .filter(g => {
-                      // กรองตามสถานะตั๋วก่อน
-                      const relevantTickets = activeTab === "open"
+                      // กรองตามสถานะตั๋ว + filterPredicate + search
+                      const relevantTickets = (activeTab === "open"
                         ? g.items.filter(ticket => ticket.status !== "Finish")
-                        : g.items.filter(ticket => ticket.status === "Finish");
-                      
+                        : g.items.filter(ticket => ticket.status === "Finish")
+                      ).filter(filterPredicate).filter(matchSearch);
+
                       // ถ้าไม่มีตั๋วที่เกี่ยวข้อง ไม่ต้องแสดง Item Code นี้
-                      if (relevantTickets.length === 0) return false;
-                      
-                      // กรองตาม search term
-                      if (!searchTerm) return true;
-                      const q = searchTerm.toLowerCase();
-                      const inItems = relevantTickets.some(ticket => 
-                        (ticket.id || '').toLowerCase().includes(q) ||
-                        (ticket.title || '').toLowerCase().includes(q) ||
-                        (ticket.rpd || '').toLowerCase().includes(q) ||
-                        (ticket.itemCode || '').toLowerCase().includes(q) ||
-                        (ticket.description || '').toLowerCase().includes(q)
-                      );
-                      return (g.itemCode || '').toLowerCase().includes(q) || inItems;
+                      return relevantTickets.length > 0;
                     })
                     .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
                     .map((g, i) => {
@@ -2260,10 +2249,11 @@ export default function UITicket() {
                           
                           {/* Collapsible content */}
                           {isExpanded && (() => {
-                            // กรองเฉพาะตั๋วที่เปิดเมื่อ activeTab === "open"
-                            const displayItems = activeTab === "open" 
+                            // กรองเฉพาะตั๋วที่เปิด/ปิด + apply filter และ search
+                            const displayItems = (activeTab === "open"
                               ? g.items.filter(ticket => ticket.status !== "Finish")
-                              : g.items;
+                              : g.items
+                            ).filter(filterPredicate).filter(matchSearch);
                             
                             return (
                               <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
@@ -2305,25 +2295,14 @@ export default function UITicket() {
                 <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
                   {groupedByItemWithFlows
                     .filter(g => {
-                      // กรองตามสถานะตั๋วก่อน
-                      const relevantTickets = activeTab === "open"
+                      // กรองตามสถานะตั๋ว + filterPredicate + search
+                      const relevantTickets = (activeTab === "open"
                         ? g.items.filter(ticket => ticket.status !== "Finish")
-                        : g.items.filter(ticket => ticket.status === "Finish");
-                      
+                        : g.items.filter(ticket => ticket.status === "Finish")
+                      ).filter(filterPredicate).filter(matchSearch);
+
                       // ถ้าไม่มีตั๋วที่เกี่ยวข้อง ไม่ต้องแสดง Item Code นี้
-                      if (relevantTickets.length === 0) return false;
-                      
-                      // กรองตาม search term
-                      if (!searchTerm) return true;
-                      const q = searchTerm.toLowerCase();
-                      const inItems = relevantTickets.some(ticket => 
-                        (ticket.id || '').toLowerCase().includes(q) ||
-                        (ticket.title || '').toLowerCase().includes(q) ||
-                        (ticket.rpd || '').toLowerCase().includes(q) ||
-                        (ticket.itemCode || '').toLowerCase().includes(q) ||
-                        (ticket.description || '').toLowerCase().includes(q)
-                      );
-                      return (g.itemCode || '').toLowerCase().includes(q) || inItems;
+                      return relevantTickets.length > 0;
                     })
                     .sort((a, b) => a.itemCode.localeCompare(b.itemCode))
                     .map((g, i) => {
@@ -2404,10 +2383,11 @@ export default function UITicket() {
                           
                           {/* Collapsible content */}
                           {isExpanded && (() => {
-                            // กรองเฉพาะตั๋วที่ปิดเมื่อ activeTab === "closed"
-                            const displayItems = activeTab === "open" 
+                            // กรองเฉพาะตั๋วที่ปิด/เปิด + apply filter และ search
+                            const displayItems = (activeTab === "open"
                               ? g.items.filter(ticket => ticket.status !== "Finish")
-                              : g.items.filter(ticket => ticket.status === "Finish");
+                              : g.items.filter(ticket => ticket.status === "Finish")
+                            ).filter(filterPredicate).filter(matchSearch);
                             
                             return (
                               <div className="px-4 sm:px-5 pb-4 sm:pb-5 border-t border-gray-100 dark:border-slate-700" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
