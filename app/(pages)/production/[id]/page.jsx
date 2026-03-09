@@ -680,6 +680,21 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
         </div>
       )}
 
+      {/* หมายเหตุ */}
+      {ticket.remark && (
+        <div className="mb-4 sm:mb-6">
+          <div className="inline-flex items-start gap-2 sm:gap-3 px-4 sm:px-5 py-3 sm:py-4 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-900/20 dark:to-yellow-900/20 rounded-xl border border-amber-200/50 dark:border-amber-800/50 shadow-sm">
+            <FileText className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="text-xs font-medium text-amber-600 dark:text-amber-400 mb-1">หมายเหตุ</div>
+              <div className="text-gray-800 dark:text-gray-200 text-sm sm:text-base break-words leading-relaxed whitespace-pre-wrap">
+                {ticket.remark}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6">
         <div className="md:col-span-2">
           {/* ERP Document Button - Top */}
@@ -1306,7 +1321,7 @@ export default function ProductionDetailPage() {
       try {
         const { data: ticketData, error: ticketError } = await supabase
           .from('ticket')
-          .select('no, priority, customer_name, quantity, initial_quantity, pass_quantity, unit')
+          .select('no, priority, customer_name, quantity, initial_quantity, pass_quantity, unit, remark')
           .eq('no', ticketId)
           .single();
         if (!ticketError && ticketData) {
@@ -1466,6 +1481,11 @@ export default function ProductionDetailPage() {
         merged.initialQuantity = dbTicket.initial_quantity;
       }
       
+      // Add remark from ticket
+      if (dbTicket && dbTicket.remark) {
+        merged.remark = dbTicket.remark;
+      }
+
       // Add project document info
       if (projectDoc) {
         merged.projectDoc = projectDoc;

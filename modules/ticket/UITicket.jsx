@@ -488,6 +488,7 @@ export default function UITicket() {
               description: dbTicket.description || '',
               description2: dbTicket.description_2 || '',
               customerName: dbTicket.customer_name || '',
+              remark: dbTicket.remark || '',
               project_id: dbTicket.project_id,
               started_at: dbTicket.started_at,
               finished_at: dbTicket.finished_at,
@@ -683,6 +684,7 @@ export default function UITicket() {
             priority: ticket.priority === "High" ? "High Priority" : ticket.priority === "Low" ? "Low Priority" : "Medium Priority",
             customerName: ticket.customer_name,
             unit: ticket.unit || null,
+            remark: ticket.remark || '',
             stations: [], // เริ่มต้นเป็น array ว่าง - จะโหลดแยกทีหลัง
           }));
           setDbTickets(processed);
@@ -1075,6 +1077,7 @@ export default function UITicket() {
         // ใช้ข้อมูลจาก database
         if (dbTicket.unit) merged.unit = dbTicket.unit;
         if (dbTicket.customerName) merged.customerName = dbTicket.customerName;
+        if (dbTicket.remark) merged.remark = dbTicket.remark;
         if (dbTicket.priority) {
           merged.priority = dbTicket.priority;
           // อัปเดต priorityClass ตาม priority ที่ผู้ใช้ตั้ง
@@ -1392,6 +1395,7 @@ export default function UITicket() {
           // ใช้ข้อมูลจาก database
           if (dbTicket.unit) merged.unit = dbTicket.unit;
           if (dbTicket.customerName) merged.customerName = dbTicket.customerName;
+          if (dbTicket.remark) merged.remark = dbTicket.remark;
           if (dbTicket.priority) {
             merged.priority = dbTicket.priority;
             // อัปเดต priorityClass ตาม priority ที่ผู้ใช้ตั้ง
@@ -1683,8 +1687,14 @@ export default function UITicket() {
                    {ticket.description2}
                  </p>
                )}
+               {ticket.remark && (
+                 <div className="mt-1.5 flex items-start gap-1.5 px-2.5 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200/50 dark:border-amber-800/50">
+                   <span className="text-[11px] sm:text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-nowrap">หมายเหตุ:</span>
+                   <span className="text-[11px] sm:text-xs text-amber-700 dark:text-amber-300 whitespace-pre-wrap break-words">{ticket.remark}</span>
+                 </div>
+               )}
             </div>
-            
+
             <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
               <div className="flex items-center gap-1">
                 <span className={`animate-pulse ${ticket.statusClass}`}>●</span>

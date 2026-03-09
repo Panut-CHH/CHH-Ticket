@@ -262,7 +262,7 @@ export default function ProductionPage() {
         while (hasMore) {
           const { data: page, error: pageError } = await supabase
             .from('ticket')
-            .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status, unit')
+            .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status, unit, remark')
             .order('created_at', { ascending: false })
             .range(from, from + pageSize - 1);
           if (pageError) throw pageError;
@@ -391,7 +391,8 @@ export default function ProductionPage() {
           roadmap: [],
           customerName: t.customer_name || '',
           storeStatus: t.store_status || null,
-          unit: t.unit || 'ชิ้น'
+          unit: t.unit || 'ชิ้น',
+          remark: t.remark || ''
         };
       });
       
@@ -1612,6 +1613,14 @@ export default function ProductionPage() {
               )}
               {getStatusDisplay(ticket.storeStatus)}
             </div>
+
+            {/* หมายเหตุ */}
+            {ticket.remark && (
+              <div className="mt-2 flex items-start gap-1.5 px-2.5 py-1.5 bg-amber-50 dark:bg-amber-900/20 rounded-md border border-amber-200/50 dark:border-amber-800/50">
+                <span className="text-[11px] sm:text-xs font-medium text-amber-600 dark:text-amber-400 whitespace-nowrap">หมายเหตุ:</span>
+                <span className="text-[11px] sm:text-xs text-amber-700 dark:text-amber-300 whitespace-pre-wrap break-words">{ticket.remark}</span>
+              </div>
+            )}
 
             {/* Batch Details */}
             {ticketBatches.length > 0 && (

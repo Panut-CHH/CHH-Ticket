@@ -71,7 +71,7 @@ export async function POST(request, { params }) {
   try {
     const { id: ticketId } = params;
     const body = await request.json();
-    const { priority, customerName, stations, ticketView } = body;
+    const { priority, customerName, remark, stations, ticketView } = body;
 
     console.log('[API SAVE] Received request for ticket:', ticketId);
     console.log('[API SAVE] Stations received:', stations?.length, 'stations');
@@ -156,6 +156,7 @@ export async function POST(request, { params }) {
         due_date: ticketView?.dueDate || null,
         description: ticketView?.description || null,
         description_2: ticketView?.description2 || null,
+        remark: remark || null,
       }, {
         onConflict: 'no'
       });

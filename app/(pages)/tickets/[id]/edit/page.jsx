@@ -20,6 +20,7 @@ export default function EditTicketPage() {
   const [stations, setStations] = useState([]);
   const [priority, setPriority] = useState("Medium Priority");
   const [customerName, setCustomerName] = useState(""); // เพิ่มฟิลด์ชื่อลูกค้า
+  const [remark, setRemark] = useState(""); // หมายเหตุ
   const [technicians, setTechnicians] = useState([]);
   const [loadingTechs, setLoadingTechs] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -480,6 +481,7 @@ const STATION_PRESETS = {
         setPriority(dbPriority);
         // ตั้งชื่อลูกค้าจากชื่อโปรเจ็ค (ผ่าน ticketView ที่มี projectName อยู่แล้ว)
         setCustomerName(ticketView?.projectName || ticketData.customer_name || "");
+        setRemark(ticketData.remark || "");
 
         // โหลด station flows แยกต่างหาก
         try {
@@ -1099,6 +1101,7 @@ const STATION_PRESETS = {
       const payload = {
         priority,
         customerName,
+        remark,
         stations,
         ticketView,
       };
@@ -1366,6 +1369,17 @@ const STATION_PRESETS = {
               />
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ดึงจากชื่อโปรเจ็คโดยอัตโนมัติ</p>
             </div>
+          </div>
+          <div className="mt-4">
+            <label className="text-sm text-gray-600 dark:text-gray-400 mb-1 block">หมายเหตุ</label>
+            <textarea
+              value={remark}
+              onChange={(e) => setRemark(e.target.value)}
+              rows={3}
+              placeholder="เพิ่มหมายเหตุสำหรับตั๋วนี้ (จะแสดงในหน้า Production)"
+              className="w-full bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-600 rounded-lg px-3 py-2 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">ข้อความนี้จะแสดงในหน้า Production</p>
           </div>
         </div>
 
