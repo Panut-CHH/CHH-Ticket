@@ -1,11 +1,12 @@
 "use client";
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
-import { Search, CheckCircle2, Clock, Tag, Ticket as TicketIcon, AlertTriangle, PlayCircle } from "lucide-react";
+import { Search, CheckCircle2, Clock, Tag, Ticket as TicketIcon, AlertTriangle, PlayCircle, Image as ImageIcon, X, Loader2, ZoomIn, ZoomOut, RotateCcw, ChevronDown } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { supabase } from "@/utils/supabaseClient";
@@ -54,10 +55,88 @@ export default function QCPage() {
   const [queueTo, setQueueTo] = useState(''); // yyyy-mm-dd
   const [queueStationId, setQueueStationId] = useState(''); // station id (pre-QC)
   const [queueTechnician, setQueueTechnician] = useState(''); // technician display name (pre-QC)
+  const [expandedStations, setExpandedStations] = useState({}); // key: stationName -> boolean
+  const [expandedStationItems, setExpandedStationItems] = useState({}); // key: stationName -> boolean (show all items)
+  const STATION_PREVIEW_COUNT = 3;
   // Today QC summary
   const [todayPass, setTodayPass] = useState(0);
   const [todayFail, setTodayFail] = useState(0);
   const [todaySessions, setTodaySessions] = useState(0);
+
+  // Plan image modal
+  const [planModal, setPlanModal] = useState(null); // null | { ticketNo, sourceNo }
+  const [planFile, setPlanFile] = useState(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planZoom, setPlanZoom] = useState(1);
+  const [planPan, setPlanPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = React.useRef({ x: 0, y: 0 });
+  const panOffset = React.useRef({ x: 0, y: 0 });
+
+  const fetchPlanFile = useCallback(async (sourceNo) => {
+    if (!sourceNo) return null;
+    const { data: item } = await supabase
+      .from("project_items")
+      .select("id")
+      .eq("item_code", sourceNo)
+      .maybeSingle();
+    if (!item) return null;
+    const { data: file } = await supabase
+      .from("project_files")
+      .select("file_url, file_name, file_type")
+      .eq("project_item_id", item.id)
+      .eq("is_current", true)
+      .maybeSingle();
+    return file;
+  }, []);
+
+  useEffect(() => {
+    if (!planModal) { setPlanFile(null); return; }
+    let cancelled = false;
+    setPlanLoading(true);
+    setPlanFile(null);
+    fetchPlanFile(planModal.sourceNo).then((file) => {
+      if (!cancelled) { setPlanFile(file || null); setPlanLoading(false); }
+    }).catch(() => { if (!cancelled) setPlanLoading(false); });
+    return () => { cancelled = true; };
+  }, [planModal, fetchPlanFile]);
+
+  const openPlanModal = useCallback((ticket) => {
+    setPlanZoom(1);
+    setPlanPan({ x: 0, y: 0 });
+    setPlanModal({ ticketNo: ticket.id, sourceNo: ticket.itemCode });
+  }, []);
+
+  const closePlanModal = useCallback(() => {
+    setPlanModal(null);
+    setPlanZoom(1);
+    setPlanPan({ x: 0, y: 0 });
+  }, []);
+
+  const handlePlanZoomIn = useCallback(() => setPlanZoom(z => Math.min(z + 0.25, 5)), []);
+  const handlePlanZoomOut = useCallback(() => setPlanZoom(z => Math.max(z - 0.25, 0.25)), []);
+  const handlePlanZoomReset = useCallback(() => { setPlanZoom(1); setPlanPan({ x: 0, y: 0 }); }, []);
+  const handlePlanWheel = useCallback((e) => {
+    e.preventDefault();
+    setPlanZoom(z => {
+      const delta = e.deltaY > 0 ? -0.15 : 0.15;
+      return Math.min(Math.max(z + delta, 0.25), 5);
+    });
+  }, []);
+  const handlePanMouseDown = useCallback((e) => {
+    if (e.button !== 0) return;
+    setIsPanning(true);
+    panStart.current = { x: e.clientX, y: e.clientY };
+    panOffset.current = { ...planPan };
+  }, [planPan]);
+  const handlePanMouseMove = useCallback((e) => {
+    if (!isPanning) return;
+    setPlanPan({
+      x: panOffset.current.x + (e.clientX - panStart.current.x),
+      y: panOffset.current.y + (e.clientY - panStart.current.y),
+    });
+  }, [isPanning]);
+  const handlePanMouseUp = useCallback(() => setIsPanning(false), []);
 
   const load = useCallback(async () => {
     try {
@@ -602,42 +681,93 @@ export default function QCPage() {
         <div className="text-gray-800 dark:text-gray-200 font-medium mb-2 sm:mb-3 text-sm sm:text-base">
           {language === 'th' ? 'งานรอตรวจ แยกตามสถานี' : 'Waiting by Station'}
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {(() => {
-            const groups = ticketsToShow.reduce((acc, t) => {
-              const key = t._prevStationName || (language === 'th' ? 'ไม่ระบุสถานี' : 'Unassigned station');
-              if (!acc[key]) acc[key] = [];
-              acc[key].push(t);
-              return acc;
-            }, {});
-            const entries = Object.entries(groups);
-            if (entries.length === 0) return <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'ไม่มีงานค้าง' : 'No pending work'}</div>;
-            return entries.map(([name, list]) => (
-              <div key={name} className="border border-gray-100 dark:border-slate-700 rounded-lg p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">{name}</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">{list.length} {t('tasks', language)}</div>
-                </div>
-                <div className="space-y-2">
-                  {list.map((ticket) => (
-                    <div key={ticket.id} className="text-xs sm:text-sm flex items-center justify-between">
-                      <div className="min-w-0 flex items-center gap-2 flex-1">
-                        <span className="shrink-0 text-gray-800 dark:text-gray-200">{ticket.id}</span>
-                        <span className="truncate text-gray-600 dark:text-gray-400 hidden sm:inline">{ticket.title}</span>
-                        {ticket._technicianName && (
-                          <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hidden lg:inline">
-                            {ticket._technicianName}
-                          </span>
-                        )}
+        {(() => {
+          const groups = ticketsToShow.reduce((acc, t) => {
+            const key = t._prevStationName || (language === 'th' ? 'ไม่ระบุสถานี' : 'Unassigned station');
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(t);
+            return acc;
+          }, {});
+          const entries = Object.entries(groups);
+          if (entries.length === 0) return <div className="text-xs sm:text-sm text-gray-500 dark:text-gray-400">{language === 'th' ? 'ไม่มีงานค้าง' : 'No pending work'}</div>;
+
+          const half = Math.ceil(entries.length / 2);
+          const leftEntries = entries.slice(0, half);
+          const rightEntries = entries.slice(half);
+
+          const renderGroup = ([name, list]) => {
+            const isOpen = !!expandedStations[name];
+            const showAll = !!expandedStationItems[name];
+            const visibleItems = showAll ? list : list.slice(0, STATION_PREVIEW_COUNT);
+            const hasMore = list.length > STATION_PREVIEW_COUNT;
+            return (
+              <div key={name} className="border border-gray-100 dark:border-slate-700 rounded-lg overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setExpandedStations(prev => ({ ...prev, [name]: !prev[name] }))}
+                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-gray-50 dark:hover:bg-slate-700/50 transition-colors"
+                >
+                  <div className="flex items-center gap-2">
+                    <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${isOpen ? '' : '-rotate-90'}`} />
+                    <span className="text-xs sm:text-sm font-medium text-gray-900 dark:text-gray-100">{name}</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 tabular-nums">
+                    {list.length} {t('tasks', language)}
+                  </span>
+                </button>
+                {isOpen && (
+                  <div className="px-3 pb-2.5 space-y-1.5 border-t border-gray-50 dark:border-slate-700/50 pt-2">
+                    {visibleItems.map((ticket) => (
+                      <div key={ticket.id} className="text-xs sm:text-sm flex items-center justify-between py-0.5">
+                        <div className="min-w-0 flex items-center gap-2 flex-1">
+                          <span className="shrink-0 text-gray-800 dark:text-gray-200">{ticket.id}</span>
+                          <span className="truncate text-gray-600 dark:text-gray-400 hidden sm:inline">{ticket.title}</span>
+                          {ticket._technicianName && (
+                            <span className="text-[11px] px-2 py-0.5 rounded bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hidden lg:inline">
+                              {ticket._technicianName}
+                            </span>
+                          )}
+                        </div>
+                        <Link href={`/qc/${ticket.id.replace('#','')}`} className="text-emerald-700 hover:underline shrink-0 text-xs sm:text-sm">{t('inspect', language)}</Link>
                       </div>
-                      <Link href={`/qc/${ticket.id.replace('#','')}`} className="text-emerald-700 hover:underline shrink-0 text-xs sm:text-sm">{t('inspect', language)}</Link>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                    {hasMore && !showAll && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStationItems(prev => ({ ...prev, [name]: true }))}
+                        className="text-xs text-emerald-600 dark:text-emerald-400 hover:underline pt-1"
+                      >
+                        {language === 'th' ? `ดูเพิ่มอีก ${list.length - STATION_PREVIEW_COUNT} งาน` : `Show ${list.length - STATION_PREVIEW_COUNT} more`}
+                      </button>
+                    )}
+                    {hasMore && showAll && (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedStationItems(prev => ({ ...prev, [name]: false }))}
+                        className="text-xs text-gray-500 dark:text-gray-400 hover:underline pt-1"
+                      >
+                        {language === 'th' ? 'แสดงน้อยลง' : 'Show less'}
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
-            ));
-          })()}
-        </div>
+            );
+          };
+
+          return (
+            <div className="flex flex-col md:flex-row gap-2">
+              <div className="flex-1 min-w-0 space-y-2">
+                {leftEntries.map(renderGroup)}
+              </div>
+              {rightEntries.length > 0 && (
+                <div className="flex-1 min-w-0 space-y-2">
+                  {rightEntries.map(renderGroup)}
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
       )}
 
@@ -760,7 +890,8 @@ export default function QCPage() {
           };
           return (
             <div key={ticket.id} className="bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 p-3 sm:p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-2 sm:gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
+                {/* Left: ticket info */}
                 <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
                   <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
                     <TicketIcon className="w-4 h-4 sm:w-5 sm:h-5" />
@@ -774,49 +905,59 @@ export default function QCPage() {
                     <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 truncate">{ticket.title}</div>
                     {/* แสดงสถานีที่มาตรวจ โดยอ้างอิงจากสถานีก่อนหน้า */}
                     {renderQcTarget()}
+                    {/* Technician & time info */}
+                    <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      <div className="inline-flex items-center gap-1">
+                        <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
+                        {(() => {
+                          const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+                          const qcIdx = qcIndex;
+                          const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
+                          let techName = '';
+                          if (prev) {
+                            const idNorm = String(ticket.id).replace('#','');
+                            const keyExact = `${idNorm}-${prev.stationId}-${prev.stepOrder || 0}`;
+                            const keyNoOrder = `${idNorm}-${prev.stationId}-0`;
+                            techName = assignmentMapState[keyExact] || assignmentMapState[keyNoOrder] || '';
+                          }
+                          return <span>{techName || '-'}</span>;
+                        })()}
+                      </div>
+                      <div className="inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
+                        {(() => {
+                          const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
+                          const qcIdx = qcIndex;
+                          const qc = qcIdx >= 0 ? steps[qcIdx] : null;
+                          const ts = qc?.updatedAt ? new Date(qc.updatedAt) : null;
+                          const text = ts ? ts.toLocaleString('th-TH', { hour12: false }) : '-';
+                          return <span>{text}</span>;
+                        })()}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="hidden md:flex items-center gap-4 text-xs sm:text-sm text-gray-600 dark:text-gray-400 shrink-0 self-center">
-                  {/* Technician at previous station (the one that sent to QC) */}
-                  <div className="inline-flex items-center gap-1">
-                    <Tag className="w-3 h-3 sm:w-4 sm:h-4" />
-                    {(() => {
-                      const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
-                      const qcIdx = qcIndex;
-                      const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
-                      let techName = '';
-                      if (prev) {
-                        const idNorm = String(ticket.id).replace('#','');
-                        const keyExact = `${idNorm}-${prev.stationId}-${prev.stepOrder || 0}`;
-                        const keyNoOrder = `${idNorm}-${prev.stationId}-0`;
-                        techName = assignmentMapState[keyExact] || assignmentMapState[keyNoOrder] || '';
-                      }
-                      return <span>{techName || '-'}</span>;
-                    })()}
-                  </div>
-                  {/* Time arrived at QC (from QC step updatedAt) */}
-                  <div className="inline-flex items-center gap-1">
-                    <Clock className="w-3 h-3 sm:w-4 sm:h-4" />
-                    {(() => {
-                      const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
-                      const qcIdx = qcIndex;
-                      const qc = qcIdx >= 0 ? steps[qcIdx] : null;
-                      const ts = qc?.updatedAt ? new Date(qc.updatedAt) : null;
-                      const text = ts ? ts.toLocaleString('th-TH', { hour12: false }) : '-';
-                      return <span>{text}</span>;
-                    })()}
-                  </div>
-                  {/* Desktop: Start/Continue button on far right */}
+                {/* Right: buttons always pinned to right edge */}
+                <div className="hidden md:flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); openPlanModal(ticket); }}
+                    className="px-3 py-2 rounded-lg text-xs sm:text-sm text-center whitespace-nowrap bg-sky-600 hover:bg-sky-700 text-white inline-flex items-center gap-1.5"
+                    title={language === 'th' ? 'ดูภาพแปลน' : 'View Plan'}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    {language === 'th' ? 'ดูภาพแปลน' : 'View Plan'}
+                  </button>
                   <Link
                     href={qcStep?.qcTaskUuid ? `/qc/task/${qcStep.qcTaskUuid}` : `/qc/${String(ticket.id).replace('#','')}`}
-                    className={`ml-2 px-3 py-2 rounded-lg text-xs sm:text-sm text-center whitespace-nowrap ${
-                      qcStep?.status === 'current' 
-                        ? 'bg-amber-600 hover:bg-amber-700 text-white' 
+                    className={`px-3 py-2 rounded-lg text-xs sm:text-sm text-center whitespace-nowrap ${
+                      qcStep?.status === 'current'
+                        ? 'bg-amber-600 hover:bg-amber-700 text-white'
                         : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     }`}
                   >
-                    {qcStep?.status === 'current' 
-                      ? (language === 'th' ? 'ดำเนินการต่อ' : 'Continue') 
+                    {qcStep?.status === 'current'
+                      ? (language === 'th' ? 'ดำเนินการต่อ' : 'Continue')
                       : (language === 'th' ? 'เริ่ม QC' : 'Start QC')
                     }
                   </Link>
@@ -831,18 +972,26 @@ export default function QCPage() {
                 )}
               </div>
 
-              {/* Mobile: button full width below */}
+              {/* Mobile: buttons full width below */}
               <div className="mt-2 sm:mt-3 flex items-center gap-2 md:hidden">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); openPlanModal(ticket); }}
+                  className="px-3 py-2 rounded-lg text-xs sm:text-sm text-center bg-sky-600 hover:bg-sky-700 text-white inline-flex items-center justify-center gap-1.5"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  {language === 'th' ? 'ดูภาพแปลน' : 'View Plan'}
+                </button>
                 <Link
                   href={qcStep?.qcTaskUuid ? `/qc/task/${qcStep.qcTaskUuid}` : `/qc/${String(ticket.id).replace('#','')}`}
-                  className={`px-3 py-2 rounded-lg text-xs sm:text-sm w-full text-center ${
-                    qcStep?.status === 'current' 
-                      ? 'bg-amber-600 hover:bg-amber-700 text-white' 
+                  className={`px-3 py-2 rounded-lg text-xs sm:text-sm flex-1 text-center ${
+                    qcStep?.status === 'current'
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   }`}
                 >
-                  {qcStep?.status === 'current' 
-                    ? (language === 'th' ? 'ดำเนินการต่อ' : 'Continue') 
+                  {qcStep?.status === 'current'
+                    ? (language === 'th' ? 'ดำเนินการต่อ' : 'Continue')
                     : (language === 'th' ? 'เริ่ม QC' : 'Start QC')
                   }
                 </Link>
@@ -992,6 +1141,128 @@ export default function QCPage() {
       </div>
       )}
       </div>
+      {/* Plan image modal */}
+      {planModal && createPortal(
+        <div
+          className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/50 p-4"
+          onClick={closePlanModal}
+          role="dialog"
+          aria-modal="true"
+          aria-label={language === 'th' ? 'แบบแปลน' : 'Plan'}
+        >
+          <div
+            className="relative flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-200 dark:border-slate-600 px-4 py-3">
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                {language === 'th' ? 'แบบแปลน' : 'Plan'} — {planModal.ticketNo}
+              </h3>
+              <div className="flex items-center gap-1">
+                {/* Zoom controls */}
+                {planFile?.file_url && !planLoading && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handlePlanZoomOut}
+                      className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-gray-200"
+                      title={language === 'th' ? 'ซูมออก' : 'Zoom out'}
+                    >
+                      <ZoomOut className="w-4 h-4" />
+                    </button>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 min-w-[3rem] text-center select-none">
+                      {Math.round(planZoom * 100)}%
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handlePlanZoomIn}
+                      className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-gray-200"
+                      title={language === 'th' ? 'ซูมเข้า' : 'Zoom in'}
+                    >
+                      <ZoomIn className="w-4 h-4" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePlanZoomReset}
+                      className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-gray-200"
+                      title={language === 'th' ? 'รีเซ็ต' : 'Reset'}
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                    <div className="w-px h-5 bg-gray-200 dark:bg-slate-600 mx-1" />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={closePlanModal}
+                  className="rounded-lg p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 hover:text-gray-700 dark:hover:text-gray-200"
+                  aria-label={language === 'th' ? 'ปิด' : 'Close'}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-hidden min-h-[400px] relative">
+              {planLoading ? (
+                <div className="flex items-center justify-center py-12 text-gray-500 dark:text-gray-400">
+                  <Loader2 className="w-8 h-8 animate-spin" />
+                </div>
+              ) : planFile?.file_url ? (
+                (() => {
+                  const lower = String(planFile.file_url).toLowerCase();
+                  const isImage = ['.png','.jpg','.jpeg','.webp','.gif'].some(ext => lower.endsWith(ext)) || lower.includes('data:image/');
+                  if (isImage) {
+                    return (
+                      <div
+                        className="w-full h-full bg-gray-100 dark:bg-slate-900 select-none"
+                        style={{ height: 560, cursor: isPanning ? 'grabbing' : 'grab', overflow: 'hidden' }}
+                        onWheel={handlePlanWheel}
+                        onMouseDown={handlePanMouseDown}
+                        onMouseMove={handlePanMouseMove}
+                        onMouseUp={handlePanMouseUp}
+                        onMouseLeave={handlePanMouseUp}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={planFile.file_url}
+                          alt="plan"
+                          draggable={false}
+                          className="pointer-events-none"
+                          style={{
+                            transform: `translate(${planPan.x}px, ${planPan.y}px) scale(${planZoom})`,
+                            transformOrigin: 'center center',
+                            transition: isPanning ? 'none' : 'transform 0.15s ease-out',
+                            maxWidth: 'none',
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'contain',
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+                  // PDF or other file types — use iframe (zoom/pan not applicable)
+                  return (
+                    <iframe
+                      title="Plan PDF"
+                      src={planFile.file_url}
+                      className="w-full h-full border-0"
+                      style={{ height: 560 }}
+                      loading="lazy"
+                    />
+                  );
+                })()
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400 text-sm">
+                  <ImageIcon className="w-12 h-12 mb-2 opacity-50" />
+                  {language === 'th' ? 'ไม่มีแบบแปลน' : 'No plan available'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       </RoleGuard>
     </ProtectedRoute>
   );
