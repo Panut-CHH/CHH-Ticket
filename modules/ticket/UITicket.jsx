@@ -1144,12 +1144,17 @@ export default function UITicket() {
   // Trigger การเช็ค BOM และ Assignment สำหรับทุก ticket เมื่อ tickets เปลี่ยน
   useEffect(() => {
     if (tickets.length === 0) return;
-    
+
     // สร้าง Set ของ ticket_no ที่ต้องเช็ค
     const ticketNos = tickets
       .map(t => String(t.id || t.rpd).replace('#','').trim())
       .filter(Boolean);
-    
+
+    // สร้าง Set ของ ticket_no ที่มี station flow (จาก dbStationFlows โดยตรง)
+    const ticketsWithFlows = new Set(
+      (Array.isArray(dbStationFlows) ? dbStationFlows : []).map(f => String(f.ticket_no || '').trim())
+    );
+
     // เช็ค BOM และ Assignment สำหรับทุก ticket
     ticketNos.forEach(ticketNo => {
       // เช็ค BOM ถ้ายังไม่เช็ค
@@ -1157,19 +1162,15 @@ export default function UITicket() {
       if (!bomChecked) {
         checkTicketBom(ticketNo);
       }
-      
-      // เช็ค Assignment ถ้ายังไม่เช็ค
+
+      // เช็ค Assignment ถ้ายังไม่เช็ค - ใช้ dbStationFlows โดยตรงแทน ticket.hasStationFlow
       const assignmentChecked = ticketAssignmentStatus.has(ticketNo);
-      if (!assignmentChecked) {
-        // เช็คเฉพาะเมื่อมี station flow
-        const ticket = tickets.find(t => String(t.id || t.rpd).replace('#','').trim() === ticketNo);
-        if (ticket?.hasStationFlow) {
-          checkTicketAssignment(ticketNo);
-        }
+      if (!assignmentChecked && ticketsWithFlows.has(ticketNo)) {
+        checkTicketAssignment(ticketNo);
       }
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tickets.length, erpTickets.length, refreshTrigger, checkTicketBom, checkTicketAssignment]);
+  }, [tickets.length, erpTickets.length, dbStationFlows.length, refreshTrigger, checkTicketBom, checkTicketAssignment]);
 
   // ฟังก์ชันคำนวณสถานะตั๋ว
   function calculateTicketStatus(stations, roadmap) {
@@ -1333,11 +1334,11 @@ export default function UITicket() {
     if (hasDueDateOnly && !t.dueDate) return false;
     // Item code filter
     if (selectedItemCodes.size > 0 && !selectedItemCodes.has(t.itemCode)) return false;
-    // Assignment filter
+    // Assignment filter - ใช้ hasAssignment (จาก ticket_assignments) แทน assignee (ชื่อช่าง)
     if (assignmentFilter === "assigned") {
-      if (!t.assignee || t.assignee === '-') return false;
+      if (!t.hasAssignment) return false;
     } else if (assignmentFilter === "unassigned") {
-      if (t.assignee && t.assignee !== '-') return false;
+      if (t.hasAssignment) return false;
     }
     return true;
   };
@@ -1463,6 +1464,20 @@ export default function UITicket() {
             merged.status = calculateTicketStatus(stations, merged.roadmap);
             merged.statusClass = getStatusClass(merged.status);
             merged.hasStationFlow = true;
+            // เช็ค hasAssignment จาก ticketAssignmentStatus หรือ fallback จาก flows
+            const ticketNo = String(ticket.id || ticket.rpd || '').trim().replace('#', '');
+            const assignmentStatus = ticketAssignmentStatus.get(ticketNo);
+            if (assignmentStatus !== undefined) {
+              merged.hasAssignment = assignmentStatus;
+            } else {
+              merged.hasAssignment = ticketFlows.some(flow => {
+                if (flow.ticket_assignments && Array.isArray(flow.ticket_assignments) && flow.ticket_assignments.length > 0) {
+                  const assignment = flow.ticket_assignments[0];
+                  return assignment.technician_id || assignment.users?.name || assignment.users?.id;
+                }
+                return false;
+              });
+            }
           } else {
             // ถ้าไม่มี station flows ให้ใช้ status จาก DB ถ้ามี (เช่น Finish)
             // ไม่บังคับเป็น Pending ถ้า DB ตั้งสถานะไว้แล้ว
@@ -1471,13 +1486,14 @@ export default function UITicket() {
               merged.statusClass = getStatusClass(merged.status);
             }
             merged.hasStationFlow = false;
+            merged.hasAssignment = false;
           }
         }
         
         return merged;
       })
     }));
-  }, [groupedByItem, dbTickets, dbStationFlows]);
+  }, [groupedByItem, dbTickets, dbStationFlows, ticketAssignmentStatus]);
 
   // คำนวณจำนวนตั๋วที่เปิดจากข้อมูลใหม่ที่จัดกลุ่มตาม Item Code
   const groupedTicketsCount = useMemo(() => {

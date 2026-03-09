@@ -1353,7 +1353,12 @@ export default function ProductionDetailPage() {
             .maybeSingle();
           
           if (!projectFileError && projectFileData) {
-            projectDoc = projectFileData;
+            // Append cache-busting param based on uploaded_at to force browser reload after re-upload
+            const cacheBuster = projectFileData.uploaded_at ? `?t=${new Date(projectFileData.uploaded_at).getTime()}` : '';
+            projectDoc = {
+              ...projectFileData,
+              file_url: projectFileData.file_url + cacheBuster,
+            };
           } else if (projectFileError) {
             console.warn('Load project file error:', projectFileError);
           }
