@@ -437,16 +437,22 @@ const STATION_PRESETS = {
   // Populate labor prices when stations and availableStations are ready
   useEffect(() => {
     if (ticketView?.itemCode && stations.length > 0 && availableStations.length > 0 && !loadingStations) {
-      // Check if there are any "ปรับขนาด" or "สี" stations without prices
+      // Check if there are any labor-price stations without prices
       const pressStation = availableStations.find(s => s.name_th === 'ปรับขนาด' || s.name_th === 'อัดบาน');
       const paintStation = availableStations.find(s => s.name_th === 'สี');
-      const hasPressOrPaintWithoutPrice = stations.some(s => {
+      const frameStation = availableStations.find(s => s.name_th === 'ประกอบวงกบ');
+      const noFrameStation = availableStations.find(s => s.name_th === 'ไม่ประกอบวงกบ');
+      const sharpStation = availableStations.find(s => s.name_th === 'ประกอบชุดชาร์ป');
+      const hasStationWithoutPrice = stations.some(s => {
         const isPress = pressStation && (s.name === 'ปรับขนาด' || s.name === 'อัดบาน');
         const isPaint = paintStation && s.name === 'สี';
-        return (isPress || isPaint) && (!s.price || s.price === '' || s.price === null);
+        const isFrame = frameStation && s.name === 'ประกอบวงกบ';
+        const isNoFrame = noFrameStation && s.name === 'ไม่ประกอบวงกบ';
+        const isSharp = sharpStation && s.name === 'ประกอบชุดชาร์ป';
+        return (isPress || isPaint || isFrame || isNoFrame || isSharp) && (!s.price || s.price === '' || s.price === null);
       });
-      
-      if (hasPressOrPaintWithoutPrice) {
+
+      if (hasStationWithoutPrice) {
         // Use a small delay to avoid multiple calls when stations array changes rapidly
         const timeoutId = setTimeout(() => {
           populateLaborPricesFromDatabase(stations, ticketView.itemCode);
@@ -600,8 +606,7 @@ const STATION_PRESETS = {
             
             console.log('Setting stations with data from database:', dbStations);
             // ถ้ามีข้อมูลใน database ให้ใช้ข้อมูลนั้น (มี priority สูงกว่า localStorage)
-            // แต่ยังต้อง populate ราคาค่าแรงจากฐานข้อมูลถ้ายังไม่มีราคา
-            await populateLaborPricesFromDatabase(dbStations, ticketView?.itemCode);
+            // ตั้ง stations ก่อน แล้ว useEffect จะ trigger populate ราคาค่าแรงอัตโนมัติ
             setStations(dbStations);
             hasStationFlows = true;
             // ลบข้อมูลจาก localStorage เพราะข้อมูลใน database มี priority สูงกว่า
