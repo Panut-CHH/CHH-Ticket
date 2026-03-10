@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
-import { getProjectById } from "@/utils/projectDb";
+import { getProjectById, updateProject } from "@/utils/projectDb";
 import { supabase } from "@/utils/supabaseClient";
 import { 
   ArrowLeft,
@@ -27,7 +27,8 @@ import {
   Pencil,
   DollarSign,
   CheckCircle,
-  Search
+  Search,
+  RefreshCw
 } from "lucide-react";
 import Modal from "@/components/Modal";
 
@@ -121,6 +122,56 @@ export default function UIProjectDetail({ projectId }) {
     setToast({ open: true, type, message });
     if (timeoutMs > 0) {
       setTimeout(() => setToast((t) => ({ ...t, open: false })), timeoutMs);
+    }
+  };
+
+  // State สำหรับตรวจเช็คชื่อโปรเจคจาก ERP
+  const [isRecheckingName, setIsRecheckingName] = useState(false);
+  const [recheckMessage, setRecheckMessage] = useState(null); // { type: 'success'|'info'|'error', text: string }
+
+  // ฟังก์ชันตรวจเช็คชื่อโปรเจคจาก ERP อีกรอบ โดยใช้ project_number ของโปรเจคนี้
+  const recheckProjectNameFromErp = async () => {
+    if (!project?.project_number) {
+      setRecheckMessage({ type: 'error', text: language === 'th' ? 'ไม่มี Project Number' : 'No Project Number' });
+      return;
+    }
+
+    setIsRecheckingName(true);
+    setRecheckMessage(null);
+
+    try {
+      const response = await fetch(`/api/project-code/${project.project_number}`);
+      const result = await response.json();
+
+      if (result.success && result.data) {
+        const newName = result.data.Name || result.data.name || '';
+
+        if (!newName) {
+          setRecheckMessage({ type: 'info', text: language === 'th' ? 'ไม่พบชื่อโปรเจคจาก ERP' : 'No project name found from ERP' });
+        } else if (newName === project.project_name) {
+          setRecheckMessage({ type: 'info', text: language === 'th' ? 'ชื่อโปรเจคตรงกันแล้ว ไม่ต้องอัปเดต' : 'Project name already matches, no update needed' });
+        } else {
+          // ชื่อไม่ตรง → อัปเดต
+          const updateResult = await updateProject(project.id, { project_name: newName });
+          if (updateResult.success) {
+            setProject(prev => ({ ...prev, project_name: newName }));
+            setRecheckMessage({
+              type: 'success',
+              text: language === 'th'
+                ? `อัปเดตชื่อสำเร็จ: "${project.project_name}" → "${newName}"`
+                : `Name updated: "${project.project_name}" → "${newName}"`
+            });
+          } else {
+            setRecheckMessage({ type: 'error', text: language === 'th' ? 'อัปเดตชื่อไม่สำเร็จ' : 'Failed to update name' });
+          }
+        }
+      } else {
+        setRecheckMessage({ type: 'error', text: language === 'th' ? 'ไม่พบ Project Number นี้ในระบบ ERP' : 'Project Number not found in ERP' });
+      }
+    } catch {
+      setRecheckMessage({ type: 'error', text: language === 'th' ? 'เชื่อมต่อ ERP ไม่สำเร็จ' : 'Failed to connect to ERP' });
+    } finally {
+      setIsRecheckingName(false);
     }
   };
 
@@ -1045,9 +1096,28 @@ export default function UIProjectDetail({ projectId }) {
                     <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 break-words">
                       {project.project_name || t('projectName', language)}
                     </h1>
-                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 break-words">
-                      Project Number: {project.project_number}
-                    </p>
+                    <div className="flex items-center gap-1.5 text-xs sm:text-sm text-gray-600 dark:text-gray-400">
+                      <span>Project Number: {project.project_number}</span>
+                      {project.project_number && (
+                        <button
+                          onClick={recheckProjectNameFromErp}
+                          disabled={isRecheckingName}
+                          title={language === 'th' ? 'ตรวจเช็คชื่อจาก ERP' : 'Recheck name from ERP'}
+                          className="p-1 rounded-md text-gray-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:text-amber-400 dark:hover:bg-amber-900/20 transition-colors disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isRecheckingName ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                    {recheckMessage && (
+                      <p className={`text-xs mt-0.5 ${
+                        recheckMessage.type === 'success' ? 'text-green-600 dark:text-green-400' :
+                        recheckMessage.type === 'error' ? 'text-red-600 dark:text-red-400' :
+                        'text-gray-500 dark:text-gray-400'
+                      }`}>
+                        {recheckMessage.text}
+                      </p>
+                    )}
                 </div>
               </div>
           </div>

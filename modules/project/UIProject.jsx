@@ -9,12 +9,12 @@ import { transformErpData } from "@/utils/erpApi";
 import { getAllProjects, createProject, deleteProject, getProjectStats, getUserName } from "@/utils/projectDb";
 import { supabase } from "@/utils/supabaseClient";
 import { 
-  Plus, 
-  Search, 
-  Filter, 
-  Upload, 
-  FileText, 
-  Image, 
+  Plus,
+  Search,
+  Filter,
+  Upload,
+  FileText,
+  Image,
   Calendar,
   User,
   Eye,
@@ -646,7 +646,6 @@ export default function UIProject() {
     setUploadError("");
     setProjectSearchError("");
   };
-
 
   return (
     <div className="min-h-screen bg-[#f8fffe] dark:bg-slate-900">
