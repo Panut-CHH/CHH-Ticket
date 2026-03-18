@@ -198,20 +198,46 @@ export default function EditTicketPage() {
         
         if (active) {
           setTicketData(ticket);
+
+          // ถ้า ticket.projects เป็น null (project_id ยังไม่ได้ลิงค์) ให้หาจาก source_no
+          let projectNumber = ticket.projects?.project_number || null;
+          let projectName = ticket.projects?.project_name || null;
+          if (!projectNumber && ticket.source_no) {
+            // หาจาก project_items → projects
+            try {
+              const { data: pi } = await supabase
+                .from('project_items')
+                .select('project_id')
+                .eq('item_code', ticket.source_no)
+                .maybeSingle();
+              if (pi?.project_id) {
+                const { data: proj } = await supabase
+                  .from('projects')
+                  .select('project_number, project_name')
+                  .eq('id', pi.project_id)
+                  .maybeSingle();
+                if (proj) {
+                  projectNumber = proj.project_number;
+                  projectName = proj.project_name;
+                }
+              }
+            } catch {}
+          }
+
           setTicketView({
             id: ticket.no,
             title: ticket.description || `Ticket ${ticket.no}`,
             rpd: ticket.no,
             itemCode: ticket.source_no,
-            projectCode: ticket.projects?.project_number,
-            projectName: ticket.projects?.project_name,
+            projectCode: projectNumber,
+            projectName: projectName,
             quantity: ticket.quantity || 0,
             unit: ticket.unit || 'ชิ้น',
             dueDate: ticket.due_date || "",
             description: ticket.description || "",
             description2: ticket.description_2 || "",
             // ชื่อลูกค้าให้ดึงจากชื่อโปรเจ็คเสมอ
-            customerName: ticket?.projects?.project_name || "",
+            customerName: projectName || "",
             priority: ticket.priority || "Medium",
             status: ticket.status || "Pending"
           });

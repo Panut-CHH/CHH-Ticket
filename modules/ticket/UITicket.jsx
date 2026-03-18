@@ -368,12 +368,18 @@ export default function UITicket() {
             const dbDueDate = existingTicket?.due_date || null;
             const dbSourceNo = existingTicket?.source_no || '';
 
-            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate || (erpSourceNo && erpSourceNo !== dbSourceNo)) {
+            // ถ้า project_id ยัง null ให้หาจาก projectMap
+            const currentItemCode = erpSourceNo || dbSourceNo;
+            const matchedProject = currentItemCode ? projectMap.get(currentItemCode) : null;
+            const shouldUpdateProjectId = !existingTicket?.project_id && matchedProject?.id;
+
+            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate || (erpSourceNo && erpSourceNo !== dbSourceNo) || shouldUpdateProjectId) {
               try {
                 const updateData = {};
                 if (erpQuantity !== dbQuantity) updateData.quantity = erpQuantity;
                 if (erpDueDate !== dbDueDate) updateData.due_date = erpDueDate;
                 if (erpSourceNo && erpSourceNo !== dbSourceNo) updateData.source_no = erpSourceNo;
+                if (shouldUpdateProjectId) updateData.project_id = matchedProject.id;
 
                 await supabase
                   .from('ticket')
