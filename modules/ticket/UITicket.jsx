@@ -1567,6 +1567,7 @@ export default function UITicket() {
   const currentTab = tabs.find(tab => tab.id === activeTab);
 
   function TicketCard({ ticket, onEdit, onDelete, ticketBomStatus, ticketAssignmentStatus, projectMapByItemCode }) {
+    const [editLoading, setEditLoading] = useState(false);
     const cleanedRpd = String(ticket.rpd || ticket.id || '').replace(/^#/, '').trim();
     const editHref = `/tickets/${encodeURIComponent(cleanedRpd)}/edit`;
     const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
@@ -1830,11 +1831,11 @@ export default function UITicket() {
             {canAction ? (
               <Link
                 href={editHref}
-                onClick={(e) => e.stopPropagation()}
-                className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-transform duration-150 bg-blue-600 text-white active:scale-[0.98] cursor-pointer"
+                onClick={(e) => { e.stopPropagation(); setEditLoading(true); }}
+                className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-transform duration-150 bg-blue-600 text-white active:scale-[0.98] cursor-pointer ${editLoading ? 'opacity-70 pointer-events-none' : ''}`}
               >
-                <Edit className="w-3 h-3" />
-                <span>{t('editTicket', language)}</span>
+                {editLoading ? <Loader className="w-3 h-3 animate-spin" /> : <Edit className="w-3 h-3" />}
+                <span>{editLoading ? (language === 'th' ? 'กำลังโหลด...' : 'Loading...') : t('editTicket', language)}</span>
               </Link>
             ) : (
               <span
