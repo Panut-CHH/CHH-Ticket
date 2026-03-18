@@ -359,26 +359,32 @@ export default function UITicket() {
               }
             }
           } else {
-            // Ticket มีอยู่แล้ว — sync quantity, due_date, source_no จาก ERP ถ้าเปลี่ยน
+            // Ticket มีอยู่แล้ว — sync ข้อมูลจาก ERP ถ้าเปลี่ยน
             const existingTicket = dbTicketMap.get(rpdNo);
             const erpQuantity = Number(erpTicket.Quantity || 0);
             const erpDueDate = erpTicket.Due_Date || erpTicket.Delivery_Date || erpTicket.Ending_Date || null;
             const erpSourceNo = erpTicket.Source_No || erpTicket.itemCode || '';
+            const erpDescription = erpTicket.Description || '';
+            const erpDescription2 = erpTicket.Description_2 || '';
             const dbQuantity = existingTicket?.quantity || 0;
             const dbDueDate = existingTicket?.due_date || null;
             const dbSourceNo = existingTicket?.source_no || '';
+            const dbDescription = existingTicket?.description || '';
+            const dbDescription2 = existingTicket?.description_2 || '';
 
             // ถ้า project_id ยัง null ให้หาจาก projectMap
             const currentItemCode = erpSourceNo || dbSourceNo;
             const matchedProject = currentItemCode ? projectMap.get(currentItemCode) : null;
             const shouldUpdateProjectId = !existingTicket?.project_id && matchedProject?.id;
 
-            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate || (erpSourceNo && erpSourceNo !== dbSourceNo) || shouldUpdateProjectId) {
+            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate || (erpSourceNo && erpSourceNo !== dbSourceNo) || (erpDescription && erpDescription !== dbDescription) || (erpDescription2 && erpDescription2 !== dbDescription2) || shouldUpdateProjectId) {
               try {
                 const updateData = {};
                 if (erpQuantity !== dbQuantity) updateData.quantity = erpQuantity;
                 if (erpDueDate !== dbDueDate) updateData.due_date = erpDueDate;
                 if (erpSourceNo && erpSourceNo !== dbSourceNo) updateData.source_no = erpSourceNo;
+                if (erpDescription && erpDescription !== dbDescription) updateData.description = erpDescription;
+                if (erpDescription2 && erpDescription2 !== dbDescription2) updateData.description_2 = erpDescription2;
                 if (shouldUpdateProjectId) updateData.project_id = matchedProject.id;
 
                 await supabase
