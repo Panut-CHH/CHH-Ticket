@@ -1853,8 +1853,8 @@ export default function UITicket() {
                 disabled={isDeleting}
                 className="px-3 py-2 rounded-lg text-xs font-medium flex items-center justify-center gap-2 transition-transform duration-150 bg-red-600 text-white active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <Trash2 className="w-3 h-3" />
-                <span>{t('deleteTicket', language)}</span>
+                {isDeleting ? <Loader className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                <span>{isDeleting ? (language === 'th' ? 'กำลังลบ...' : 'Deleting...') : t('deleteTicket', language)}</span>
               </button>
             )}
           </div>
