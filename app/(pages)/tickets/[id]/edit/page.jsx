@@ -203,7 +203,7 @@ export default function EditTicketPage() {
             title: ticket.description || `Ticket ${ticket.no}`,
             rpd: ticket.no,
             itemCode: ticket.source_no,
-            projectCode: ticket.projects?.item_code,
+            projectCode: ticket.projects?.project_number,
             projectName: ticket.projects?.project_name,
             quantity: ticket.quantity || 0,
             unit: ticket.unit || 'ชิ้น',

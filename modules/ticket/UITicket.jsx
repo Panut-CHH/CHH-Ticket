@@ -359,18 +359,21 @@ export default function UITicket() {
               }
             }
           } else {
-            // Ticket มีอยู่แล้ว — sync quantity และ due_date จาก ERP ถ้าเปลี่ยน
+            // Ticket มีอยู่แล้ว — sync quantity, due_date, source_no จาก ERP ถ้าเปลี่ยน
             const existingTicket = dbTicketMap.get(rpdNo);
             const erpQuantity = Number(erpTicket.Quantity || 0);
             const erpDueDate = erpTicket.Due_Date || erpTicket.Delivery_Date || erpTicket.Ending_Date || null;
+            const erpSourceNo = erpTicket.Source_No || erpTicket.itemCode || '';
             const dbQuantity = existingTicket?.quantity || 0;
             const dbDueDate = existingTicket?.due_date || null;
+            const dbSourceNo = existingTicket?.source_no || '';
 
-            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate) {
+            if (erpQuantity !== dbQuantity || erpDueDate !== dbDueDate || (erpSourceNo && erpSourceNo !== dbSourceNo)) {
               try {
                 const updateData = {};
                 if (erpQuantity !== dbQuantity) updateData.quantity = erpQuantity;
                 if (erpDueDate !== dbDueDate) updateData.due_date = erpDueDate;
+                if (erpSourceNo && erpSourceNo !== dbSourceNo) updateData.source_no = erpSourceNo;
 
                 await supabase
                   .from('ticket')
@@ -1266,7 +1269,7 @@ export default function UITicket() {
 
     // หาชื่อโปรเจ็คจาก projectMap โดยใช้ item_code
     const project = projectMap.get(itemCode);
-    const projectCode = project?.item_code || erpProjectCode;
+    const projectCode = project?.project_number || erpProjectCode;
     const projectName = project?.project_name || project?.description || erpProjectCode;
 
     const priority = "ยังไม่ได้กำหนด Priority"; // ค่าตั้งต้น ให้แก้ไขได้ในหน้า edit
