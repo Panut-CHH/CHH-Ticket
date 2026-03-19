@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
-import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database, RotateCcw } from "lucide-react";
+import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database, RotateCcw, Banknote, Save, Loader2 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
@@ -567,6 +567,135 @@ function UserManagement() {
   );
 }
 
+function PenaltySettings({ user }) {
+  const { language } = useLanguage();
+  const [amount, setAmount] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
+  const fetchSettings = async () => {
+    try {
+      const res = await fetch('/api/settings/penalty');
+      const json = await res.json();
+      if (json.success && json.data) {
+        const setting = json.data.find(s => s.key === 'default_deduction_amount');
+        if (setting) setAmount(String(setting.value));
+      }
+    } catch (err) {
+      console.error('Failed to fetch penalty settings:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await fetch('/api/settings/penalty', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          key: 'default_deduction_amount',
+          value: Number(amount) || 0,
+          user_id: user?.id
+        })
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+      }
+    } catch (err) {
+      console.error('Failed to save penalty settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+        <div className="flex items-center gap-2 text-gray-500">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span>{language === 'th' ? 'กำลังโหลด...' : 'Loading...'}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white dark:bg-slate-800 rounded-2xl p-6 border border-slate-100 dark:border-slate-700 shadow-sm">
+      <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+        {language === 'th' ? 'ตั้งค่าหักเงิน' : 'Penalty Settings'}
+      </h3>
+      <p className="text-gray-500 dark:text-gray-400 mb-6">
+        {language === 'th'
+          ? 'กำหนดจำนวนเงินที่หักต่อครั้ง เมื่อช่างไม่กดเริ่ม/เสร็จสิ้นงานเอง และมีคนกดแทน'
+          : 'Set the deduction amount per occurrence when a technician does not start/complete work themselves'}
+      </p>
+
+      <div className="max-w-md space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+            {language === 'th' ? 'จำนวนเงินหักต่อครั้ง (บาท)' : 'Deduction amount per occurrence (THB)'}
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              min="0"
+              step="1"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-600 dark:bg-slate-700 dark:text-gray-100 px-4 py-3 text-lg focus:outline-none focus:ring-2 focus:ring-emerald-300"
+              placeholder="0"
+            />
+            <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+              {language === 'th' ? 'บาท' : 'THB'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="pressable inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-white shadow disabled:opacity-50"
+            style={{ background: "#22d3a0" }}
+          >
+            {saving ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {language === 'th' ? 'บันทึก' : 'Save'}
+          </button>
+          {saved && (
+            <span className="inline-flex items-center gap-1 text-emerald-600 text-sm">
+              <Check className="w-4 h-4" />
+              {language === 'th' ? 'บันทึกแล้ว' : 'Saved'}
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-8 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl">
+        <p className="text-sm text-amber-700 dark:text-amber-400">
+          <strong>{language === 'th' ? 'หมายเหตุ:' : 'Note:'}</strong>{' '}
+          {language === 'th'
+            ? 'เมื่อมีคนกดเริ่มงาน/เสร็จสิ้นงานแทนช่าง ระบบจะสร้างรายการหักเงินอัตโนมัติด้วยจำนวนเงินนี้ แอดมินต้องอนุมัติการหักเงินอีกครั้งในหน้ารายงาน'
+            : 'When someone starts/completes work on behalf of a technician, the system will automatically create a penalty record with this amount. Admin must approve the deduction in the Report page.'}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { user, updateUser } = useAuth();
   const { language } = useLanguage();
@@ -576,6 +705,7 @@ export default function SettingsPage() {
     { key: "profile", label: t('editProfile', language), icon: <UserIcon className="w-4 h-4" /> },
     { key: "security", label: t('changePassword', language), icon: <Shield className="w-4 h-4" /> },
     { key: "users", label: t('manageUsers', language), icon: <Users className="w-4 h-4" /> },
+    { key: "penalty", label: language === 'th' ? 'ตั้งค่าหักเงิน' : 'Penalty Settings', icon: <Banknote className="w-4 h-4" /> },
     { key: "erpTest", label: t('erpTest', language), icon: <Database className="w-4 h-4" /> },
     { key: "ticketReset", label: language === 'th' ? 'รีเซ็ตตั๋ว' : 'Reset Ticket', icon: <RotateCcw className="w-4 h-4" /> },
   ];
@@ -659,6 +789,8 @@ export default function SettingsPage() {
             </div>
           </div>
         )}
+
+        {activeTab === "penalty" && <PenaltySettings user={user} />}
 
         {activeTab === "ticketReset" && <TicketResetManagement user={user} />}
 

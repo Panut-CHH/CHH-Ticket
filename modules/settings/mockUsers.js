@@ -126,7 +126,8 @@ export const roleColors = {
   "Supervisor Production": "bg-green-100 text-green-700 border-green-200",
   Packing: "bg-indigo-100 text-indigo-700 border-indigo-200",
   CNC: "bg-cyan-100 text-cyan-700 border-cyan-200",
-  Drawing: "bg-orange-100 text-orange-700 border-orange-200"
+  Drawing: "bg-orange-100 text-orange-700 border-orange-200",
+  ProxyOperator: "bg-teal-100 text-teal-700 border-teal-200"
 };
 
 export const statusColors = {

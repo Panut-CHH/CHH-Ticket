@@ -48,13 +48,17 @@ export const ROLE_PERMISSIONS = {
     pages: ['report'],
     settingsTabs: ['profile', 'security']
   },
+  ProxyOperator: {
+    pages: ['production', 'report'],
+    settingsTabs: ['profile', 'security']
+  },
   Admin: {
     pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
-    settingsTabs: ['profile', 'security', 'users']
+    settingsTabs: ['profile', 'security', 'users', 'penalty']
   },
   SuperAdmin: {
     pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
-    settingsTabs: ['profile', 'security', 'users', 'erpTest', 'ticketReset']
+    settingsTabs: ['profile', 'security', 'users', 'penalty', 'erpTest', 'ticketReset']
   }
 };
 
@@ -98,6 +102,10 @@ const normalizeRoleName = (role) => {
       return 'Viewer';
     case 'hr':
       return 'HR';
+    case 'proxyoperator':
+    case 'proxy operator':
+    case 'proxy':
+      return 'ProxyOperator';
     default:
       return role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
   }
@@ -245,6 +253,8 @@ export const getRoleDisplayName = (role) => {
     'DashboardView': 'Viewer',
     'dashboardview': 'Viewer',
     'dashboard(view)': 'Viewer',
+    'ProxyOperator': 'กดแทน (Proxy)',
+    'proxyoperator': 'กดแทน (Proxy)',
   };
   
   return displayNames[roleStr] || roleStr;
@@ -306,6 +316,24 @@ export const isSupervisorPainting = (userRoles) => {
   return roles.some(role => {
     const normalizedRole = normalizeRoleName(role);
     return normalizedRole === 'Supervisor Painting';
+  });
+};
+
+// Helper function to check if a user is ProxyOperator (can act on behalf of technicians)
+export const isProxyOperator = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  return roles.some(role => {
+    const normalizedRole = normalizeRoleName(role);
+    return normalizedRole === 'ProxyOperator';
+  });
+};
+
+// Helper function to check if user can act as proxy (ProxyOperator, Supervisor, or Admin)
+export const canActAsProxy = (userRoles) => {
+  const roles = normalizeRoles(userRoles);
+  return roles.some(role => {
+    const normalizedRole = normalizeRoleName(role);
+    return ['ProxyOperator', 'Supervisor Painting', 'Supervisor Production', 'Admin', 'SuperAdmin'].includes(normalizedRole);
   });
 };
 

@@ -8,7 +8,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
-import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package, Printer, Clock, Pencil } from "lucide-react";
+import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package, Printer, Clock, Pencil, Gavel } from "lucide-react";
+import PenaltyReport from "@/components/PenaltyReport";
 import DocumentViewer from "@/components/DocumentViewer";
 
 /** เซลล์ชื่อ Project: บรรทัดเดียว ตัดด้วย ... ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal tooltip) */
@@ -1297,10 +1298,22 @@ export default function ReportPage() {
             >
               {language === "th" ? "ยกเลิกการจ่าย" : "Cancelled"}
             </button>
+            <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
+            <button
+              onClick={() => setActiveTab("penalty")}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg ${
+                activeTab === "penalty"
+                  ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+              }`}
+            >
+              <Gavel className="w-4 h-4" />
+              {language === "th" ? "หักเงิน (กดแทน)" : "Penalties"}
+            </button>
           </div>
 
-          {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ (ซ่อนเมื่ออยู่ใน penalty tab) */}
+          {activeTab !== "penalty" && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
@@ -1348,10 +1361,10 @@ export default function ReportPage() {
                 </div>
               </div>
             </div>
-          </div>
+          </div>}
 
-          {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
+          {/* Filters (ซ่อนเมื่ออยู่ใน penalty tab) */}
+          {activeTab !== "penalty" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
             {/* Search */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1431,7 +1444,7 @@ export default function ReportPage() {
                 </button>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* Clear Filters Button */}
           {(searchTerm || selectedTechnician || selectedStation || selectedProject) && (
@@ -1463,6 +1476,8 @@ export default function ReportPage() {
               <Loader2 className="w-4 h-4 animate-spin" />
               {t("loading", language)}
             </div>
+          ) : activeTab === "penalty" ? (
+            <PenaltyReport />
           ) : activeTab === "unpaid" ? (
             renderTable(unpaidRows, "unpaid", { showProjectTooltip, hideProjectTooltip })
           ) : activeTab === "pending" ? (

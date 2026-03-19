@@ -11,7 +11,7 @@ import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, 
 import DocumentViewer from "@/components/DocumentViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
-import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction, isSupervisorProduction, isSupervisorPainting } from "@/utils/rolePermissions";
+import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction, isSupervisorProduction, isSupervisorPainting, isProxyOperator } from "@/utils/rolePermissions";
 
 function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
   console.log('🚀 [DetailCard] Component RENDERED');
@@ -126,17 +126,21 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   const hasSupervisorProductionRole = isSupervisorProduction(userRoles);
   // Check if user has Supervisor Painting role (can act on painting stations)
   const hasSupervisorPaintingRole = isSupervisorPainting(userRoles);
-  
-  // Check if current user is assigned to the step (including supervisor delegation)
-  const isAssignedToCurrentBase = isAdmin || 
+  // Check if user has ProxyOperator role (can act on behalf of any technician on any station)
+  const hasProxyOperatorRole = isProxyOperator(userRoles);
+
+  // Check if current user is assigned to the step (including supervisor delegation and ProxyOperator)
+  const isAssignedToCurrentBase = isAdmin ||
     hasSupervisorProductionRole ||
+    hasProxyOperatorRole ||
     (hasSupervisorPaintingRole && isCurrentPaintingStep) ||
-    isUserAssigned(currentTechnician, me) || 
+    isUserAssigned(currentTechnician, me) ||
     canSupervisorActForStep(currentIndex, currentStationData);
-  const isAssignedToPendingBase = isAdmin || 
+  const isAssignedToPendingBase = isAdmin ||
     hasSupervisorProductionRole ||
+    hasProxyOperatorRole ||
     (hasSupervisorPaintingRole && isFirstPendingPaintingStep) ||
-    isUserAssigned(firstPendingTechnician, me) || 
+    isUserAssigned(firstPendingTechnician, me) ||
     canSupervisorActForStep(firstPendingIndex, firstPendingStationData);
   // Allow Packing/CNC role to start/complete their respective stations without explicit assignment
   const isAssignedToCurrent = isAssignedToCurrentBase || 
@@ -890,7 +894,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                   ℹ️ คุณสามารถดูรายละเอียดได้แต่ไม่สามารถเริ่มต้นหรือทำเสร็จสถานีได้ 
                 </div>
               )}
-              {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && !hasSupervisorProductionRole && !hasSupervisorPaintingRole && (
+              {canActionInProduction && !isAssignedToPending && firstPendingStep && !isPendingQC && !isAdmin && !hasSupervisorProductionRole && !hasSupervisorPaintingRole && !hasProxyOperatorRole && (
                 <div className="mt-3 p-3 rounded-lg border bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800 text-orange-900 dark:text-orange-300 text-sm">
                   ⚠️ คุณไม่ได้รับมอบหมายให้ทำในสถานีนี้
                 </div>

@@ -6,7 +6,7 @@ import { useLanguage } from "@/contexts/LanguageContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@heroui/react";
-import { LogIn, User, Shield, Home, Ticket, Settings, ClipboardCheck, Factory, History, FolderOpen } from "lucide-react";
+import { LogIn, User, Shield, Home, Ticket, Settings, ClipboardCheck, Factory, History, FolderOpen, FileText } from "lucide-react";
 import UserProfile from "@/components/UserProfile";
 import LanguageToggle from "@/components/LanguageToggle";
 import NotificationBell from "@/components/NotificationBell";
@@ -27,6 +27,7 @@ export default function UIIndex() {
     { path: "/qc", label: "qc", description: "qualityControl", icon: ClipboardCheck },
     { path: "/log", label: "log", description: "activityHistory", icon: History },
     { path: "/settings", label: "settings", description: "systemSettings", icon: Settings },
+    { path: "/report", label: "report", description: "paymentReport", icon: FileText },
   ];
 
   // Filter buttons based on user roles

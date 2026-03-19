@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { logApiCall, logError } from '@/utils/activityLogger';
-import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole, isSupervisorProduction, isSupervisorPainting } from '@/utils/rolePermissions';
+import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole, isSupervisorProduction, isSupervisorPainting, isProxyOperator, canActAsProxy } from '@/utils/rolePermissions';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -98,7 +98,7 @@ export async function POST(request, { params }) {
 
     // Check if user is assigned to this station (ต้องใช้ step_order เพื่อให้แต่ละ step แยกกัน)
     console.log('[API] Checking assignment for:', { ticketNo, station_id, step_order, user_id, isAdmin });
-    
+
     const { data: assignment, error: assignmentError } = await supabaseAdmin
       .from('ticket_assignments')
       .select('*')
@@ -108,15 +108,17 @@ export async function POST(request, { params }) {
       .eq('technician_id', user_id)
       .single();
 
-    // Check if user is a supervisor and can act for the assigned technician
+    // Check if user is a supervisor/proxy and can act for the assigned technician
     let canSupervisorAct = false;
-    let actualTechnicianId = user_id; // Default to user_id, will be updated if supervisor acts
-    
+    let isProxyAction = false; // Flag ว่าเป็นการกดแทนหรือไม่
+    let actualTechnicianId = user_id; // Default to user_id, will be updated if acting on behalf
+
     if (!isAdmin && (assignmentError || !assignment)) {
-      // User is not directly assigned, check if they're a supervisor
-      if (isSupervisor(userRoles)) {
-        console.log('[API] User is a supervisor, checking if they can act for assigned technician');
-        
+      // User is not directly assigned, check if they're a supervisor or ProxyOperator
+      const isProxy = isProxyOperator(userRoles);
+      if (isSupervisor(userRoles) || isProxy) {
+        console.log('[API] User is a supervisor/proxy, checking if they can act for assigned technician');
+
         // Find the actual assignment for this station/step (any technician assigned)
         const { data: actualAssignment, error: actualAssignmentError } = await supabaseAdmin
           .from('ticket_assignments')
@@ -127,29 +129,41 @@ export async function POST(request, { params }) {
           .maybeSingle();
 
         if (!actualAssignmentError && actualAssignment && actualAssignment.technician_id) {
-          // Get the assigned technician's role
-          const { data: technicianRow } = await supabaseAdmin
-            .from('users')
-            .select('role, roles')
-            .eq('id', actualAssignment.technician_id)
-            .maybeSingle();
+          if (isProxy) {
+            // ProxyOperator can act for ANY technician on ANY station
+            canSupervisorAct = true;
+            isProxyAction = true;
+            actualTechnicianId = actualAssignment.technician_id;
+            console.log('[API] ProxyOperator acting for technician:', {
+              proxyUserId: user_id,
+              technicianId: actualTechnicianId
+            });
+          } else {
+            // Get the assigned technician's role for supervisor check
+            const { data: technicianRow } = await supabaseAdmin
+              .from('users')
+              .select('role, roles')
+              .eq('id', actualAssignment.technician_id)
+              .maybeSingle();
 
-          if (technicianRow) {
-            const technicianRoles = technicianRow.roles || (technicianRow.role ? [technicianRow.role] : []);
-            // Check if supervisor can act for any of the technician's roles
-            canSupervisorAct = userRoles.some(supervisorRole => 
-              technicianRoles.some(technicianRole => 
-                canSupervisorActForTechnician(supervisorRole, technicianRole)
-              )
-            );
+            if (technicianRow) {
+              const technicianRoles = technicianRow.roles || (technicianRow.role ? [technicianRow.role] : []);
+              // Check if supervisor can act for any of the technician's roles
+              canSupervisorAct = userRoles.some(supervisorRole =>
+                technicianRoles.some(technicianRole =>
+                  canSupervisorActForTechnician(supervisorRole, technicianRole)
+                )
+              );
 
-            if (canSupervisorAct) {
-              actualTechnicianId = actualAssignment.technician_id;
-              console.log('[API] Supervisor can act for technician:', {
-                supervisorRoles: userRoles,
-                technicianId: actualTechnicianId,
-                technicianRoles: technicianRoles
-              });
+              if (canSupervisorAct) {
+                isProxyAction = true;
+                actualTechnicianId = actualAssignment.technician_id;
+                console.log('[API] Supervisor can act for technician:', {
+                  supervisorRoles: userRoles,
+                  technicianId: actualTechnicianId,
+                  technicianRoles: technicianRoles
+                });
+              }
             }
           }
         }
@@ -278,13 +292,14 @@ export async function POST(request, { params }) {
       // actualTechnicianId is already determined above in the authorization check
 
       // Create technician work session record
+      const proxyUserId = isProxyAction ? user_id : null;
       console.log('[API] Creating work session with:', {
         ticket_no: ticketNo,
         station_id: station_id,
         step_order: step_order,
         technician_id: actualTechnicianId,
         started_at: startedAt,
-        supervisor_id: canSupervisorAct ? user_id : null
+        proxy_user_id: proxyUserId
       });
 
       const { data: workSession, error: sessionError } = await supabaseAdmin
@@ -294,10 +309,40 @@ export async function POST(request, { params }) {
           station_id: station_id,
           step_order: step_order,
           technician_id: actualTechnicianId,
-          started_at: startedAt
+          started_at: startedAt,
+          proxy_user_id: proxyUserId
         })
         .select()
         .single();
+
+      // สร้าง penalty deduction อัตโนมัติเมื่อมีคนกดแทน (start)
+      if (isProxyAction && actualTechnicianId !== user_id) {
+        try {
+          // ดึงค่าหักเงินจาก penalty_settings
+          const { data: penaltySetting } = await supabaseAdmin
+            .from('penalty_settings')
+            .select('value')
+            .eq('key', 'default_deduction_amount')
+            .maybeSingle();
+          const deductionAmount = penaltySetting?.value || 0;
+
+          await supabaseAdmin
+            .from('penalty_deductions')
+            .insert({
+              ticket_no: ticketNo,
+              station_id: station_id,
+              step_order: step_order,
+              action: 'start',
+              technician_id: actualTechnicianId,
+              proxy_user_id: user_id,
+              amount: deductionAmount,
+              status: 'pending'
+            });
+          console.log('[API] Created penalty deduction for proxy start action:', { technicianId: actualTechnicianId, proxyUserId: user_id, amount: deductionAmount });
+        } catch (penaltyErr) {
+          console.warn('[API] Failed to create penalty deduction:', penaltyErr?.message);
+        }
+      }
 
       if (sessionError) {
         console.error('[API] Work session creation error:', sessionError);
@@ -425,13 +470,21 @@ export async function POST(request, { params }) {
         // Convert ms -> minutes and round to 2 decimals
         const durationMinutes = Math.round(((durationMs / 60000)) * 100) / 100;
 
-        // Update the work session with completion data
+        // Update the work session with completion data (+ proxy_user_id if acting on behalf)
+        const completeProxyUserId = isProxyAction ? user_id : null;
+        const updateData = {
+          completed_at: completedAt,
+          duration_minutes: durationMinutes
+        };
+        // If this is a proxy complete and the session was started by the technician themselves,
+        // update proxy_user_id so we know someone else completed it
+        if (completeProxyUserId) {
+          updateData.proxy_user_id = completeProxyUserId;
+        }
+
         const { error: updateSessionError } = await supabaseAdmin
           .from('technician_work_sessions')
-          .update({
-            completed_at: completedAt,
-            duration_minutes: durationMinutes
-          })
+          .update(updateData)
           .eq('ticket_no', ticketNo)
           .eq('station_id', station_id)
           .eq('step_order', step_order)
@@ -440,10 +493,37 @@ export async function POST(request, { params }) {
 
         if (updateSessionError) {
           console.error('[API] Work session update error:', updateSessionError);
-          // Don't fail the entire operation, just log the error
           console.warn('[API] Continuing without work session update');
         } else {
           console.log('[API] Updated work session with completion data:', { durationMinutes });
+        }
+
+        // สร้าง penalty deduction อัตโนมัติเมื่อมีคนกดเสร็จสิ้นแทน
+        if (isProxyAction && actualTechnicianIdForUpdate !== user_id) {
+          try {
+            const { data: penaltySetting } = await supabaseAdmin
+              .from('penalty_settings')
+              .select('value')
+              .eq('key', 'default_deduction_amount')
+              .maybeSingle();
+            const deductionAmount = penaltySetting?.value || 0;
+
+            await supabaseAdmin
+              .from('penalty_deductions')
+              .insert({
+                ticket_no: ticketNo,
+                station_id: station_id,
+                step_order: step_order,
+                action: 'complete',
+                technician_id: actualTechnicianIdForUpdate,
+                proxy_user_id: user_id,
+                amount: deductionAmount,
+                status: 'pending'
+              });
+            console.log('[API] Created penalty deduction for proxy complete action');
+          } catch (penaltyErr) {
+            console.warn('[API] Failed to create penalty deduction:', penaltyErr?.message);
+          }
         }
       } else {
         console.warn('[API] No work session found to update or error:', sessionError?.message);

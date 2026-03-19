@@ -323,7 +323,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                 
                 {/* Role Badges Grid */}
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {["SuperAdmin", "Admin", "HR", "QC", "Viewer", "Production", "Painting", "Supervisor Painting", "Supervisor Production", "Packing", "CNC", "Drawing", "Storage"].map((role) => {
+                  {["SuperAdmin", "Admin", "HR", "QC", "Viewer", "Production", "Painting", "Supervisor Painting", "Supervisor Production", "Packing", "CNC", "Drawing", "Storage", "ProxyOperator"].map((role) => {
                     const isSelected = formData.roles.includes(role);
                     return (
                       <button
