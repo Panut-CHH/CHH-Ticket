@@ -200,7 +200,12 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
             name_th,
             code
           ),
-          users (
+          technician:users!technician_work_sessions_technician_id_fkey (
+            id,
+            name,
+            email
+          ),
+          proxy:users!technician_work_sessions_proxy_user_id_fkey (
             id,
             name,
             email
@@ -361,7 +366,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     // Match by station name and technician, and not completed
     return session.stations?.name_th === currentStation.step && 
            session.completed_at === null &&
-           session.users?.name === currentTechnician;
+           session.technician?.name === currentTechnician;
   });
   // Auto-hide saving indicator once a live current session is detected
   useEffect(() => {
@@ -1039,7 +1044,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                   // For QC: find who started QC from activity logs or work sessions
                   // First try to find from work sessions (if someone started QC via normal flow)
                   if (matchingSession) {
-                    technicianName = matchingSession.users?.name || matchingSession.users?.email || '';
+                    technicianName = matchingSession.technician?.name || matchingSession.technician?.email || '';
                   }
                   
                   // If not found, try to find from activity logs (qc_started action)
@@ -1070,7 +1075,7 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                   // For non-QC: use technician from station data or work session
                   technicianName = stationData?.technician || '';
                   if (!technicianName && matchingSession) {
-                    technicianName = matchingSession.users?.name || matchingSession.users?.email || '';
+                    technicianName = matchingSession.technician?.name || matchingSession.technician?.email || '';
                   }
                 }
                 

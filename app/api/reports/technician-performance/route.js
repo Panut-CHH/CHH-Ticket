@@ -62,7 +62,12 @@ export async function GET(request) {
           name_th,
           code
         ),
-        users (
+        technician:users!technician_work_sessions_technician_id_fkey (
+          id,
+          name,
+          email
+        ),
+        proxy:users!technician_work_sessions_proxy_user_id_fkey (
           id,
           name,
           email
@@ -234,7 +239,7 @@ function groupByTechnician(sessions) {
   
   sessions.forEach(session => {
     const technicianId = session.technician_id;
-    const technicianName = session.users?.name || session.users?.email || 'Unknown';
+    const technicianName = session.technician?.name || session.technician?.email || 'Unknown';
     
     if (!groups[technicianId]) {
       groups[technicianId] = {
@@ -275,7 +280,7 @@ function aggregateTimeByStationAndTechnician(sessions) {
   const map = new Map();
   sessions.forEach(s => {
     const techId = s.technician_id;
-    const techName = s.users?.name || s.users?.email || 'Unknown';
+    const techName = s.technician?.name || s.technician?.email || 'Unknown';
     const stationId = s.station_id;
     const stationName = s.stations?.name_th || s.stations?.code || 'Unknown Station';
     const key = `${techId}|${stationId}`;
@@ -299,7 +304,7 @@ function aggregateTimeByTicketAndTechnician(sessions) {
   const map = new Map();
   sessions.forEach(s => {
     const techId = s.technician_id;
-    const techName = s.users?.name || s.users?.email || 'Unknown';
+    const techName = s.technician?.name || s.technician?.email || 'Unknown';
     const ticketNo = s.ticket_no;
     const key = `${techId}|${ticketNo}`;
     const minutes = Number(s.duration_minutes || 0);
