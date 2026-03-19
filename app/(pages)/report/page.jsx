@@ -280,7 +280,7 @@ export default function ReportPage() {
           const chunk = flowTicketNos.slice(i, i + CHUNK);
           const { data: tData, error: tErr } = await supabase
             .from("ticket")
-            .select("no, description, quantity, source_no, unit")
+            .select("no, description, quantity, source_no, unit, remark")
             .in("no", chunk);
           if (tErr) throw tErr;
           ticketData = ticketData.concat(tData || []);
@@ -420,6 +420,7 @@ export default function ReportPage() {
               round: paidRecord?.payment_round || roundFromCompleted,
               completedAt: flow.completed_at,
               qcCompletedAt,
+              remark: ticket?.remark || "",
               paymentStatus: paidRecord?.status || "unpaid",
               paymentRecord: paidRecord || null
             });
@@ -448,6 +449,7 @@ export default function ReportPage() {
             round: paidRecord?.payment_round || roundFromCompleted,
             completedAt: flow.completed_at,
             qcCompletedAt,
+            remark: ticket?.remark || "",
             paymentStatus: paidRecord?.status || "unpaid",
             paymentRecord: paidRecord || null
           });
@@ -505,7 +507,8 @@ export default function ReportPage() {
           r.ticketNo.toLowerCase().includes(term) ||
           r.technicianName.toLowerCase().includes(term) ||
           r.stationName.toLowerCase().includes(term) ||
-          r.projectName.toLowerCase().includes(term)
+          r.projectName.toLowerCase().includes(term) ||
+          (r.remark && r.remark.toLowerCase().includes(term))
       );
     }
 
@@ -705,6 +708,7 @@ export default function ReportPage() {
         <td style="text-align:center">${row.quantity}</td>
         <td style="text-align:right">${Number(row.pricePerUnit).toLocaleString()}</td>
         <td style="text-align:right;font-weight:600">${Number(row.totalPrice).toLocaleString()}</td>
+        <td style="color:#b45309;white-space:pre-wrap">${row.remark || '-'}</td>
       </tr>
     `).join('');
     const html = `<!DOCTYPE html>
@@ -745,7 +749,7 @@ export default function ReportPage() {
   <thead><tr>
     <th>No.</th><th>ช่าง</th><th>สถานี</th><th>โปรเจ็ค</th><th>Description</th>
     <th>QC</th><th style="text-align:center">จำนวน</th>
-    <th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th>
+    <th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th>หมายเหตุ</th>
   </tr></thead>
   <tbody>${rowsHtml}</tbody>
 </table>
@@ -843,6 +847,7 @@ export default function ReportPage() {
             <SortableHeader sortKey="quantity" className="px-3">จำนวน</SortableHeader>
             <SortableHeader sortKey="pricePerUnit" className="px-3">ราคา/หน่วย</SortableHeader>
             <SortableHeader sortKey="totalPrice" className="px-3">รวม</SortableHeader>
+            <th className="px-3 py-3 text-xs font-semibold text-gray-600 dark:text-gray-300">{language === "th" ? "หมายเหตุ" : "Remark"}</th>
             <th className="w-8 py-3"></th>
             <th className="pl-3 pr-4 py-3 text-right">Actions</th>
           </tr>
@@ -868,6 +873,13 @@ export default function ReportPage() {
               </td>
               <td className="px-3 py-3 text-gray-900 dark:text-gray-100 font-semibold">
                 {row.totalPrice.toLocaleString()}
+              </td>
+              <td className="px-3 py-3 text-xs text-amber-600 dark:text-amber-400 max-w-[160px]">
+                {row.remark ? (
+                  <span className="whitespace-pre-wrap break-words">{row.remark}</span>
+                ) : (
+                  <span className="text-gray-400">-</span>
+                )}
               </td>
               <td className="py-3 text-center">
                 <button
@@ -1021,7 +1033,7 @@ export default function ReportPage() {
           })}
           {data.length === 0 && (
             <tr>
-              <td colSpan={11} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+              <td colSpan={12} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                 {t("noData", language)}
               </td>
             </tr>
