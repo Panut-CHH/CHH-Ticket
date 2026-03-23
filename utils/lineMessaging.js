@@ -34,21 +34,50 @@ export async function sendLinePushMessage(lineUserId, message) {
 }
 
 /**
- * แจ้งเตือนช่างผ่าน LINE เมื่อตั๋วถึงสถานีของเขา
+ * แจ้งเตือนช่างสถานีถัดไปผ่าน LINE เมื่อสถานีก่อนหน้าทำเสร็จ
+ * (ตั๋วมาถึงสถานีของเขาแล้ว)
  * @param {string} ticketNo - หมายเลขตั๋ว
- * @param {string} stationId - UUID ของสถานี
- * @param {number} stepOrder - ลำดับ step
+ * @param {number} completedStepOrder - step_order ที่เพิ่งทำเสร็จ
  */
-export async function sendLineStationNotification(ticketNo, stationId, stepOrder) {
+export async function sendLineNextStationNotification(ticketNo, completedStepOrder) {
   const admin = supabaseServer;
 
-  // หาช่างที่ assigned อยู่สถานีนี้
+  // หา step ถัดไปของตั๋วนี้
+  const { data: nextFlow } = await admin
+    .from("ticket_station_flow")
+    .select("station_id, step_order")
+    .eq("ticket_no", ticketNo)
+    .eq("status", "pending")
+    .gt("step_order", completedStepOrder)
+    .order("step_order", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  if (!nextFlow) return; // ไม่มีสถานีถัดไป (สถานีสุดท้ายแล้ว)
+
+  // ดึงชื่อสถานีถัดไป
+  const { data: station } = await admin
+    .from("stations")
+    .select("name_th, code")
+    .eq("id", nextFlow.station_id)
+    .maybeSingle();
+
+  const stationName = station?.name_th || station?.code || "Unknown";
+  const stationCode = (station?.code || station?.name_th || "").toUpperCase();
+
+  // ถ้าสถานีถัดไปเป็น QC → แจ้ง QC users ทุกคน
+  if (stationCode === "QC" || stationName.includes("QC") || stationName.includes("ตรวจ") || stationName.includes("คุณภาพ")) {
+    await sendLineQCNotification(ticketNo, stationName);
+    return;
+  }
+
+  // หาช่างที่ assigned อยู่สถานีถัดไป
   const { data: assignment } = await admin
     .from("ticket_assignments")
     .select("technician_id")
     .eq("ticket_no", ticketNo)
-    .eq("station_id", stationId)
-    .eq("step_order", stepOrder)
+    .eq("station_id", nextFlow.station_id)
+    .eq("step_order", nextFlow.step_order)
     .maybeSingle();
 
   if (!assignment?.technician_id) return;
@@ -62,14 +91,6 @@ export async function sendLineStationNotification(ticketNo, stationId, stepOrder
 
   if (!user?.line_user_id) return;
 
-  // ดึงชื่อสถานี
-  const { data: station } = await admin
-    .from("stations")
-    .select("name_th, code")
-    .eq("id", stationId)
-    .maybeSingle();
-
-  const stationName = station?.name_th || station?.code || "Unknown";
   const message = `📋 ตั๋ว ${ticketNo} ถึงสถานี ${stationName} แล้ว\nกรุณาเริ่มงาน`;
 
   await sendLinePushMessage(user.line_user_id, message);

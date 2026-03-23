@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { logApiCall, logError } from '@/utils/activityLogger';
 import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole, isSupervisorProduction, isSupervisorPainting, isProxyOperator, canActAsProxy } from '@/utils/rolePermissions';
-import { sendLineStationNotification } from '@/utils/lineMessaging';
+import { sendLineNextStationNotification } from '@/utils/lineMessaging';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -353,11 +353,6 @@ export async function POST(request, { params }) {
         console.log('[API] Created work session:', workSession);
       }
 
-      // ส่ง LINE แจ้งเตือนช่างที่ assigned (fire-and-forget)
-      sendLineStationNotification(ticketNo, station_id, step_order).catch(err =>
-        console.warn('[LINE] Station notification failed:', err?.message)
-      );
-
       // Get station name and user info for log
       let stationName = null;
       let userName = null;
@@ -537,6 +532,11 @@ export async function POST(request, { params }) {
 
       // ไม่ auto-start ขั้นตอนถัดไป - ให้ช่างกด Start เอง
       // เพื่อให้มีเวลาพักหรือเตรียมตัวก่อนเริ่มงานใหม่
+
+      // ส่ง LINE แจ้งเตือนช่างสถานีถัดไปว่าตั๋วมาถึงแล้ว (fire-and-forget)
+      sendLineNextStationNotification(ticketNo, step_order).catch(err =>
+        console.warn('[LINE] Next station notification failed:', err?.message)
+      );
 
       // Get station name and user name for log
       let stationName = null;
