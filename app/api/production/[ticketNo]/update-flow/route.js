@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 import { logApiCall, logError } from '@/utils/activityLogger';
 import { isSupervisor, canSupervisorActForTechnician, getSupervisorManagedRole, isSupervisorProduction, isSupervisorPainting, isProxyOperator, canActAsProxy } from '@/utils/rolePermissions';
+import { sendLineStationNotification } from '@/utils/lineMessaging';
 
 // Create Supabase admin client (bypasses RLS)
 const supabaseAdmin = createClient(
@@ -351,6 +352,11 @@ export async function POST(request, { params }) {
       } else {
         console.log('[API] Created work session:', workSession);
       }
+
+      // ส่ง LINE แจ้งเตือนช่างที่ assigned (fire-and-forget)
+      sendLineStationNotification(ticketNo, station_id, step_order).catch(err =>
+        console.warn('[LINE] Station notification failed:', err?.message)
+      );
 
       // Get station name and user info for log
       let stationName = null;

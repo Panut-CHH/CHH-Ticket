@@ -18,7 +18,7 @@ export async function POST(request, { params }) {
     const supabaseAdmin = getSupabaseAdmin();
     const { id: userId } = params;
     const body = await request.json();
-    const { name, email, password, role, roles } = body;
+    const { name, email, password, role, roles, line_user_id } = body;
 
     // Normalize roles: support both old format (role) and new format (roles)
     const userRoles = roles || (role ? [role] : null);
@@ -30,6 +30,11 @@ export async function POST(request, { params }) {
       email: email,
       updated_at: new Date().toISOString()
     };
+
+    // อัปเดต LINE User ID (รองรับ null เพื่อลบออก)
+    if (line_user_id !== undefined) {
+      updateData.line_user_id = line_user_id || null;
+    }
 
     if (normalizedRoles) {
       updateData.roles = normalizedRoles;

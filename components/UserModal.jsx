@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, User, Mail, Lock, Shield, Check, Sparkles } from "lucide-react";
+import { X, User, Mail, Lock, Shield, Check, Sparkles, MessageCircle } from "lucide-react";
 import { supabase } from "@/utils/supabaseClient";
 import { getRoleDisplayName } from "@/utils/rolePermissions";
 
@@ -10,7 +10,8 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
     name: "",
     email: "",
     password: "",
-    roles: ["Production"]
+    roles: ["Production"],
+    line_user_id: ""
   });
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({});
@@ -39,14 +40,16 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
           name: editingUser.name || "",
           email: editingUser.email || "",
           password: "",
-          roles: Array.isArray(userRoles) ? userRoles : [userRoles]
+          roles: Array.isArray(userRoles) ? userRoles : [userRoles],
+          line_user_id: editingUser.line_user_id || ""
         });
       } else {
         setFormData({
           name: "",
           email: "",
           password: "",
-          roles: ["Production"]
+          roles: ["Production"],
+          line_user_id: ""
         });
       }
       setErrors({});
@@ -101,6 +104,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
             email: formData.email,
             password: formData.password,
             roles: formData.roles,
+            line_user_id: formData.line_user_id || null,
           }),
         });
 
@@ -120,6 +124,7 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
             email: formData.email,
             password: formData.password,
             roles: formData.roles,
+            line_user_id: formData.line_user_id || null,
           }),
         });
 
@@ -307,6 +312,28 @@ export default function UserModal({ open, onClose, editingUser = null, onSuccess
                     {errors.password}
                   </p>
                 )}
+              </div>
+
+              {/* LINE User ID Field */}
+              <div className="space-y-1.5">
+                <label className="flex items-center gap-2 text-sm font-semibold text-gray-700 dark:text-gray-200">
+                  <div className="p-1 bg-green-100 dark:bg-green-900/30 rounded-lg">
+                    <MessageCircle className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="flex-1 flex items-center justify-between flex-wrap gap-2">
+                    <span>LINE User ID</span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-normal">
+                      (สำหรับแจ้งเตือนผ่าน LINE)
+                    </span>
+                  </div>
+                </label>
+                <input
+                  type="text"
+                  value={formData.line_user_id}
+                  onChange={(e) => handleInputChange('line_user_id', e.target.value)}
+                  className="w-full px-3 py-2.5 rounded-lg border-2 text-sm bg-gray-50 dark:bg-slate-800/50 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 transition-all duration-200 border-gray-200 dark:border-slate-700 focus:border-green-400 dark:focus:border-green-500 focus:ring-2 focus:ring-green-100 dark:focus:ring-green-900/30 focus:outline-none focus:bg-white dark:focus:bg-slate-800"
+                  placeholder="U1234567890abcdef..."
+                />
               </div>
 
               {/* Roles Selection */}
