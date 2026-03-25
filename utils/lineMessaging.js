@@ -41,9 +41,10 @@ export async function sendLinePushMessage(lineUserId, message) {
  */
 export async function sendLineNextStationNotification(ticketNo, completedStepOrder) {
   const admin = supabaseServer;
+  console.log(`[LINE] sendLineNextStationNotification: ticket=${ticketNo}, completedStep=${completedStepOrder}`);
 
   // หา step ถัดไปของตั๋วนี้
-  const { data: nextFlow } = await admin
+  const { data: nextFlow, error: nextFlowError } = await admin
     .from("ticket_station_flow")
     .select("station_id, step_order")
     .eq("ticket_no", ticketNo)
@@ -53,6 +54,7 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
     .limit(1)
     .maybeSingle();
 
+  console.log(`[LINE] nextFlow:`, nextFlow, nextFlowError?.message);
   if (!nextFlow) return; // ไม่มีสถานีถัดไป (สถานีสุดท้ายแล้ว)
 
   // ดึงชื่อสถานีถัดไป
@@ -63,10 +65,13 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
     .maybeSingle();
 
   const stationName = station?.name_th || station?.code || "Unknown";
-  const stationCode = (station?.code || station?.name_th || "").toUpperCase();
+  const stationCode = (station?.code || "").toUpperCase();
+  console.log(`[LINE] nextStation: name=${stationName}, code=${stationCode}`);
 
   // ถ้าสถานีถัดไปเป็น QC → แจ้ง QC users ทุกคน
-  if (stationCode === "QC" || stationName.includes("QC") || stationName.includes("ตรวจ") || stationName.includes("คุณภาพ")) {
+  const isQC = stationCode === "QC" || stationName.toUpperCase().includes("QC") || stationName.includes("ตรวจ") || stationName.includes("คุณภาพ");
+  console.log(`[LINE] isQC=${isQC}`);
+  if (isQC) {
     await sendLineQCNotification(ticketNo, stationName);
     return;
   }
@@ -80,6 +85,7 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
     .eq("step_order", nextFlow.step_order)
     .maybeSingle();
 
+  console.log(`[LINE] assignment:`, assignment);
   if (!assignment?.technician_id) return;
 
   // ดึง line_user_id ของช่าง
@@ -89,10 +95,10 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
     .eq("id", assignment.technician_id)
     .maybeSingle();
 
+  console.log(`[LINE] technician line_user_id:`, user?.line_user_id ? "found" : "not set");
   if (!user?.line_user_id) return;
 
   const message = `📋 ตั๋ว ${ticketNo} ถึงสถานี ${stationName} แล้ว\nกรุณาเริ่มงาน`;
-
   await sendLinePushMessage(user.line_user_id, message);
 }
 
@@ -103,14 +109,16 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
  */
 export async function sendLineQCNotification(ticketNo, stationName) {
   const admin = supabaseServer;
+  console.log(`[LINE] sendLineQCNotification: ticket=${ticketNo}, station=${stationName}`);
 
   // หา QC users ที่มี line_user_id
-  const { data: qcUsers } = await admin
+  const { data: qcUsers, error: qcError } = await admin
     .from("users")
     .select("line_user_id, name")
     .or("roles.ov.{QC},role.eq.QC")
     .not("line_user_id", "is", null);
 
+  console.log(`[LINE] QC users found: ${qcUsers?.length || 0}`, qcError?.message);
   if (!qcUsers || qcUsers.length === 0) return;
 
   const message = `🔍 ตั๋ว ${ticketNo} พร้อมสำหรับ QC ที่สถานี ${stationName || "QC"}\nกรุณาตรวจสอบ`;
