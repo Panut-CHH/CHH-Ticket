@@ -117,6 +117,17 @@ export async function DELETE(request, { params }) {
       );
     }
 
+    // ลบ work sessions ที่เกี่ยวข้อง (ไม่ block ถ้า error)
+    const { error: workSessionError } = await supabase
+      .from('technician_work_sessions')
+      .delete()
+      .eq('ticket_no', normalizedId);
+
+    if (workSessionError) {
+      console.error('Error deleting technician_work_sessions:', workSessionError);
+      await logError(workSessionError, { action: 'delete', entityType: 'technician_work_sessions', entityId: normalizedId }, request);
+    }
+
     // ลบ ticket หลัก (ticket_bom จะถูก cascade)
     const { error: ticketError } = await supabase
       .from('ticket')

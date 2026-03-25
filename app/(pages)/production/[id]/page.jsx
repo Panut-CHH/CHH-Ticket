@@ -804,8 +804,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 <div className="w-full h-full">
                   {ticket.projectDoc.file_type === 'pdf' ? (
                     <iframe
-                      src={`${ticket.projectDoc.file_url}#toolbar=0&navpanes=0&scrollbar=0`}
+                      src={`${ticket.projectDoc.file_url}#toolbar=0&navpanes=0`}
                       className="w-full h-[82vh]"
+                      style={{ overflow: 'auto' }}
                       title={ticket.projectDoc.file_name}
                     />
                   ) : (
@@ -1693,7 +1694,11 @@ export default function ProductionDetailPage() {
             await new Promise(resolve => setTimeout(resolve, 300));
             const refreshed = await reloadTicketData();
             setTicket({ ...refreshed, _refreshKey: Date.now() });
-          } catch {}
+          } catch (e) {
+            if (e?.message?.includes('ไม่พบข้อมูลตั๋ว')) {
+              router.push('/production');
+            }
+          }
         }
       )
       .subscribe((status) => {
@@ -1727,6 +1732,9 @@ export default function ProductionDetailPage() {
               console.log('[DETAIL REALTIME] ✅ FALLBACK: UI updated successfully');
             } catch (e) {
               console.error('[DETAIL REALTIME] FALLBACK: Failed to reload:', e);
+              if (e?.message?.includes('ไม่พบข้อมูลตั๋ว')) {
+                router.push('/production');
+              }
             }
           } else {
             console.log('[DETAIL REALTIME] ⚠️ FALLBACK: This change is for different ticket:', payload.new?.ticket_no || payload.old?.ticket_no);
@@ -1760,6 +1768,9 @@ export default function ProductionDetailPage() {
         }
       } catch (e) {
         console.error('[POLLING] Failed to poll:', e);
+        if (e?.message?.includes('ไม่พบข้อมูลตั๋ว')) {
+          router.push('/production');
+        }
       }
     }, 5000); // Poll every 5 seconds
 
