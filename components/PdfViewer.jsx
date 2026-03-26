@@ -63,7 +63,8 @@ export default function PdfViewer({ url, className = "" }) {
           const containerWidth = container.clientWidth || window.innerWidth;
           const unscaledViewport = page.getViewport({ scale: 1 });
           const scale = containerWidth / unscaledViewport.width;
-          const viewport = page.getViewport({ scale });
+          const dpr = window.devicePixelRatio || 1;
+          const viewport = page.getViewport({ scale: scale * dpr });
 
           const canvas = document.createElement("canvas");
           canvas.width = viewport.width;
