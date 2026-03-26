@@ -9,6 +9,7 @@ import RoleGuard from "@/components/RoleGuard";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info, Printer, X } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
+import PdfViewer from "@/components/PdfViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
 import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction, isSupervisorProduction, isSupervisorPainting, isProxyOperator } from "@/utils/rolePermissions";
@@ -803,11 +804,9 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 {/* Content */}
                 <div className="w-full h-full">
                   {ticket.projectDoc.file_type === 'pdf' ? (
-                    <iframe
-                      src={`${ticket.projectDoc.file_url}#toolbar=0&navpanes=0`}
+                    <PdfViewer
+                      url={ticket.projectDoc.file_url}
                       className="w-full h-[82vh]"
-                      style={{ overflow: 'auto' }}
-                      title={ticket.projectDoc.file_name}
                     />
                   ) : (
                     <div className="w-full h-[82vh] flex items-center justify-center bg-black/5 dark:bg-black/20">

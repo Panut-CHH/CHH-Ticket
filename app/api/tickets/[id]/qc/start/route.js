@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/utils/supabaseServer";
 import { createQCReadyNotification } from "@/utils/notificationManager";
+import { sendLineQCNotification } from "@/utils/lineMessaging";
 import { logApiCall, logError } from "@/utils/activityLogger";
 import { createClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
@@ -89,6 +90,11 @@ export async function POST(request, context) {
       // แจ้งเตือน QC users เมื่อมี ticket พร้อมสำหรับ QC
       const stationName = qcStation.stations?.name_th || qcStation.stations?.code || 'QC';
       await createQCReadyNotification(ticketNo, stationName);
+
+      // ส่ง LINE แจ้งเตือน QC users (fire-and-forget)
+      sendLineQCNotification(ticketNo, stationName).catch(err =>
+        console.warn('[LINE] QC notification failed:', err?.message)
+      );
 
       // Get current user for log
       let currentUser = null;
