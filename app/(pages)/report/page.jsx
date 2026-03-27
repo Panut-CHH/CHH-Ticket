@@ -204,17 +204,17 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
 
-      // 1) ดึง station IDs สำหรับสถานีที่ต้องการ (ปรับขนาด, อัดบาน, สี)
+      // 1) ดึง station IDs สำหรับสถานีที่มีราคาค่าแรง (ปรับขนาด, อัดบาน, สี, ประกอบวงกบ, ไม่ประกอบวงกบ, ประกอบชุดชาร์ป)
       const { data: reportStations, error: stationError } = await supabase
         .from("stations")
         .select("id, name_th, code");
       if (stationError) throw stationError;
 
+      const LABOR_STATION_NAMES = ["ปรับขนาด", "อัดบาน", "สี", "ประกอบวงกบ", "ไม่ประกอบวงกบ", "ประกอบชุดชาร์ป"];
       const targetStationIds = (reportStations || [])
         .filter((s) => {
           const name = (s.name_th || s.code || "").toLowerCase();
-          return name === "ปรับขนาด" || name === "อัดบาน" || name === "สี" ||
-                 name.includes("ปรับขนาด") || name.includes("อัดบาน") || name.includes("สี");
+          return LABOR_STATION_NAMES.some(target => name === target || name.includes(target));
         })
         .map((s) => s.id);
 
