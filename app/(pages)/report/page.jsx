@@ -204,28 +204,8 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
 
-      // 1) ดึง station IDs สำหรับสถานีที่มีราคาค่าแรง (ปรับขนาด, อัดบาน, สี, ประกอบวงกบ, ไม่ประกอบวงกบ, ประกอบชุดชาร์ป)
-      const { data: reportStations, error: stationError } = await supabase
-        .from("stations")
-        .select("id, name_th, code");
-      if (stationError) throw stationError;
-
-      const LABOR_STATION_NAMES = ["ปรับขนาด", "อัดบาน", "สี", "ประกอบวงกบ", "ไม่ประกอบวงกบ", "ประกอบชุดชาร์ป"];
-      const targetStationIds = (reportStations || [])
-        .filter((s) => {
-          const name = (s.name_th || s.code || "").toLowerCase();
-          return LABOR_STATION_NAMES.some(target => name === target || name.includes(target));
-        })
-        .map((s) => s.id);
-
-      if (targetStationIds.length === 0) {
-        setRows([]);
-        setPayments([]);
-        setLoading(false);
-        return;
-      }
-
-      // 2) completed station flows - filter สถานีที่ server-side เพื่อไม่ให้โดน row limit ตัด
+      // 1) ดึง completed flows ทุกสถานีที่มีราคาค่าแรง (price ไม่เป็น null)
+      // ไม่ hardcode ชื่อสถานี — สถานีใหม่ที่มีราคาจะถูกดึงมาอัตโนมัติ
       const { data: flows, error: flowError } = await supabase
         .from("ticket_station_flow")
         .select(`
@@ -240,7 +220,7 @@ export default function ReportPage() {
         `)
         .eq("status", "completed")
         .not("completed_at", "is", null)
-        .in("station_id", targetStationIds)
+        .gt("price", 0)
         .order("completed_at", { ascending: false })
         .limit(5000);
 
