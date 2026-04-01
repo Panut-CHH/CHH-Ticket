@@ -41,11 +41,11 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   Manager: {
-    pages: ['report'],
+    pages: ['report', 'supply-withdrawal'],
     settingsTabs: ['profile', 'security']
   },
   HR: {
-    pages: ['report'],
+    pages: ['report', 'supply-withdrawal'],
     settingsTabs: ['profile', 'security']
   },
   ProxyOperator: {
@@ -53,11 +53,11 @@ export const ROLE_PERMISSIONS = {
     settingsTabs: ['profile', 'security']
   },
   Admin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report', 'supply-withdrawal'],
     settingsTabs: ['profile', 'security', 'users', 'penalty']
   },
   SuperAdmin: {
-    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report'],
+    pages: ['dashboard', 'project', 'tickets', 'production', 'qc', 'log', 'store', 'settings', 'debug-user-role', 'report', 'supply-withdrawal'],
     settingsTabs: ['profile', 'security', 'users', 'penalty', 'erpTest', 'ticketReset']
   }
 };

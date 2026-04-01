@@ -1,6 +1,6 @@
 "use client";
 
-import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database, FileText } from "lucide-react";
+import { Home, Ticket, ClipboardCheck, Settings, Menu, X, Shield, User as UserIcon, Factory, History, FolderOpen, Database, FileText, Package } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -22,6 +22,7 @@ const navItems = [
   { href: "/log", label: "log", icon: <History className="w-4 h-4" /> },
   { href: "/settings", label: "settings", icon: <Settings className="w-4 h-4" /> },
   { href: "/report", label: "report", icon: <FileText className="w-4 h-4" /> },
+  { href: "/supply-withdrawal", label: "supplyWithdrawal", icon: <Package className="w-4 h-4" /> },
 ];
 
 export default function PagesLayout({ children }) {

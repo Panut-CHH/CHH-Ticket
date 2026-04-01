@@ -10,6 +10,7 @@ import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
 import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package, Printer, Clock, Pencil, Gavel } from "lucide-react";
 import PenaltyReport from "@/components/PenaltyReport";
+import SupplyWithdrawalSummary from "@/components/SupplyWithdrawalSummary";
 import DocumentViewer from "@/components/DocumentViewer";
 
 /** เซลล์ชื่อ Project: บรรทัดเดียว ตัดด้วย ... ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal tooltip) */
@@ -204,14 +205,40 @@ export default function ReportPage() {
       setLoading(true);
       setError("");
 
-      // 1) ดึง station IDs — exclude สถานีที่ไม่ต้องแสดงในรายงาน (ประกอบโครง, CNC, Packing, QC)
-      const { data: reportStations, error: stationError } = await supabase
-        .from("stations")
-        .select("id, name_th, code");
-      if (stationError) throw stationError;
+      // ===== Phase 1: ดึง stations + payments + projects พร้อมกัน (ไม่พึ่งกัน) =====
+      const [stationResult, paymentResult, projectResult] = await Promise.all([
+        // 1) stations
+        supabase.from("stations").select("id, name_th, code"),
+        // 2) payments — ดึงผ่าน API (service role)
+        (async () => {
+          if (!user?.id) {
+            return supabase.from("technician_payments").select("*");
+          }
+          try {
+            const payRes = await fetch(`/api/report/payments?user_id=${encodeURIComponent(user.id)}`);
+            const payJson = await payRes.json().catch(() => ({}));
+            if (payRes.ok && payJson.success && Array.isArray(payJson.data)) {
+              return { data: payJson.data, error: null };
+            }
+            return supabase.from("technician_payments").select("*");
+          } catch (_) {
+            return supabase.from("technician_payments").select("*");
+          }
+        })(),
+        // 3) projects + project_items พร้อมกัน
+        (async () => {
+          const [projRes, itemRes] = await Promise.all([
+            supabase.from("projects").select("id, item_code, project_name, description"),
+            supabase.from("project_items").select("project_id, item_code"),
+          ]);
+          return { projects: projRes.data, items: itemRes.data };
+        })(),
+      ]);
+
+      if (stationResult.error) throw stationResult.error;
 
       const EXCLUDED_STATIONS = ["ประกอบโครง", "cnc", "packing", "qc"];
-      const targetStationIds = (reportStations || [])
+      const targetStationIds = (stationResult.data || [])
         .filter((s) => {
           const name = (s.name_th || "").toLowerCase();
           const code = (s.code || "").toLowerCase();
@@ -226,7 +253,27 @@ export default function ReportPage() {
         return;
       }
 
-      // 2) completed station flows - filter สถานีที่ไม่ต้องการออก server-side
+      const paymentData = paymentResult.data || [];
+
+      // สร้าง projectMap จากผลลัพธ์ที่โหลดมาแล้ว
+      const projectMap = new Map();
+      const projectsData = projectResult.projects;
+      if (Array.isArray(projectsData)) {
+        projectsData.forEach((p) => {
+          if (p.item_code) projectMap.set(p.item_code, p);
+        });
+        if (Array.isArray(projectResult.items)) {
+          const projectIdMap = new Map(projectsData.map((p) => [p.id, p]));
+          projectResult.items.forEach((it) => {
+            const proj = projectIdMap.get(it.project_id);
+            if (proj && it?.item_code && !projectMap.has(it.item_code)) {
+              projectMap.set(it.item_code, proj);
+            }
+          });
+        }
+      }
+
+      // ===== Phase 2: ดึง flows (ต้องรอ station IDs) =====
       const { data: flows, error: flowError } = await supabase
         .from("ticket_station_flow")
         .select(`
@@ -249,118 +296,72 @@ export default function ReportPage() {
 
       const filteredFlows = flows || [];
 
-      console.log("[REPORT] Total flows loaded:", filteredFlows.length);
-
-      // 3) assignments - ดึงเฉพาะตั๋วที่มี flow ที่ตรงกัน + limit เพื่อป้องกัน row limit ตัด
+      // ===== Phase 3: ดึง assignments, tickets, qc_sessions พร้อมกัน (ทั้งหมดพึ่ง flowTicketNos) =====
       const flowTicketNos = [...new Set(filteredFlows.map((f) => f.ticket_no))];
-      let assignmentData = [];
-      if (flowTicketNos.length > 0) {
-        // Supabase .in() supports up to ~300 items, chunk if needed
-        const CHUNK = 200;
-        for (let i = 0; i < flowTicketNos.length; i += CHUNK) {
-          const chunk = flowTicketNos.slice(i, i + CHUNK);
-          const { data: aData, error: aErr } = await supabase
-            .from("ticket_assignments")
-            .select(`
-              ticket_no,
-              station_id,
-              step_order,
-              technician_id,
-              technician:users!ticket_assignments_technician_id_fkey ( name )
-            `)
-            .in("ticket_no", chunk);
-          if (aErr) throw aErr;
-          assignmentData = assignmentData.concat(aData || []);
-        }
-      }
 
-      // 4) tickets (for qty/project) - ดึงเฉพาะตั๋วที่เกี่ยวข้อง
-      let ticketData = [];
-      if (flowTicketNos.length > 0) {
-        const CHUNK = 200;
-        for (let i = 0; i < flowTicketNos.length; i += CHUNK) {
-          const chunk = flowTicketNos.slice(i, i + CHUNK);
-          const { data: tData, error: tErr } = await supabase
-            .from("ticket")
-            .select("no, description, quantity, source_no, unit, remark")
-            .in("no", chunk);
-          if (tErr) throw tErr;
-          ticketData = ticketData.concat(tData || []);
+      // Helper: chunked .in() query
+      const chunkedQuery = async (table, selectCols, filterCol, values, chunkSize = 200) => {
+        if (values.length === 0) return [];
+        const promises = [];
+        for (let i = 0; i < values.length; i += chunkSize) {
+          const chunk = values.slice(i, i + chunkSize);
+          promises.push(
+            supabase.from(table).select(selectCols).in(filterCol, chunk).then(({ data, error }) => {
+              if (error) throw error;
+              return data || [];
+            })
+          );
         }
-      }
+        const results = await Promise.all(promises);
+        return results.flat();
+      };
 
-      // 4) payments — ดึงผ่าน API (service role) เพื่อให้เห็น record ที่เพิ่ง insert หลังรีเฟรช
-      let paymentData = [];
-      if (user?.id) {
-        try {
-          const payRes = await fetch(`/api/report/payments?user_id=${encodeURIComponent(user.id)}`);
-          const payJson = await payRes.json().catch(() => ({}));
-          if (payRes.ok && payJson.success && Array.isArray(payJson.data)) {
-            paymentData = payJson.data;
-          } else {
-            const { data: fallback } = await supabase.from("technician_payments").select("*");
-            paymentData = fallback || [];
+      const [assignmentData, ticketData, qcSessions] = await Promise.all([
+        // assignments
+        chunkedQuery(
+          "ticket_assignments",
+          "ticket_no, station_id, step_order, technician_id, technician:users!ticket_assignments_technician_id_fkey ( name )",
+          "ticket_no",
+          flowTicketNos
+        ),
+        // tickets
+        chunkedQuery(
+          "ticket",
+          "no, description, quantity, source_no, unit, remark",
+          "no",
+          flowTicketNos
+        ),
+        // qc_sessions
+        (async () => {
+          if (flowTicketNos.length === 0) return [];
+          const chunks = [];
+          for (let i = 0; i < flowTicketNos.length; i += 200) {
+            chunks.push(flowTicketNos.slice(i, i + 200));
           }
-        } catch (_) {
-          const { data: fallback } = await supabase.from("technician_payments").select("*");
-          paymentData = fallback || [];
-        }
-      } else {
-        const { data: fallback, error: paymentError } = await supabase
-          .from("technician_payments")
-          .select("*");
-        if (paymentError) throw paymentError;
-        paymentData = fallback || [];
-      }
+          const results = await Promise.all(
+            chunks.map((chunk) =>
+              supabase
+                .from("qc_sessions")
+                .select("ticket_no, station_id, step_order, completed_at")
+                .in("ticket_no", chunk)
+                .not("completed_at", "is", null)
+                .then(({ data }) => data || [])
+            )
+          );
+          return results.flat();
+        })(),
+      ]);
 
-      // 5) qc_sessions - เวลา QC เสร็จ (ใช้ completed_at จาก QC session ถ้ามี)
-      const ticketNos = [...new Set((filteredFlows || []).map((f) => f.ticket_no))];
-      let qcCompletedMap = {};
-      if (ticketNos.length > 0) {
-        const { data: qcSessions, error: qcError } = await supabase
-          .from("qc_sessions")
-          .select("ticket_no, station_id, step_order, completed_at")
-          .in("ticket_no", ticketNos)
-          .not("completed_at", "is", null);
-        if (!qcError && qcSessions?.length) {
-          qcSessions.forEach((s) => {
-            const key = `${s.ticket_no}-${s.station_id}-${s.step_order}`;
-            const existing = qcCompletedMap[key];
-            const at = s.completed_at;
-            if (!existing || (at && new Date(at) > new Date(existing))) {
-              qcCompletedMap[key] = at;
-            }
-          });
+      // สร้าง qcCompletedMap
+      const qcCompletedMap = {};
+      qcSessions.forEach((s) => {
+        const key = `${s.ticket_no}-${s.station_id}-${s.step_order}`;
+        const existing = qcCompletedMap[key];
+        const at = s.completed_at;
+        if (!existing || (at && new Date(at) > new Date(existing))) {
+          qcCompletedMap[key] = at;
         }
-      }
-
-      // 6) projects - สร้าง map item_code → project_name (เหมือน production page)
-      const projectMap = new Map();
-      try {
-        const { data: projectsData } = await supabase
-          .from("projects")
-          .select("id, item_code, project_name, description");
-        if (Array.isArray(projectsData)) {
-          projectsData.forEach((p) => {
-            if (p.item_code) projectMap.set(p.item_code, p);
-          });
-        }
-        // เติมจาก project_items
-        const { data: projectItems } = await supabase
-          .from("project_items")
-          .select("project_id, item_code");
-        if (Array.isArray(projectItems) && projectsData) {
-          const projectIdMap = new Map(projectsData.map((p) => [p.id, p]));
-          projectItems.forEach((it) => {
-            const proj = projectIdMap.get(it.project_id);
-            if (proj && it?.item_code && !projectMap.has(it.item_code)) {
-              projectMap.set(it.item_code, proj);
-            }
-          });
-        }
-      } catch (e) {
-        console.warn("[REPORT] Failed to load projectMap:", e?.message);
-      }
+      });
 
       const assignmentMap = {};
       (assignmentData || []).forEach((a) => {
@@ -497,104 +498,66 @@ export default function ReportPage() {
     return Array.from(set).sort();
   }, [rows]);
 
-  // Filter and sort function
-  const filterAndSort = (data) => {
-    let filtered = [...data];
 
-    // Apply search term
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (r) =>
-          r.ticketNo.toLowerCase().includes(term) ||
-          r.technicianName.toLowerCase().includes(term) ||
-          r.stationName.toLowerCase().includes(term) ||
-          r.projectName.toLowerCase().includes(term) ||
-          (r.remark && r.remark.toLowerCase().includes(term))
-      );
-    }
+  // รวม filter/sort เป็นรอบเดียว แล้วแยกตาม status + เฉพาะ tab ที่ active เท่านั้นถึงจะ sort
+  const { unpaidRows, pendingRows, paidRows, cancelledRows } = useMemo(() => {
+    const buckets = { unpaid: [], pending: [], paid: [], cancelled: [] };
 
-    // Apply filters
-    if (selectedTechnician) {
-      filtered = filtered.filter((r) => r.technicianName === selectedTechnician);
-    }
-    if (selectedStation) {
-      filtered = filtered.filter((r) => r.stationName === selectedStation);
-    }
-    if (selectedProject) {
-      filtered = filtered.filter((r) => r.projectName === selectedProject);
+    const term = searchTerm ? searchTerm.toLowerCase() : "";
+
+    for (const r of rows) {
+      // filter
+      if (term && !(
+        r.ticketNo.toLowerCase().includes(term) ||
+        r.technicianName.toLowerCase().includes(term) ||
+        r.stationName.toLowerCase().includes(term) ||
+        r.projectName.toLowerCase().includes(term) ||
+        (r.remark && r.remark.toLowerCase().includes(term))
+      )) continue;
+      if (selectedTechnician && r.technicianName !== selectedTechnician) continue;
+      if (selectedStation && r.stationName !== selectedStation) continue;
+      if (selectedProject && r.projectName !== selectedProject) continue;
+
+      const bucket = buckets[r.paymentStatus];
+      if (bucket) bucket.push(r);
     }
 
-    // Apply sorting
+    // sort เฉพาะ bucket ที่จะแสดง (active tab) — ที่เหลือไม่ต้อง sort เพราะไม่แสดง
+    const sortFn = (a, b) => {
+      if (!sortKey) return 0;
+      let av, bv;
+      switch (sortKey) {
+        case "ticketNo": av = a.ticketNo; bv = b.ticketNo; break;
+        case "technician": av = a.technicianName; bv = b.technicianName; break;
+        case "station": av = a.stationName; bv = b.stationName; break;
+        case "project": av = a.projectName; bv = b.projectName; break;
+        case "quantity": av = a.quantity; bv = b.quantity; break;
+        case "pricePerUnit": av = a.pricePerUnit; bv = b.pricePerUnit; break;
+        case "totalPrice": av = a.totalPrice; bv = b.totalPrice; break;
+        case "qcCompletedAt":
+          av = a.qcCompletedAt ? new Date(a.qcCompletedAt).getTime() : 0;
+          bv = b.qcCompletedAt ? new Date(b.qcCompletedAt).getTime() : 0;
+          break;
+        default: return 0;
+      }
+      if (typeof av === "string" && typeof bv === "string") {
+        return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
+      }
+      const diff = av - bv;
+      return sortDir === "asc" ? diff : -diff;
+    };
+
     if (sortKey) {
-      filtered.sort((a, b) => {
-        let av, bv;
-        switch (sortKey) {
-          case "ticketNo":
-            av = a.ticketNo;
-            bv = b.ticketNo;
-            break;
-          case "technician":
-            av = a.technicianName;
-            bv = b.technicianName;
-            break;
-          case "station":
-            av = a.stationName;
-            bv = b.stationName;
-            break;
-          case "project":
-            av = a.projectName;
-            bv = b.projectName;
-            break;
-          case "quantity":
-            av = a.quantity;
-            bv = b.quantity;
-            break;
-          case "pricePerUnit":
-            av = a.pricePerUnit;
-            bv = b.pricePerUnit;
-            break;
-          case "totalPrice":
-            av = a.totalPrice;
-            bv = b.totalPrice;
-            break;
-          case "qcCompletedAt":
-            av = a.qcCompletedAt ? new Date(a.qcCompletedAt).getTime() : 0;
-            bv = b.qcCompletedAt ? new Date(b.qcCompletedAt).getTime() : 0;
-            break;
-          default:
-            return 0;
-        }
-        if (typeof av === "string" && typeof bv === "string") {
-          return sortDir === "asc" ? av.localeCompare(bv) : bv.localeCompare(av);
-        }
-        const diff = av - bv;
-        return sortDir === "asc" ? diff : -diff;
-      });
+      buckets[activeTab]?.sort(sortFn);
     }
 
-    return filtered;
-  };
-
-  const unpaidRows = useMemo(() => {
-    const base = rows.filter((r) => r.paymentStatus === "unpaid");
-    return filterAndSort(base);
-  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
-
-  const pendingRows = useMemo(() => {
-    const base = rows.filter((r) => r.paymentStatus === "pending");
-    return filterAndSort(base);
-  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
-
-  const paidRows = useMemo(() => {
-    const base = rows.filter((r) => r.paymentStatus === "paid");
-    return filterAndSort(base);
-  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
-
-  const cancelledRows = useMemo(() => {
-    const base = rows.filter((r) => r.paymentStatus === "cancelled");
-    return filterAndSort(base);
-  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir]);
+    return {
+      unpaidRows: buckets.unpaid,
+      pendingRows: buckets.pending,
+      paidRows: buckets.paid,
+      cancelledRows: buckets.cancelled,
+    };
+  }, [rows, searchTerm, selectedTechnician, selectedStation, selectedProject, sortKey, sortDir, activeTab]);
 
   const currentTabRows = useMemo(() => {
     if (activeTab === "unpaid") return unpaidRows;
@@ -1311,10 +1274,22 @@ export default function ReportPage() {
               <Gavel className="w-4 h-4" />
               {language === "th" ? "หักเงิน (กดแทน)" : "Penalties"}
             </button>
+            <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
+            <button
+              onClick={() => setActiveTab("supply")}
+              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg ${
+                activeTab === "supply"
+                  ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
+                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
+              }`}
+            >
+              <Package className="w-4 h-4" />
+              {language === "th" ? "เบิกของ" : "Supply"}
+            </button>
           </div>
 
-          {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ (ซ่อนเมื่ออยู่ใน penalty tab) */}
-          {activeTab !== "penalty" && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+          {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ (ซ่อนเมื่ออยู่ใน penalty/supply tab) */}
+          {activeTab !== "penalty" && activeTab !== "supply" && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
@@ -1364,8 +1339,8 @@ export default function ReportPage() {
             </div>
           </div>}
 
-          {/* Filters (ซ่อนเมื่ออยู่ใน penalty tab) */}
-          {activeTab !== "penalty" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
+          {/* Filters (ซ่อนเมื่ออยู่ใน penalty/supply tab) */}
+          {activeTab !== "penalty" && activeTab !== "supply" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
             {/* Search */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1477,6 +1452,8 @@ export default function ReportPage() {
               <Loader2 className="w-4 h-4 animate-spin" />
               {t("loading", language)}
             </div>
+          ) : activeTab === "supply" ? (
+            <SupplyWithdrawalSummary />
           ) : activeTab === "penalty" ? (
             <PenaltyReport />
           ) : activeTab === "unpaid" ? (

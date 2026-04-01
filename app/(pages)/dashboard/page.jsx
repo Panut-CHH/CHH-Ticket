@@ -63,6 +63,9 @@ export default function DashboardPage() {
   const [alerts, setAlerts] = useState([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
   const [rpdModal, setRpdModal] = useState({ open: false, id: null, rpd: '', nc: '', ticket: '', station: '' });
+  // Station work summary
+  const [stationSummary, setStationSummary] = useState([]);
+  const [stationSummaryLoading, setStationSummaryLoading] = useState(false);
 
   // Status normalization: map many possible raw statuses into 4 buckets
   const normalizeStatus = (value) => {
@@ -285,6 +288,69 @@ export default function DashboardPage() {
       } catch {} finally {
         setDueSoonLoading(false);
       }
+
+      // 5) Station work summary — จำนวนงานที่ pending/current แยกตามสถานี พร้อมรายละเอียดตั๋ว
+      try {
+        setStationSummaryLoading(true);
+        let allFlowsDetail = [];
+        let flowDetailFrom = 0;
+        const flowDetailPageSize = 1000;
+        while (true) {
+          const { data: page } = await supabase
+            .from('ticket_station_flow')
+            .select('ticket_no, station_id, status, step_order, stations(name_th)')
+            .in('status', ['pending', 'current'])
+            .range(flowDetailFrom, flowDetailFrom + flowDetailPageSize - 1);
+          allFlowsDetail = allFlowsDetail.concat(page || []);
+          if (!page || page.length < flowDetailPageSize) break;
+          flowDetailFrom += flowDetailPageSize;
+        }
+
+        // สร้าง map สถานี -> ticket list แยก current/pending
+        // นับเฉพาะ step แรกที่ยังไม่เสร็จของแต่ละตั๋ว (current ก่อน, ถ้าไม่มีก็ pending step แรก)
+        const ticketCurrentStation = new Map(); // ticket_no -> { station, status }
+        // Group by ticket first
+        const ticketFlowsMap = new Map();
+        allFlowsDetail.forEach(f => {
+          if (!ticketFlowsMap.has(f.ticket_no)) ticketFlowsMap.set(f.ticket_no, []);
+          ticketFlowsMap.get(f.ticket_no).push(f);
+        });
+        // For each ticket, find the current active station
+        ticketFlowsMap.forEach((flows, ticketNo) => {
+          const sorted = flows.sort((a, b) => (a.step_order || 0) - (b.step_order || 0));
+          const currentFlow = sorted.find(f => f.status === 'current');
+          const firstPending = sorted.find(f => f.status === 'pending');
+          const active = currentFlow || firstPending;
+          if (active) {
+            const stationName = active.stations?.name_th || 'Unknown';
+            ticketCurrentStation.set(ticketNo, { station: stationName, status: active.status });
+          }
+        });
+
+        // Group by station
+        const stationMap = new Map();
+        ticketCurrentStation.forEach(({ station, status }, ticketNo) => {
+          if (!stationMap.has(station)) stationMap.set(station, { current: [], pending: [] });
+          const bucket = stationMap.get(station);
+          if (status === 'current') bucket.current.push(ticketNo);
+          else bucket.pending.push(ticketNo);
+        });
+
+        const summary = Array.from(stationMap.entries())
+          .map(([name, data]) => ({
+            name,
+            currentCount: data.current.length,
+            pendingCount: data.pending.length,
+            total: data.current.length + data.pending.length,
+            currentTickets: data.current,
+            pendingTickets: data.pending,
+          }))
+          .sort((a, b) => b.total - a.total);
+
+        setStationSummary(summary);
+      } catch {} finally {
+        setStationSummaryLoading(false);
+      }
   };
   useEffect(() => { loadAll(); }, []);
 
@@ -424,6 +490,67 @@ export default function DashboardPage() {
             <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-3 text-xs text-gray-900 dark:text-gray-100">Throughput / day: <b>{kpi.tp}</b></div>
             <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-3 text-xs text-gray-900 dark:text-gray-100">SLA Breach: <b>{kpi.sla}</b></div>
           </section>
+          {/* Station Work Summary */}
+          <section className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-3">
+            <h3 className="text-sm font-semibold mb-3 text-gray-900 dark:text-gray-100">สรุปงานแยกตามสถานี</h3>
+            {stationSummaryLoading ? (
+              <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-4">กำลังโหลด...</div>
+            ) : stationSummary.length === 0 ? (
+              <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-4">ไม่มีงานค้าง</div>
+            ) : (
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-4">
+                  {stationSummary.map(s => (
+                    <div key={s.name} className="border dark:border-gray-600 rounded-lg p-3 hover:shadow-md transition-shadow bg-gray-50 dark:bg-gray-700/50">
+                      <div className="text-xs font-medium text-gray-600 dark:text-gray-300 truncate" title={s.name}>{s.name}</div>
+                      <div className="mt-1 text-2xl font-bold text-gray-900 dark:text-gray-100">{s.total}</div>
+                      <div className="mt-1 flex items-center gap-2 text-[10px]">
+                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                          กำลังทำ {s.currentCount}
+                        </span>
+                        <span className="text-gray-400 dark:text-gray-500">|</span>
+                        <span className="text-gray-500 dark:text-gray-400">
+                          รอ {s.pendingCount}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Detail table */}
+                <details className="group">
+                  <summary className="text-xs text-blue-600 dark:text-blue-400 cursor-pointer hover:underline">ดูรายละเอียดตั๋วแต่ละสถานี</summary>
+                  <div className="mt-2 overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600">
+                        <tr>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">สถานี</th>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">กำลังทำ</th>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">รอคิว</th>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">รวม</th>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">ตั๋วที่กำลังทำ</th>
+                          <th className="px-2 py-2 text-left text-gray-900 dark:text-gray-100">ตั๋วที่รอคิว</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {stationSummary.map(s => (
+                          <tr key={s.name} className="border-b dark:border-gray-700">
+                            <td className="px-2 py-2 font-medium text-gray-900 dark:text-gray-100">{s.name}</td>
+                            <td className="px-2 py-2 text-amber-600 dark:text-amber-400 font-semibold">{s.currentCount}</td>
+                            <td className="px-2 py-2 text-gray-600 dark:text-gray-300">{s.pendingCount}</td>
+                            <td className="px-2 py-2 font-bold text-gray-900 dark:text-gray-100">{s.total}</td>
+                            <td className="px-2 py-2 text-gray-700 dark:text-gray-300 max-w-[200px] truncate" title={s.currentTickets.join(', ')}>{s.currentTickets.join(', ') || '-'}</td>
+                            <td className="px-2 py-2 text-gray-500 dark:text-gray-400 max-w-[200px] truncate" title={s.pendingTickets.join(', ')}>{s.pendingTickets.join(', ') || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </>
+            )}
+          </section>
+
           {/* Charts Grid */}
           <section className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <div className="bg-white dark:bg-gray-800 border dark:border-gray-700 rounded-md p-3"><canvas ref={statusChartRef} className="w-full h-[220px]" /></div>
