@@ -10,7 +10,7 @@ import { t } from "@/utils/translations";
 import { supabase } from "@/utils/supabaseClient";
 import { FileText, CheckCircle, XCircle, Loader2, RefreshCcw, AlertCircle, Calendar, Search, Filter, ArrowUpDown, ArrowUp, ArrowDown, X, MoreVertical, Image as ImageIcon, LayoutList, Banknote, Package, Printer, Clock, Pencil, Gavel } from "lucide-react";
 import PenaltyReport from "@/components/PenaltyReport";
-import SupplyWithdrawalSummary from "@/components/SupplyWithdrawalSummary";
+import MiscDeductionForm from "@/components/MiscDeductionForm";
 import DocumentViewer from "@/components/DocumentViewer";
 
 /** เซลล์ชื่อ Project: บรรทัดเดียว ตัดด้วย ... ชี้แล้วเด้งกรอบแสดงชื่อเต็ม (Portal tooltip) */
@@ -101,6 +101,60 @@ export default function ReportPage() {
 
   const [rows, setRows] = useState([]);
   const [payments, setPayments] = useState([]);
+
+  // Supply withdrawal data for deduction display
+  const [supplyWithdrawals, setSupplyWithdrawals] = useState([]);
+
+  // Misc deductions data
+  const [miscDeductions, setMiscDeductions] = useState([]);
+  // Technician list for misc deductions form
+  const miscTechnicians = useMemo(() => {
+    const map = new Map();
+    rows.forEach((r) => { if (r.technicianId) map.set(r.technicianId, { id: r.technicianId, name: r.technicianName }); });
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows]);
+
+  // Multi-select for batch actions
+  const [selectedRowKeys, setSelectedRowKeys] = useState(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+
+  const toggleRowSelect = (key) => {
+    setSelectedRowKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (data) => {
+    if (selectedRowKeys.size === data.length) {
+      setSelectedRowKeys(new Set());
+    } else {
+      setSelectedRowKeys(new Set(data.map((r) => `${r.ticketNo}-${r.stationId}-${r.stepOrder}-${r.technicianId}-${r.round}`)));
+    }
+  };
+
+  const getSelectedRows = (data) => {
+    return data.filter((r) => selectedRowKeys.has(`${r.ticketNo}-${r.stationId}-${r.stepOrder}-${r.technicianId}-${r.round}`));
+  };
+
+  const handleBatchAction = async (data, action) => {
+    const selected = getSelectedRows(data);
+    if (selected.length === 0) return;
+    const label = action === "confirm" ? "จ่ายแล้ว" : action === "pending" ? "ยืนยัน" : action === "cancel" ? "ยกเลิก" : action;
+    if (!confirm(`${label} ${selected.length} รายการ?`)) return;
+    setBatchLoading(true);
+    for (const row of selected) {
+      await handleAction(row, action);
+    }
+    setSelectedRowKeys(new Set());
+    setBatchLoading(false);
+  };
+
+  // Clear selection when tab changes
+  useEffect(() => {
+    setSelectedRowKeys(new Set());
+  }, [activeTab]);
 
   // Filter states
   const [searchTerm, setSearchTerm] = useState("");
@@ -473,6 +527,89 @@ export default function ReportPage() {
     loadData();
   }, [loadData]);
 
+  // Load supply withdrawals
+  const loadSupplyWithdrawals = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/supply-withdrawals?user_id=${encodeURIComponent(user.id)}`);
+      const json = await res.json();
+      if (json.success) setSupplyWithdrawals(json.data || []);
+    } catch (_) {}
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadSupplyWithdrawals();
+  }, [loadSupplyWithdrawals]);
+
+  // Load misc deductions
+  const loadMiscDeductions = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const res = await fetch(`/api/misc-deductions?user_id=${encodeURIComponent(user.id)}`);
+      const json = await res.json();
+      if (json.success) setMiscDeductions(json.data || []);
+    } catch (_) {}
+  }, [user?.id]);
+
+  useEffect(() => {
+    loadMiscDeductions();
+  }, [loadMiscDeductions]);
+
+  // Get active payment rounds from current tab rows
+  const activeRounds = useMemo(() => {
+    const set = new Set();
+    const tabRows = rows; // use all rows to get available rounds
+    tabRows.forEach((r) => { if (r.round) set.add(r.round); });
+    return set;
+  }, [rows]);
+
+  // Supply withdrawals filtered by selected technician + payment rounds
+  const filteredSupplyWithdrawals = useMemo(() => {
+    let list = supplyWithdrawals;
+    if (selectedTechnician) {
+      list = list.filter((w) => w.technician_name === selectedTechnician);
+    }
+    if (activeRounds.size > 0) {
+      list = list.filter((w) => activeRounds.has(w.payment_round));
+    }
+    return list;
+  }, [supplyWithdrawals, selectedTechnician, activeRounds]);
+
+  // Supply withdrawal summary grouped by technician
+  const supplyDeductionMap = useMemo(() => {
+    const map = {};
+    for (const w of filteredSupplyWithdrawals) {
+      const key = w.technician_name || "-";
+      if (!map[key]) map[key] = { name: key, total: 0, items: [] };
+      map[key].total += Number(w.total_amount) || 0;
+      map[key].items.push(w);
+    }
+    return map;
+  }, [filteredSupplyWithdrawals]);
+
+  const supplyDeductionTotal = useMemo(() => {
+    return filteredSupplyWithdrawals.reduce((s, w) => s + (Number(w.total_amount) || 0), 0);
+  }, [filteredSupplyWithdrawals]);
+
+  // Misc deductions filtered by technician + rounds
+  const filteredMiscDeductions = useMemo(() => {
+    let list = miscDeductions;
+    if (selectedTechnician) {
+      list = list.filter((d) => d.technician_name === selectedTechnician);
+    }
+    if (activeRounds.size > 0) {
+      list = list.filter((d) => activeRounds.has(d.payment_round));
+    }
+    return list;
+  }, [miscDeductions, selectedTechnician, activeRounds]);
+
+  const miscDeductionTotal = useMemo(() => {
+    return filteredMiscDeductions.reduce((s, d) => s + (Number(d.total_amount) || 0), 0);
+  }, [filteredMiscDeductions]);
+
+  // Combined deduction total (supply + misc)
+  const totalDeductions = supplyDeductionTotal + miscDeductionTotal;
+
   // Get unique values for filters
   const availableTechnicians = useMemo(() => {
     const set = new Set();
@@ -570,8 +707,9 @@ export default function ReportPage() {
     const count = currentTabRows.length;
     const totalAmount = currentTabRows.reduce((s, r) => s + (Number(r.totalPrice) || 0), 0);
     const totalQty = currentTabRows.reduce((s, r) => s + (Number(r.quantity) || 0), 0);
-    return { count, totalAmount, totalQty };
-  }, [currentTabRows]);
+    const netAmount = totalAmount - totalDeductions;
+    return { count, totalAmount, totalQty, supplyDeduction: supplyDeductionTotal, miscDeduction: miscDeductionTotal, totalDeduction: totalDeductions, netAmount };
+  }, [currentTabRows, supplyDeductionTotal, miscDeductionTotal, totalDeductions]);
 
   const [actionLoadingKey, setActionLoadingKey] = useState(null);
   const [editPriceModal, setEditPriceModal] = useState(null); // null | { row, price, priceType }
@@ -676,6 +814,125 @@ export default function ReportPage() {
         <td style="color:#b45309;white-space:pre-wrap">${row.remark || '-'}</td>
       </tr>
     `).join('');
+
+    // --- Supply + misc deduction page ---
+    const supplyData = filteredSupplyWithdrawals;
+    const supplyTotal = supplyDeductionTotal;
+    const miscData = filteredMiscDeductions;
+    const miscTotal = miscDeductionTotal;
+    const allDeductions = supplyTotal + miscTotal;
+    const netTotal = printSummary.totalAmount - allDeductions;
+
+    // Group supply by technician
+    const supplyByTech = {};
+    supplyData.forEach((w) => {
+      const key = w.technician_name || '-';
+      if (!supplyByTech[key]) supplyByTech[key] = { items: [], total: 0 };
+      supplyByTech[key].items.push(w);
+      supplyByTech[key].total += Number(w.total_amount) || 0;
+    });
+
+    const supplyRowsHtml = supplyData.map((w) => `
+      <tr>
+        <td>${w.technician_name}</td>
+        <td>${w.item_name}</td>
+        <td>${w.item_category || '-'}</td>
+        <td style="text-align:right">${Number(w.locked_price).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:center">${w.quantity}</td>
+        <td style="text-align:right;font-weight:600">${Number(w.total_amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:center">${w.payment_round}</td>
+      </tr>
+    `).join('');
+
+    const supplyTechSummaryHtml = Object.entries(supplyByTech).map(([name, data]) => `
+      <tr style="background:#f3f4f6;font-weight:600;">
+        <td colspan="5">${name} (${data.items.length} รายการ)</td>
+        <td style="text-align:right">${data.total.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td>
+        <td></td>
+      </tr>
+    `).join('');
+
+    const supplyPageHtml = supplyData.length > 0 ? `
+    <div class="page-break"></div>
+    <h2>ใบหักเบิกของสิ้นเปลือง</h2>
+    <div class="summary">
+      <div class="summary-item">
+        <div class="label">จำนวนรายการเบิก</div>
+        <div class="value">${supplyData.length} รายการ</div>
+      </div>
+      <div class="summary-item" style="border-color:#f59e0b;">
+        <div class="label">ยอดเบิกของ</div>
+        <div class="value">-${supplyTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</div>
+      </div>
+    </div>
+    <table>
+      <thead><tr>
+        <th>ช่าง</th><th>รายการ</th><th>หมวด</th>
+        <th style="text-align:right">ราคา</th><th style="text-align:center">จำนวน</th>
+        <th style="text-align:right">รวม</th><th style="text-align:center">รอบ</th>
+      </tr></thead>
+      <tbody>${supplyRowsHtml}</tbody>
+      <tfoot>${supplyTechSummaryHtml}
+        <tr style="background:#f3f4f6;font-weight:700;font-size:11px;">
+          <td colspan="5">ยอดเบิกของรวม</td>
+          <td style="text-align:right">${supplyTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    ` : '';
+
+    // Misc deductions print section
+    const miscRowsHtml = miscData.map((d) => `
+      <tr>
+        <td>${d.technician_name}</td>
+        <td>${d.description}</td>
+        <td style="text-align:right">${Number(d.price).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:center">${d.quantity}</td>
+        <td style="text-align:right;font-weight:600">${Number(d.total_amount).toLocaleString('th-TH', { minimumFractionDigits: 2 })}</td>
+        <td style="text-align:center">${d.payment_round}</td>
+      </tr>
+    `).join('');
+
+    const miscPageHtml = miscData.length > 0 ? `
+    <h2 style="margin-top:16px;">หักค่าใช้จ่ายอื่นๆ</h2>
+    <table>
+      <thead><tr>
+        <th>ช่าง</th><th>รายละเอียด</th>
+        <th style="text-align:right">ราคา</th><th style="text-align:center">จำนวน</th>
+        <th style="text-align:right">รวม</th><th style="text-align:center">รอบ</th>
+      </tr></thead>
+      <tbody>${miscRowsHtml}</tbody>
+      <tfoot>
+        <tr style="background:#f3f4f6;font-weight:700;font-size:11px;">
+          <td colspan="4">ยอดค่าใช้จ่ายอื่นๆ รวม</td>
+          <td style="text-align:right">${miscTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td>
+          <td></td>
+        </tr>
+      </tfoot>
+    </table>` : '';
+
+    // Net summary box (only if any deductions exist)
+    const netSummaryHtml = allDeductions > 0 ? `
+    <div style="margin-top:16px;border:2px solid #000;border-radius:6px;padding:12px;">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px;">สรุปยอด</div>
+      <table style="border:none;margin:0;width:auto;">
+        <tbody style="border:none;">
+          <tr style="background:none;"><td style="border:none;padding:2px 8px;font-size:10px;color:#444;">ยอดงาน</td><td style="border:none;padding:2px 8px;text-align:right;font-size:10px;">${printSummary.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td></tr>
+          ${supplyTotal > 0 ? `<tr style="background:none;"><td style="border:none;padding:2px 8px;font-size:10px;">− เบิกของ</td><td style="border:none;padding:2px 8px;text-align:right;font-size:10px;">${supplyTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td></tr>` : ''}
+          ${miscTotal > 0 ? `<tr style="background:none;"><td style="border:none;padding:2px 8px;font-size:10px;">− ค่าใช้จ่ายอื่นๆ</td><td style="border:none;padding:2px 8px;text-align:right;font-size:10px;">${miscTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td></tr>` : ''}
+          <tr style="background:none;border-top:2px solid #000;"><td style="border:none;padding:4px 8px;font-size:14px;font-weight:700;">ยอดสุทธิ</td><td style="border:none;padding:4px 8px;text-align:right;font-size:14px;font-weight:700;">${netTotal.toLocaleString('th-TH', { minimumFractionDigits: 2 })} ฿</td></tr>
+        </tbody>
+      </table>
+    </div>` : '';
+
+    const deductionPageHtml = (supplyData.length > 0 || miscData.length > 0) ? `
+    <div class="page-break"></div>
+    ${supplyPageHtml}
+    ${miscPageHtml}
+    ${netSummaryHtml}` : '';
+
     const html = `<!DOCTYPE html>
 <html lang="th"><head><meta charset="utf-8"><title>${tabLabel}</title>
 <style>
@@ -691,8 +948,9 @@ export default function ReportPage() {
   .summary-item{border:1px solid #ddd;padding:4px 10px;border-radius:3px;min-width:110px;}
   .summary-item .label{font-size:9px;color:#666;margin-bottom:1px;}
   .summary-item .value{font-size:12px;font-weight:700;}
+  .page-break{page-break-before:always;margin-top:0;}
   @page{margin:2mm;size:A4 portrait;}
-  @media print{body{padding:0;}}
+  @media print{body{padding:0;}.page-break{page-break-before:always;}}
 </style>
 </head><body>
 <h2>${tabLabel}</h2>
@@ -702,13 +960,29 @@ export default function ReportPage() {
     <div class="value">${printSummary.count.toLocaleString()} รายการ</div>
   </div>
   <div class="summary-item">
-    <div class="label">ยอดรวม</div>
+    <div class="label">ยอดรวมงาน</div>
     <div class="value">${printSummary.totalAmount.toLocaleString()} บาท</div>
   </div>
   <div class="summary-item">
     <div class="label">จำนวนชิ้น</div>
     <div class="value">${printSummary.totalQty.toLocaleString()} ชิ้น</div>
+  </div>${supplyTotal > 0 ? `
+  <div class="summary-item">
+    <div class="label">หักเบิกของ</div>
+    <div class="value">-${supplyTotal.toLocaleString()} บาท</div>
+  </div>` : ''}${miscTotal > 0 ? `
+  <div class="summary-item">
+    <div class="label">หักอื่นๆ</div>
+    <div class="value">-${miscTotal.toLocaleString()} บาท</div>
+  </div>` : ''}${allDeductions > 0 ? `
+  <div class="summary-item">
+    <div class="label">หักรวม</div>
+    <div class="value">-${allDeductions.toLocaleString()} บาท</div>
   </div>
+  <div class="summary-item" style="border-color:#000;border-width:2px;">
+    <div class="label" style="font-weight:700;">ยอดสุทธิ</div>
+    <div class="value">${netTotal.toLocaleString()} บาท</div>
+  </div>` : ''}
 </div>
 <table>
   <thead><tr>
@@ -718,6 +992,7 @@ export default function ReportPage() {
   </tr></thead>
   <tbody>${rowsHtml}</tbody>
 </table>
+${deductionPageHtml}
 </body></html>`;
     const w = window.open('', '_blank', 'width=800,height=1100');
     if (!w) { alert('กรุณาอนุญาต popup ในเบราว์เซอร์'); return; }
@@ -725,7 +1000,7 @@ export default function ReportPage() {
     w.document.close();
     w.focus();
     setTimeout(() => { w.print(); }, 500);
-  }, []);
+  }, [filteredSupplyWithdrawals, supplyDeductionTotal, filteredMiscDeductions, miscDeductionTotal]);
 
   const handleUpdatePrice = useCallback(async () => {
     if (!editPriceModal) return;
@@ -798,11 +1073,23 @@ export default function ReportPage() {
     </th>
   );
 
-  const renderTable = (data, tabType, tooltip) => (
+  const renderTable = (data, tabType, tooltip) => {
+    const showCheckbox = tabType === "pending" || tabType === "unpaid";
+    return (
     <div className="w-full rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 shadow-sm overflow-visible">
       <table className="min-w-full divide-y divide-gray-200 dark:divide-slate-700 w-full" style={{ tableLayout: "fixed", minWidth: "720px" }}>
         <thead className="bg-gray-50 dark:bg-slate-900/40">
           <tr className="text-left text-xs font-semibold text-gray-600 dark:text-gray-300">
+            {showCheckbox && (
+              <th className="w-10 pl-3 py-3">
+                <input
+                  type="checkbox"
+                  checked={data.length > 0 && selectedRowKeys.size === data.length}
+                  onChange={() => toggleSelectAll(data)}
+                  className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+              </th>
+            )}
             <SortableHeader sortKey="ticketNo" className="pl-4 pr-3">No.</SortableHeader>
             <SortableHeader sortKey="technician" className="px-3">ช่าง</SortableHeader>
             <SortableHeader sortKey="station" className="px-3">สถานี</SortableHeader>
@@ -821,7 +1108,17 @@ export default function ReportPage() {
           {data.map((row) => {
             const rowKey = `${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`;
             return (
-            <tr key={rowKey}>
+            <tr key={rowKey} className={selectedRowKeys.has(rowKey) ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""}>
+              {showCheckbox && (
+                <td className="pl-3 py-3">
+                  <input
+                    type="checkbox"
+                    checked={selectedRowKeys.has(rowKey)}
+                    onChange={() => toggleRowSelect(rowKey)}
+                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                </td>
+              )}
               <td className="pl-4 pr-3 py-3 whitespace-nowrap font-mono text-xs text-gray-800 dark:text-gray-200">{row.ticketNo}</td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100 font-medium">{row.technicianName}</td>
               <td className="px-3 py-3 text-gray-800 dark:text-gray-100">{row.stationName}</td>
@@ -1006,7 +1303,7 @@ export default function ReportPage() {
         </tbody>
       </table>
     </div>
-  );
+  );};
 
   return (
     <ProtectedRoute>
@@ -1274,73 +1571,54 @@ export default function ReportPage() {
               <Gavel className="w-4 h-4" />
               {language === "th" ? "หักเงิน (กดแทน)" : "Penalties"}
             </button>
-            <div className="w-px h-6 bg-gray-200 dark:bg-slate-600 mx-1" />
-            <button
-              onClick={() => setActiveTab("supply")}
-              className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg ${
-                activeTab === "supply"
-                  ? "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300"
-                  : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-700"
-              }`}
-            >
-              <Package className="w-4 h-4" />
-              {language === "th" ? "เบิกของ" : "Supply"}
-            </button>
           </div>
 
           {/* Summary cards - คำนวณจากข้อมูลที่กรองแล้วตามแท็บ (ซ่อนเมื่ออยู่ใน penalty/supply tab) */}
-          {activeTab !== "penalty" && activeTab !== "supply" && <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400">
-                  <LayoutList className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === "th" ? "จำนวนรายการ" : "Items"}
-                  </p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
-                    {summary.count}
-                  </p>
-                </div>
+          {activeTab !== "penalty" && <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {/* จำนวนรายการ */}
+              <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{language === "th" ? "จำนวนรายการ" : "Items"}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{summary.count}</p>
+              </div>
+              {/* ยอดรวมงาน */}
+              <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{language === "th" ? "ยอดรวมงาน" : "Work Total"}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{summary.totalAmount.toLocaleString()} <span className="text-xs font-normal text-gray-400">฿</span></p>
+              </div>
+              {/* จำนวนชิ้น */}
+              <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">{language === "th" ? "จำนวนชิ้น" : "Quantity"}</p>
+                <p className="text-lg font-bold text-gray-900 dark:text-gray-100 tabular-nums mt-0.5">{summary.totalQty.toLocaleString()} <span className="text-xs font-normal text-gray-400">{language === "th" ? "ชิ้น" : "pcs"}</span></p>
               </div>
             </div>
-            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400">
-                  <Banknote className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === "th" ? "ยอดรวม" : "Total"}
-                  </p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
-                    {summary.totalAmount.toLocaleString()}
-                    <span className="ml-1 text-sm font-normal text-gray-500 dark:text-gray-400">บาท</span>
-                  </p>
-                </div>
+            {/* Deduction cards row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* หักเบิกของ */}
+              <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400 uppercase tracking-wide">{language === "th" ? "หักเบิกของ" : "Supply"}</p>
+                <p className="text-lg font-bold text-amber-700 dark:text-amber-300 tabular-nums mt-0.5">{summary.supplyDeduction > 0 ? "-" : ""}{summary.supplyDeduction.toLocaleString()} <span className="text-xs font-normal text-amber-500">฿</span></p>
+              </div>
+              {/* หักค่าใช้จ่ายอื่นๆ */}
+              <div className="rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-900/20 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-purple-600 dark:text-purple-400 uppercase tracking-wide">{language === "th" ? "หักอื่นๆ" : "Misc"}</p>
+                <p className="text-lg font-bold text-purple-700 dark:text-purple-300 tabular-nums mt-0.5">{summary.miscDeduction > 0 ? "-" : ""}{summary.miscDeduction.toLocaleString()} <span className="text-xs font-normal text-purple-500">฿</span></p>
+              </div>
+              {/* หักรวม */}
+              <div className="rounded-xl border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/20 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-rose-600 dark:text-rose-400 uppercase tracking-wide">{language === "th" ? "หักรวม" : "Total Deduct"}</p>
+                <p className="text-lg font-bold text-rose-700 dark:text-rose-300 tabular-nums mt-0.5">{summary.totalDeduction > 0 ? "-" : ""}{summary.totalDeduction.toLocaleString()} <span className="text-xs font-normal text-rose-500">฿</span></p>
+              </div>
+              {/* ยอดสุทธิ */}
+              <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 p-3 shadow-sm">
+                <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">{language === "th" ? "ยอดสุทธิ" : "Net Amount"}</p>
+                <p className="text-lg font-bold text-emerald-700 dark:text-emerald-300 tabular-nums mt-0.5">{summary.netAmount.toLocaleString()} <span className="text-xs font-normal text-emerald-500">฿</span></p>
               </div>
             </div>
-            <div className="rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 p-4 sm:p-5 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400">
-                  <Package className="h-5 w-5" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-                    {language === "th" ? "จำนวนชิ้น" : "Quantity"}
-                  </p>
-                  <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-gray-100 tabular-nums">
-                    {summary.totalQty.toLocaleString()}
-                    <span className="ml-1 text-sm font-normal text-gray-500 dark:text-gray-400">{language === "th" ? "ชิ้น" : "pcs"}</span>
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>}
+          </>}
 
           {/* Filters (ซ่อนเมื่ออยู่ใน penalty/supply tab) */}
-          {activeTab !== "penalty" && activeTab !== "supply" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
+          {activeTab !== "penalty" && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-slate-800/50 rounded-xl border border-gray-200 dark:border-slate-700">
             {/* Search */}
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -1452,18 +1730,70 @@ export default function ReportPage() {
               <Loader2 className="w-4 h-4 animate-spin" />
               {t("loading", language)}
             </div>
-          ) : activeTab === "supply" ? (
-            <SupplyWithdrawalSummary />
           ) : activeTab === "penalty" ? (
             <PenaltyReport />
           ) : activeTab === "unpaid" ? (
-            renderTable(unpaidRows, "unpaid", { showProjectTooltip, hideProjectTooltip })
+            <div className="space-y-3">
+              {/* Batch action bar for unpaid */}
+              {selectedRowKeys.size > 0 && (
+                <div className="flex items-center gap-3 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    {language === "th" ? `เลือก ${selectedRowKeys.size} รายการ` : `${selectedRowKeys.size} selected`}
+                  </span>
+                  <button
+                    disabled={batchLoading}
+                    onClick={() => handleBatchAction(unpaidRows, "pending")}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    {batchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Clock className="w-3.5 h-3.5" />}
+                    {language === "th" ? "ยืนยันการจ่าย" : "Confirm"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedRowKeys(new Set())}
+                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    {language === "th" ? "ยกเลิกเลือก" : "Clear"}
+                  </button>
+                </div>
+              )}
+              {renderTable(unpaidRows, "unpaid", { showProjectTooltip, hideProjectTooltip })}
+            </div>
           ) : activeTab === "pending" ? (
             <div className="space-y-3">
+              {/* Batch action bar for pending */}
+              {selectedRowKeys.size > 0 && (
+                <div className="flex items-center gap-3 px-4 py-2 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-200 dark:border-emerald-800">
+                  <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                    {language === "th" ? `เลือก ${selectedRowKeys.size} รายการ` : `${selectedRowKeys.size} selected`}
+                  </span>
+                  <button
+                    disabled={batchLoading}
+                    onClick={() => handleBatchAction(pendingRows, "confirm")}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    {batchLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                    {language === "th" ? "อนุมัติจ่าย" : "Approve"}
+                  </button>
+                  <button
+                    disabled={batchLoading}
+                    onClick={() => handleBatchAction(pendingRows, "cancel")}
+                    className="flex items-center gap-1.5 px-3 py-1 bg-rose-500 hover:bg-rose-600 disabled:bg-gray-300 text-white text-xs font-medium rounded-lg transition-colors"
+                  >
+                    <XCircle className="w-3.5 h-3.5" />
+                    {language === "th" ? "ยกเลิก" : "Cancel"}
+                  </button>
+                  <button
+                    onClick={() => setSelectedRowKeys(new Set())}
+                    className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    {language === "th" ? "ยกเลิกเลือก" : "Clear"}
+                  </button>
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                   <Clock className="w-4 h-4 text-amber-500" />
-                  {language === "th" ? "รายการรอยืนยันการจ่าย — กด \"จ่ายแล้ว\" เพื่อยืนยัน หรือ \"ยกเลิกจ่าย\" เพื่อยกเลิก" : "Items pending payment — confirm or cancel each item"}
+                  {language === "th" ? "รายการรอยืนยันการจ่าย — เลือกหลายรายการแล้วกด \"อนุมัติจ่าย\" ได้เลย" : "Pending payment — select multiple and approve"}
                 </div>
                 {pendingRows.length > 0 && (
                   <button
@@ -1476,6 +1806,180 @@ export default function ReportPage() {
                 )}
               </div>
               {renderTable(pendingRows, "pending", { showProjectTooltip, hideProjectTooltip })}
+
+              {/* Supply Deduction Section */}
+              {filteredSupplyWithdrawals.length > 0 && (
+                <div className="mt-6 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/50 dark:bg-amber-900/10 overflow-hidden">
+                  <div className="px-4 py-2.5 bg-amber-100 dark:bg-amber-900/30 border-b border-amber-200 dark:border-amber-800 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Package className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                      <span className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                        {language === "th" ? "หักเบิกของสิ้นเปลือง" : "Supply Deductions"}
+                        {selectedTechnician && (
+                          <span className="ml-1 font-normal text-amber-600 dark:text-amber-400">— {selectedTechnician}</span>
+                        )}
+                      </span>
+                    </div>
+                    <span className="text-sm font-bold font-mono text-amber-800 dark:text-amber-200 tabular-nums">
+                      ฿ {supplyDeductionTotal.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-amber-600 dark:text-amber-400 border-b border-amber-200 dark:border-amber-800/50">
+                          <th className="text-left px-4 py-2 font-medium">{language === "th" ? "ช่าง" : "Technician"}</th>
+                          <th className="text-left px-3 py-2 font-medium">{language === "th" ? "รายการ" : "Item"}</th>
+                          <th className="text-right px-3 py-2 font-medium">{language === "th" ? "ราคา" : "Price"}</th>
+                          <th className="text-center px-3 py-2 font-medium">{language === "th" ? "จำนวน" : "Qty"}</th>
+                          <th className="text-right px-3 py-2 font-medium">{language === "th" ? "รวม" : "Total"}</th>
+                          <th className="text-center px-3 py-2 font-medium">{language === "th" ? "รอบ" : "Round"}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredSupplyWithdrawals.map((w) => (
+                          <tr key={w.id} className="border-b border-amber-100 dark:border-amber-900/30 hover:bg-amber-100/50 dark:hover:bg-amber-900/20">
+                            <td className="px-4 py-1.5 text-gray-800 dark:text-gray-200 font-medium">{w.technician_name}</td>
+                            <td className="px-3 py-1.5 text-gray-700 dark:text-gray-300">{w.item_name}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-gray-600 dark:text-gray-400 tabular-nums">
+                              {Number(w.locked_price).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-1.5 text-center font-mono text-gray-700 dark:text-gray-300">{w.quantity}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-medium text-amber-700 dark:text-amber-400 tabular-nums">
+                              {Number(w.total_amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-1.5 text-center text-gray-500 dark:text-gray-400 text-xs">{w.payment_round}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      {Object.keys(supplyDeductionMap).length > 1 && (
+                        <tfoot>
+                          {Object.values(supplyDeductionMap).map((tech) => (
+                            <tr key={tech.name} className="border-t border-amber-200 dark:border-amber-800/50 bg-amber-100/30 dark:bg-amber-900/20">
+                              <td className="px-4 py-1.5 font-semibold text-gray-800 dark:text-gray-200" colSpan={4}>
+                                {tech.name} ({tech.items.length} {language === "th" ? "รายการ" : "items"})
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-mono font-bold text-amber-800 dark:text-amber-200 tabular-nums">
+                                ฿ {tech.total.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              </td>
+                              <td></td>
+                            </tr>
+                          ))}
+                        </tfoot>
+                      )}
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Misc Deductions Section */}
+              <div className="mt-6 rounded-xl border border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-purple-900/10 overflow-hidden">
+                <div className="px-4 py-2.5 bg-purple-100 dark:bg-purple-900/30 border-b border-purple-200 dark:border-purple-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Banknote className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                    <span className="text-sm font-semibold text-purple-800 dark:text-purple-200">
+                      {language === "th" ? "หักค่าใช้จ่ายอื่นๆ" : "Misc Deductions"}
+                      {selectedTechnician && (
+                        <span className="ml-1 font-normal text-purple-600 dark:text-purple-400">— {selectedTechnician}</span>
+                      )}
+                    </span>
+                  </div>
+                  {miscDeductionTotal > 0 && (
+                    <span className="text-sm font-bold font-mono text-purple-800 dark:text-purple-200 tabular-nums">
+                      ฿ {miscDeductionTotal.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  )}
+                </div>
+
+                {/* Add misc deduction form (separate component to avoid lag) */}
+                <MiscDeductionForm
+                  technicians={miscTechnicians}
+                  rounds={[...activeRounds].sort()}
+                  defaultRound={formatRound()}
+                  language={language}
+                  userId={user?.id}
+                  onAdded={loadMiscDeductions}
+                />
+
+                {/* Misc deductions table */}
+                {filteredMiscDeductions.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-purple-600 dark:text-purple-400 border-b border-purple-200 dark:border-purple-800/50">
+                          <th className="text-left px-4 py-2 font-medium">{language === "th" ? "ช่าง" : "Technician"}</th>
+                          <th className="text-left px-3 py-2 font-medium">{language === "th" ? "รายละเอียด" : "Description"}</th>
+                          <th className="text-right px-3 py-2 font-medium">{language === "th" ? "ราคา" : "Price"}</th>
+                          <th className="text-center px-3 py-2 font-medium">{language === "th" ? "จำนวน" : "Qty"}</th>
+                          <th className="text-right px-3 py-2 font-medium">{language === "th" ? "รวม" : "Total"}</th>
+                          <th className="text-center px-3 py-2 font-medium">{language === "th" ? "รอบ" : "Round"}</th>
+                          <th className="w-10 px-2 py-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredMiscDeductions.map((d) => (
+                          <tr key={d.id} className="border-b border-purple-100 dark:border-purple-900/30 hover:bg-purple-100/50 dark:hover:bg-purple-900/20">
+                            <td className="px-4 py-1.5 text-gray-800 dark:text-gray-200 font-medium">{d.technician_name}</td>
+                            <td className="px-3 py-1.5 text-gray-700 dark:text-gray-300">{d.description}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-gray-600 dark:text-gray-400 tabular-nums">
+                              {Number(d.price).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-1.5 text-center font-mono text-gray-700 dark:text-gray-300">{d.quantity}</td>
+                            <td className="px-3 py-1.5 text-right font-mono font-medium text-purple-700 dark:text-purple-400 tabular-nums">
+                              {Number(d.total_amount).toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td className="px-3 py-1.5 text-center text-gray-500 dark:text-gray-400 text-xs">{d.payment_round}</td>
+                            <td className="px-2 py-1.5">
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(language === "th" ? "ลบรายการนี้?" : "Delete?")) return;
+                                  await fetch("/api/misc-deductions", {
+                                    method: "POST",
+                                    headers: { "Content-Type": "application/json" },
+                                    body: JSON.stringify({ action: "delete", id: d.id, user_id: user?.id }),
+                                  });
+                                  loadMiscDeductions();
+                                }}
+                                className="p-1 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"
+                              >
+                                <X className="w-3.5 h-3.5 text-red-400" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {filteredMiscDeductions.length === 0 && (
+                  <div className="px-4 py-3 text-xs text-gray-400 dark:text-gray-500 text-center">
+                    {language === "th" ? "ยังไม่มีรายการ — เพิ่มด้านบน" : "No entries — add above"}
+                  </div>
+                )}
+              </div>
+
+              {/* Net summary after ALL deductions */}
+              {pendingRows.length > 0 && totalDeductions > 0 && (
+                <div className="mt-3 flex flex-wrap items-center justify-end gap-4 px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-gray-200 dark:border-slate-700 shadow-sm">
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    {language === "th" ? "ยอดงาน" : "Work"}: <span className="font-mono font-semibold text-gray-800 dark:text-gray-200">฿ {summary.totalAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  {supplyDeductionTotal > 0 && (
+                    <div className="text-sm text-amber-600 dark:text-amber-400">
+                      − {language === "th" ? "เบิกของ" : "Supply"}: <span className="font-mono font-semibold">฿ {supplyDeductionTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {miscDeductionTotal > 0 && (
+                    <div className="text-sm text-purple-600 dark:text-purple-400">
+                      − {language === "th" ? "อื่นๆ" : "Misc"}: <span className="font-mono font-semibold">฿ {miscDeductionTotal.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  <div className="text-sm font-bold text-emerald-700 dark:text-emerald-400">
+                    = {language === "th" ? "ยอดสุทธิ" : "Net"}: <span className="font-mono text-lg">฿ {summary.netAmount.toLocaleString("th-TH", { minimumFractionDigits: 2 })}</span>
+                  </div>
+                </div>
+              )}
             </div>
           ) : activeTab === "paid" ? (
             <div className="space-y-3">
