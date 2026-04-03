@@ -165,18 +165,20 @@ export default function ReportPage() {
             payment_round: row.round,
             user_id: user?.id
           };
+          console.log("[BATCH] sending:", JSON.stringify(payload));
           const res = await fetch("/api/report/payment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
           const json = await res.json().catch(() => ({}));
+          console.log("[BATCH] response:", row.ticketNo, res.status, json);
           if (res.ok && json.success) {
             successCount++;
             successKeys.add(`${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`);
           } else {
             failCount++;
-            console.error("[BATCH] fail:", row.ticketNo, json.error);
+            console.error("[BATCH] fail:", row.ticketNo, json.error || json);
           }
         } catch (e) {
           failCount++;
@@ -483,9 +485,20 @@ export default function ReportPage() {
       const ticketMap = new Map((ticketData || []).map((t) => [t.no, t]));
 
       const paymentMap = {};
+      // Also index by base key (without round) so we can find payments even if round doesn't match
+      const paymentByBase = {};
+      console.log("[REPORT] paymentData count:", (paymentData || []).length);
       (paymentData || []).forEach((p) => {
         const key = `${p.ticket_no}-${p.station_id}-${p.step_order}-${p.technician_id}-${p.payment_round}`;
         paymentMap[key] = p;
+        const baseKey = `${p.ticket_no}-${p.station_id}-${p.step_order}-${p.technician_id}`;
+        if (p.ticket_no === "RPD2603-152") {
+          console.log("[REPORT] found RPD2603-152 payment:", { key, baseKey, status: p.status, round: p.payment_round });
+        }
+        // Keep latest payment per base key
+        if (!paymentByBase[baseKey] || new Date(p.updated_at || p.created_at) > new Date(paymentByBase[baseKey].updated_at || paymentByBase[baseKey].created_at)) {
+          paymentByBase[baseKey] = p;
+        }
       });
 
       const computedRows = [];
@@ -510,7 +523,11 @@ export default function ReportPage() {
         if (technicians.length > 0) {
           technicians.forEach((tech) => {
             const paymentKeyCurrent = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}-${tech.id}-${roundFromCompleted}`;
-            const paidRecord = paymentMap[paymentKeyCurrent];
+            const baseKey = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}-${tech.id}`;
+            const paidRecord = paymentMap[paymentKeyCurrent] || paymentByBase[baseKey] || null;
+            if (flow.ticket_no === "RPD2603-152") {
+              console.log("[REPORT] lookup RPD2603-152:", { paymentKeyCurrent, baseKey, foundByKey: !!paymentMap[paymentKeyCurrent], foundByBase: !!paymentByBase[baseKey], paidRecord: paidRecord?.status, roundFromCompleted });
+            }
 
             computedRows.push({
               ticketNo: flow.ticket_no,
@@ -539,7 +556,8 @@ export default function ReportPage() {
           // ถ้าไม่มี technician ให้แสดงเป็น "-" หรือ "ยังไม่ได้มอบหมาย"
           // ใช้ null สำหรับ technician_id เพื่อให้ unique key ทำงานได้
           const paymentKeyCurrent = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}-null-${roundFromCompleted}`;
-          const paidRecord = paymentMap[paymentKeyCurrent];
+          const baseKeyNull = `${flow.ticket_no}-${flow.station_id}-${flow.step_order}-null`;
+          const paidRecord = paymentMap[paymentKeyCurrent] || paymentByBase[baseKeyNull] || null;
 
           computedRows.push({
             ticketNo: flow.ticket_no,

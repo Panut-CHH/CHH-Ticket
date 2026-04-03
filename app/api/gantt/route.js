@@ -67,22 +67,38 @@ export async function GET(request) {
       flows = flows.concat(f || []);
     }
 
-    // Fetch assignments with technician names via view
+    // Fetch assignments with technician names via view (paginated)
     let assignments = [];
     try {
-      const { data: a } = await supabaseAdmin
-        .from('view_ticket_assignments_with_user')
-        .select('ticket_no, station_id, step_order, technician_name')
-        .in('ticket_no', ticketNos);
-      assignments = a || [];
+      let from = 0;
+      const ps = 1000;
+      while (true) {
+        const { data: a } = await supabaseAdmin
+          .from('view_ticket_assignments_with_user')
+          .select('ticket_no, station_id, step_order, technician_name')
+          .in('ticket_no', ticketNos)
+          .range(from, from + ps - 1);
+        assignments = assignments.concat(a || []);
+        if (!a || a.length < ps) break;
+        from += ps;
+      }
     } catch {
       // Fallback: join ticket_assignments + users manually
       try {
-        const { data: ta } = await supabaseAdmin
-          .from('ticket_assignments')
-          .select('ticket_no, station_id, step_order, technician_id, users(name)')
-          .in('ticket_no', ticketNos);
-        assignments = (ta || []).map(a => ({
+        let from = 0;
+        const ps = 1000;
+        let raw = [];
+        while (true) {
+          const { data: ta } = await supabaseAdmin
+            .from('ticket_assignments')
+            .select('ticket_no, station_id, step_order, technician_id, users(name)')
+            .in('ticket_no', ticketNos)
+            .range(from, from + ps - 1);
+          raw = raw.concat(ta || []);
+          if (!ta || ta.length < ps) break;
+          from += ps;
+        }
+        assignments = raw.map(a => ({
           ticket_no: a.ticket_no,
           station_id: a.station_id,
           step_order: a.step_order,

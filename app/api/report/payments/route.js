@@ -47,9 +47,24 @@ export async function GET(request) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    const { data: paymentData, error: paymentError } = await supabaseAdmin
-      .from('technician_payments')
-      .select('*');
+    // Supabase default limit is 1000, fetch all by paginating
+    let paymentData = [];
+    let from = 0;
+    const pageSize = 1000;
+    while (true) {
+      const { data: page, error: pageError } = await supabaseAdmin
+        .from('technician_payments')
+        .select('*')
+        .range(from, from + pageSize - 1);
+      if (pageError) {
+        console.error('[REPORT PAYMENTS] fetch error:', pageError);
+        return NextResponse.json({ success: false, error: pageError.message }, { status: 500 });
+      }
+      paymentData = paymentData.concat(page || []);
+      if (!page || page.length < pageSize) break;
+      from += pageSize;
+    }
+    const paymentError = null;
 
     if (paymentError) {
       console.error('[REPORT PAYMENTS] fetch error:', paymentError);

@@ -125,7 +125,19 @@ export async function GET(request) {
       );
     }
 
-    const { data: sessions, error } = await query;
+    // Paginate to get all sessions (Supabase default limit = 1000)
+    let sessions = [];
+    let fetchError = null;
+    let from = 0;
+    const ps = 1000;
+    while (true) {
+      const { data: page, error: pageErr } = await query.range(from, from + ps - 1);
+      if (pageErr) { fetchError = pageErr; break; }
+      sessions = sessions.concat(page || []);
+      if (!page || page.length < ps) break;
+      from += ps;
+    }
+    const error = fetchError;
 
     if (error) {
       console.error('[API] Error fetching sessions:', error);
