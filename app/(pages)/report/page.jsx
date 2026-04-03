@@ -144,10 +144,12 @@ export default function ReportPage() {
     const label = action === "confirm" ? "อนุมัติจ่าย" : action === "pending" ? "ยืนยันการจ่าย" : action === "cancel" ? "ยกเลิก" : action;
     if (!confirm(`${label} ${selected.length} รายการ?`)) return;
     setBatchLoading(true);
+    let successCount = 0;
+    let failCount = 0;
+    const successKeys = new Set();
     try {
-      // Fire all requests in parallel
-      const results = await Promise.allSettled(
-        selected.map((row) => {
+      for (const row of selected) {
+        try {
           const payload = {
             action,
             ticket_no: row.ticketNo,
@@ -163,22 +165,38 @@ export default function ReportPage() {
             payment_round: row.round,
             user_id: user?.id
           };
-          return fetch("/api/report/payment", {
+          const res = await fetch("/api/report/payment", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
-          }).then((r) => r.json());
-        })
-      );
-      // Update local state for all rows at once
-      const newStatus = action === "confirm" ? "paid" : action === "pending" ? "pending" : action === "cancel" ? "cancelled" : action;
-      setRows((prev) =>
-        prev.map((r) => {
-          const key = `${r.ticketNo}-${r.stationId}-${r.stepOrder}-${r.technicianId}-${r.round}`;
-          if (!selectedRowKeys.has(key)) return r;
-          return { ...r, paymentStatus: newStatus, paymentRecord: { ...(r.paymentRecord || {}), status: newStatus, payment_round: r.round } };
-        })
-      );
+          });
+          const json = await res.json().catch(() => ({}));
+          if (res.ok && json.success) {
+            successCount++;
+            successKeys.add(`${row.ticketNo}-${row.stationId}-${row.stepOrder}-${row.technicianId}-${row.round}`);
+          } else {
+            failCount++;
+            console.error("[BATCH] fail:", row.ticketNo, json.error);
+          }
+        } catch (e) {
+          failCount++;
+          console.error("[BATCH] error:", row.ticketNo, e);
+        }
+      }
+      // Update local state only for successful rows
+      if (successKeys.size > 0) {
+        const newStatus = action === "confirm" ? "paid" : action === "pending" ? "pending" : action === "cancel" ? "cancelled" : action;
+        setRows((prev) =>
+          prev.map((r) => {
+            const key = `${r.ticketNo}-${r.stationId}-${r.stepOrder}-${r.technicianId}-${r.round}`;
+            if (!successKeys.has(key)) return r;
+            return { ...r, paymentStatus: newStatus, paymentRecord: { ...(r.paymentRecord || {}), status: newStatus, payment_round: r.round } };
+          })
+        );
+      }
+      if (failCount > 0) {
+        alert(`สำเร็จ ${successCount} รายการ, ล้มเหลว ${failCount} รายการ`);
+      }
     } catch (e) {
       console.error("[BATCH ACTION] error:", e);
     }
