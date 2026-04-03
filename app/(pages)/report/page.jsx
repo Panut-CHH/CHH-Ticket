@@ -141,11 +141,46 @@ export default function ReportPage() {
   const handleBatchAction = async (data, action) => {
     const selected = getSelectedRows(data);
     if (selected.length === 0) return;
-    const label = action === "confirm" ? "จ่ายแล้ว" : action === "pending" ? "ยืนยัน" : action === "cancel" ? "ยกเลิก" : action;
+    const label = action === "confirm" ? "อนุมัติจ่าย" : action === "pending" ? "ยืนยันการจ่าย" : action === "cancel" ? "ยกเลิก" : action;
     if (!confirm(`${label} ${selected.length} รายการ?`)) return;
     setBatchLoading(true);
-    for (const row of selected) {
-      await handleAction(row, action);
+    try {
+      // Fire all requests in parallel
+      const results = await Promise.allSettled(
+        selected.map((row) => {
+          const payload = {
+            action,
+            ticket_no: row.ticketNo,
+            station_id: row.stationId,
+            step_order: row.stepOrder,
+            technician_id: row.paymentRecord?.technician_id || row.technicianId,
+            payment_amount: row.totalPrice,
+            quantity: row.quantity,
+            unit: row.unit,
+            price_per_unit: row.pricePerUnit,
+            project_name: row.projectName,
+            payment_date: new Date().toISOString(),
+            payment_round: row.round,
+            user_id: user?.id
+          };
+          return fetch("/api/report/payment", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          }).then((r) => r.json());
+        })
+      );
+      // Update local state for all rows at once
+      const newStatus = action === "confirm" ? "paid" : action === "pending" ? "pending" : action === "cancel" ? "cancelled" : action;
+      setRows((prev) =>
+        prev.map((r) => {
+          const key = `${r.ticketNo}-${r.stationId}-${r.stepOrder}-${r.technicianId}-${r.round}`;
+          if (!selectedRowKeys.has(key)) return r;
+          return { ...r, paymentStatus: newStatus, paymentRecord: { ...(r.paymentRecord || {}), status: newStatus, payment_round: r.round } };
+        })
+      );
+    } catch (e) {
+      console.error("[BATCH ACTION] error:", e);
     }
     setSelectedRowKeys(new Set());
     setBatchLoading(false);
