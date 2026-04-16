@@ -986,7 +986,8 @@ function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = 
                   const selCompletedQty = selStep?.completed_qty || 0;
                   const selAvailableQty = selStep?.available_qty ?? 0;
                   const selRemaining = selAvailableQty - selCompletedQty;
-                  const selPct = selTotalQty > 0 ? Math.round((selCompletedQty / selTotalQty) * 100) : 0;
+                  const selReworkQty = Math.max(0, selAvailableQty - selTotalQty);
+                  const selPct = selTotalQty > 0 ? Math.min(100, Math.round((selCompletedQty / selTotalQty) * 100)) : 0;
                   const selStationId = selStation?.stationId || selStation?.station_id || selStation?.id || null;
                   const selStatusText = selIsActive ? "กำลังทำ" : selIsPending ? "รอเริ่ม" : selStep?.status === 'completed' ? "เสร็จ" : "รอ";
 
@@ -1005,7 +1006,8 @@ function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = 
                         <div className="mt-2">
                           <div className="flex items-center justify-between text-sm mb-1">
                             <span className="text-gray-600 dark:text-gray-400">ความคืบหน้า</span>
-                            <span className={`font-semibold ${selPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{selCompletedQty}/{selTotalQty} ชิ้น ({selPct}%)</span>
+                            <span className={`font-semibold ${selPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{Math.min(selCompletedQty, selTotalQty)}/{selTotalQty} ชิ้น ({selPct}%)</span>
+                            {selReworkQty > 0 && <span className="ml-2 text-xs text-orange-600 dark:text-orange-400 font-semibold">🔄 +{selReworkQty} rework</span>}
                           </div>
                           <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-3">
                             <div className={`h-3 rounded-full transition-all duration-500 ${selPct >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${selPct}%` }} />
@@ -1121,12 +1123,13 @@ function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = 
                 const isQCStep = (step.step || "").toUpperCase().includes("QC");
                 const techName = isQCStep ? "-" : (stationData?.technician || "ยังไม่ได้มอบหมาย");
                 const isMyStation = !isQCStep && stationData?.technician && me && stationData.technician.includes(me);
-                // Progress qty data
+                // Progress qty data — total คงเดิม, rework แสดงแยก
                 const stepTotalQty = step.total_qty || ticket.quantity || 0;
                 const stepCompletedQty = step.completed_qty || 0;
                 const stepAvailableQty = step.available_qty || 0;
                 const stepRemaining = stepAvailableQty - stepCompletedQty;
-                const progressPct = stepTotalQty > 0 ? Math.round((stepCompletedQty / stepTotalQty) * 100) : 0;
+                const stepReworkQty = Math.max(0, stepAvailableQty - stepTotalQty); // จำนวน rework = available เกิน total
+                const progressPct = stepTotalQty > 0 ? Math.min(100, Math.round((stepCompletedQty / stepTotalQty) * 100)) : 0;
                 const isActive = step.status === 'current' || step.status === 'in_progress';
                 const statusLabel = isActive ? 'กำลังทำ' : step.status === 'completed' ? 'เสร็จ' : 'รอ';
                 const isSelected = index === selectedStepIndex;
@@ -1144,7 +1147,7 @@ function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = 
                       <div className="text-xs text-gray-500 dark:text-gray-400">ขั้นที่ {index + 1}</div>
                       {stepTotalQty > 0 && (
                         <div className={`text-xs font-semibold ${step.status === 'completed' ? 'text-emerald-600' : isActive ? 'text-amber-600' : 'text-gray-400'}`}>
-                          {stepCompletedQty}/{stepTotalQty}
+                          {Math.min(stepCompletedQty, stepTotalQty)}/{stepTotalQty}
                         </div>
                       )}
                     </div>
@@ -1165,6 +1168,11 @@ function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = 
                       }`}>{statusLabel}</span>
                       {stepTotalQty > 0 && <span className="text-xs text-gray-500 dark:text-gray-400">{progressPct}%</span>}
                     </div>
+                    {stepReworkQty > 0 && (
+                      <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-orange-100 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 text-[11px] font-semibold">
+                        🔄 rework +{stepReworkQty} ชิ้น
+                      </div>
+                    )}
                     {isQCStep && step.status === 'completed' && step.qc_task_uuid && ticket.defectCounts?.[step.qc_task_uuid] > 0 && (
                       <div className="mt-1 text-[11px] text-red-700 dark:text-red-400 font-medium">
                         Defect: {ticket.defectCounts[step.qc_task_uuid]} {ticket.unit || 'ชิ้น'}

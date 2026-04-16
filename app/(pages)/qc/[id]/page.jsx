@@ -63,8 +63,14 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   const [startingQc, setStartingQc] = useState(false);
   // จำนวนชิ้นงานที่มาถึง QC step จริง (available_qty - completed_qty)
   const [qcInspectQty, setQcInspectQty] = useState(null);
+  // จำนวนที่ QC เลือกตรวจรอบนี้ (user input, default = qcInspectQty)
+  const [inspectThisRound, setInspectThisRound] = useState(null);
   // รูปถ่ายงานจากสถานีก่อนหน้า QC
   const [prevStationPhoto, setPrevStationPhoto] = useState(null);
+  // Defect action popup — เลือกว่าจะส่งกลับสถานีไหน หรือเปิดตั๋วใหม่
+  const [defectPopup, setDefectPopup] = useState({ open: false, payload: null, qcResults: null });
+  // รายชื่อสถานีก่อนหน้า QC (สำหรับ dropdown)
+  const [stationsBeforeQC, setStationsBeforeQC] = useState([]);
   
   // Ticket data
   const [ticketData, setTicketData] = useState(null);
@@ -240,6 +246,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         const done = activeQc.completed_qty ?? 0;
         const remaining = avail - done;
         setQcInspectQty(remaining > 0 ? remaining : null);
+        setInspectThisRound(remaining > 0 ? remaining : null);
 
         // หารูปถ่ายจากสถานีก่อนหน้า QC
         const qcStepOrder = activeQc.step_order;
@@ -247,6 +254,16 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
         if (prevFlow?.photo_url) {
           setPrevStationPhoto(prevFlow.photo_url);
         }
+
+        // เก็บรายชื่อสถานีก่อนหน้า QC สำหรับ dropdown rework
+        const beforeQC = (flows || [])
+          .filter(f => f.step_order < qcStepOrder)
+          .map(f => ({
+            step_order: f.step_order,
+            name: f.stations?.name_th || f.stations?.code || `Step ${f.step_order}`,
+            station_id: f.station_id
+          }));
+        setStationsBeforeQC(beforeQC);
       }
 
       // แปลงเป็น default roadmap
@@ -444,8 +461,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       return { passQuantity: 0, failQuantity: 0, totalQuantity: 0, passRate: 0 };
     }
 
-    // ใช้จำนวนที่มาถึง QC จริง (qcInspectQty) ถ้ามี, ไม่งั้นใช้ ticket.quantity
-    const totalTicketQuantity = qcInspectQty ?? ticketData?.quantity ?? 0;
+    // ใช้จำนวนที่ QC เลือกตรวจรอบนี้ (inspectThisRound) ถ้ามี, fallback ไป qcInspectQty, แล้ว ticket.quantity
+    const totalTicketQuantity = inspectThisRound ?? qcInspectQty ?? ticketData?.quantity ?? 0;
     
     if (totalTicketQuantity === 0) {
       // ถ้าไม่มีข้อมูลตั๋ว ให้ใช้วิธีเดิม
@@ -478,6 +495,24 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       totalQuantity: totalTicketQuantity, 
       passRate 
     };
+  };
+
+  // ===== Defect Action — user เลือกแล้ว =====
+  const handleDefectAction = async (action, targetStepOrder) => {
+    const { payload } = defectPopup;
+    setDefectPopup({ open: false, payload: null, qcResults: null });
+
+    if (action === 'new_ticket') {
+      // เปิดตั๋วใหม่: ส่ง flag ไป API ให้สร้างตั๋วใหม่
+      payload.defectAction = 'new_ticket';
+      payload.reworkTargetStep = null;
+    } else {
+      // ส่งกลับสถานีที่เลือก
+      payload.defectAction = 'rework';
+      payload.reworkTargetStep = targetStepOrder;
+    }
+
+    await submitQCToAPI(payload);
   };
 
   const saveForm = async () => {
@@ -514,29 +549,31 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       return;
     }
 
-    // คำนวณผลลัพธ์ QC
-    const qcResults = calculateQCResults();
-    
-    // Rework flow removed: always proceed to save QC session
-
-    try {
-      if (othersEditing) {
-        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
+    // Validation: จำนวน defect ต้องไม่เกินจำนวนที่ตรวจรอบนี้
+    const roundQty = inspectThisRound ?? qcInspectQty ?? ticketData?.quantity ?? 0;
+    if (roundQty > 0) {
+      const totalFailQty = allItems.filter(item => item.pass === false).reduce((sum, item) => sum + (parseInt(item.qty) || 0), 0);
+      if (totalFailQty > roundQty) {
+        alert(`จำนวน defect (${totalFailQty}) มากกว่าจำนวนที่ตรวจรอบนี้ (${roundQty})`);
         return;
       }
-      setSaving(true);
-      
-      const inspectorName = (user?.name || user?.email || "").trim();
-      const inspectedDate = new Date().toISOString().split('T')[0];
+    }
 
-      const payload = {
-        formType: 'main_qc',
-        header: {
-          inspector: inspectorName,
-          inspector_id: user?.id || null,
-          inspectedDate,
-          remark: `QC Form for ticket ${id}`
-        },
+    // คำนวณผลลัพธ์ QC
+    const qcResults = calculateQCResults();
+
+    // สร้าง payload
+    const inspectorName = (user?.name || user?.email || "").trim();
+    const inspectedDate = new Date().toISOString().split('T')[0];
+
+    const payload = {
+      formType: 'main_qc',
+      header: {
+        inspector: inspectorName,
+        inspector_id: user?.id || null,
+        inspectedDate,
+        remark: `QC Form for ticket ${id}`
+      },
         categories: {
           'วงกบ': checklistItems.frame.reduce((acc, item) => {
             if (item.pass !== null) {
@@ -589,14 +626,32 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
             return acc;
           }, {})
         },
-        // เพิ่ม passQuantity และ failQuantity เพื่ออัปเดต quantity
-        passQuantity: Number(qcResults.passQuantity || 0),
-        failQuantity: Number(qcResults.failQuantity || 0)
-      };
+      // เพิ่ม passQuantity และ failQuantity เพื่ออัปเดต quantity
+      passQuantity: Number(qcResults.passQuantity || 0),
+      failQuantity: Number(qcResults.failQuantity || 0)
+    };
 
-      console.log('=== QC Form Debug ===');
-      console.log('Payload:', payload);
-      console.log('Checklist Items:', checklistItems);
+    console.log('=== QC Form Debug ===');
+    console.log('Payload:', payload);
+
+    // ถ้ามี defect → เปิด popup ถามก่อนว่าจะส่งกลับสถานีไหน
+    if (qcResults.failQuantity > 0 && stationsBeforeQC.length > 0) {
+      setDefectPopup({ open: true, payload, qcResults });
+      return; // ยังไม่ส่ง API — รอ user เลือก
+    }
+
+    // ไม่มี defect → ส่ง API เลย
+    await submitQCToAPI(payload);
+  };
+
+  // ฟังก์ชันส่ง QC ไป API จริง (เรียกจาก saveForm หรือ defect popup)
+  const submitQCToAPI = async (payload) => {
+    try {
+      if (othersEditing) {
+        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
+        return;
+      }
+      setSaving(true);
 
       // Get session token for authorization
       let authHeader = {};
@@ -955,6 +1010,64 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
               </div>
             )}
 
+            {/* Defect Action Popup — เลือกว่าจะส่ง defect กลับสถานีไหน หรือเปิดตั๋วใหม่ */}
+            {defectPopup.open && (
+              <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-[90vw] max-w-md p-6">
+                  <h3 className="text-lg font-bold text-red-600 dark:text-red-400 mb-2">
+                    พบชิ้นงานไม่ผ่าน {defectPopup.qcResults?.failQuantity} ชิ้น
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                    ผ่าน {defectPopup.qcResults?.passQuantity} ชิ้น | ไม่ผ่าน {defectPopup.qcResults?.failQuantity} ชิ้น — เลือกว่าจะจัดการชิ้นที่ไม่ผ่านอย่างไร
+                  </p>
+
+                  {/* Option 1: ส่งกลับสถานี */}
+                  <div className="mb-4">
+                    <div className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">ส่งกลับไปแก้ไขที่สถานี:</div>
+                    <div className="space-y-2">
+                      {stationsBeforeQC.map(st => (
+                        <button
+                          key={st.step_order}
+                          onClick={() => handleDefectAction('rework', st.step_order)}
+                          className="w-full flex items-center justify-between px-4 py-3 rounded-xl border-2 border-gray-200 dark:border-slate-600 hover:border-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors text-left"
+                        >
+                          <div>
+                            <span className="font-semibold text-gray-900 dark:text-gray-100">{st.name}</span>
+                            <span className="ml-2 text-xs text-gray-400">ขั้นที่ {st.step_order}</span>
+                          </div>
+                          <span className="text-amber-600 text-sm font-medium">ส่งกลับ →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="flex items-center gap-3 my-4">
+                    <div className="flex-1 border-t border-gray-200 dark:border-slate-600" />
+                    <span className="text-xs text-gray-400">หรือ</span>
+                    <div className="flex-1 border-t border-gray-200 dark:border-slate-600" />
+                  </div>
+
+                  {/* Option 2: เปิดตั๋วใหม่ */}
+                  <button
+                    onClick={() => handleDefectAction('new_ticket', null)}
+                    className="w-full px-4 py-3 rounded-xl border-2 border-red-200 dark:border-red-800 hover:border-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
+                  >
+                    <div className="font-semibold text-red-600 dark:text-red-400">เปิดตั๋วใหม่</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">สำหรับชิ้นที่ต้องผลิตใหม่ทั้งหมดตั้งแต่ต้น</div>
+                  </button>
+
+                  {/* Cancel */}
+                  <button
+                    onClick={() => setDefectPopup({ open: false, payload: null, qcResults: null })}
+                    className="w-full mt-3 px-4 py-2 rounded-xl text-gray-500 dark:text-gray-400 text-sm hover:bg-gray-100 dark:hover:bg-slate-700"
+                  >
+                    ยกเลิก — กลับไปแก้ไขฟอร์ม
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Presence warning */}
             {othersEditing && (
               <div className="mb-3 p-3 rounded-md border border-amber-300 bg-amber-50 text-amber-800 text-sm">
@@ -1054,15 +1167,35 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                 <p className="text-base sm:text-lg font-medium">ตั๋ว #{id}</p>
                 {ticketData && (
                   <div className="mt-2 space-y-1">
-                    <p className="text-xs sm:text-sm">
-                      <span className="font-medium">จำนวนที่ต้องตรวจรอบนี้:</span>
-                      <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
+                    <div className="text-xs sm:text-sm">
+                      <span className="font-medium">รอตรวจทั้งหมด:</span>
+                      <span className="ml-2 text-gray-700 dark:text-gray-300 font-semibold">
                         {(qcInspectQty ?? ticketData?.quantity ?? 0).toLocaleString()} {ticketData?.unit || 'ชิ้น'}
                       </span>
                       {qcInspectQty != null && qcInspectQty !== (ticketData?.quantity ?? 0) && (
-                        <span className="ml-2 text-xs text-gray-400">(ทั้งหมด {(ticketData?.quantity ?? 0).toLocaleString()})</span>
+                        <span className="ml-2 text-xs text-gray-400">(ตั๋วทั้งหมด {(ticketData?.quantity ?? 0).toLocaleString()})</span>
                       )}
-                    </p>
+                    </div>
+                    {qcInspectQty != null && qcInspectQty > 0 && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-xs sm:text-sm font-medium">ตรวจรอบนี้:</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={qcInspectQty}
+                          value={inspectThisRound ?? qcInspectQty}
+                          onChange={e => {
+                            const v = parseInt(e.target.value) || 1;
+                            setInspectThisRound(Math.min(Math.max(v, 1), qcInspectQty));
+                          }}
+                          className="w-20 px-2 py-1.5 text-center text-sm font-bold border-2 border-blue-300 dark:border-blue-600 rounded-lg bg-white dark:bg-slate-700 text-blue-700 dark:text-blue-300 focus:ring-2 focus:ring-blue-500"
+                        />
+                        <span className="text-xs sm:text-sm text-gray-500">{ticketData?.unit || 'ชิ้น'}</span>
+                        {(inspectThisRound ?? qcInspectQty) < qcInspectQty && (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">(เหลืออีก {qcInspectQty - (inspectThisRound ?? qcInspectQty)} รอตรวจรอบถัดไป)</span>
+                        )}
+                      </div>
+                    )}
                     <p className="text-xs sm:text-sm">
                       <span className="font-medium">รายการ:</span>
                       <span className="ml-2">{ticketData?.description || '-'}</span>

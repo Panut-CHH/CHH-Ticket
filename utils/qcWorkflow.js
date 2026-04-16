@@ -6,11 +6,13 @@ import { createNotification, createQCReadyNotification, createTicketCompletedNot
  * completeQCStation - รองรับทั้ง full completion และ partial completion
  * @param {string} ticketNo
  * @param {number|null} passQty - จำนวนที่ผ่าน (null = ผ่านทั้งหมดที่มี)
- * @param {number|null} failQty - จำนวนที่ไม่ผ่าน → ส่งกลับสถานีก่อนหน้า QC (null = 0)
+ * @param {number|null} failQty - จำนวนที่ไม่ผ่าน (null = 0)
+ * @param {number|null} reworkTargetStep - step_order ที่จะส่ง fail กลับไป (null = สถานีก่อนหน้า QC)
+ * @param {string} defectAction - 'rework' | 'new_ticket' (default = 'rework')
  */
-export async function completeQCStation(ticketNo, passQty = null, failQty = null) {
+export async function completeQCStation(ticketNo, passQty = null, failQty = null, reworkTargetStep = null, defectAction = 'rework') {
   console.log('=== completeQCStation Debug ===');
-  console.log('Ticket No:', ticketNo, 'passQty:', passQty, 'failQty:', failQty);
+  console.log('Ticket No:', ticketNo, 'passQty:', passQty, 'failQty:', failQty, 'reworkTarget:', reworkTargetStep, 'defectAction:', defectAction);
 
   const admin = supabaseServer;
 
@@ -100,27 +102,86 @@ export async function completeQCStation(ticketNo, passQty = null, failQty = null
         console.log('Sent', actualPassQty, 'passed pieces to next station step', nextStation.step_order);
       }
 
-      // ส่งชิ้นที่ไม่ผ่าน → กลับสถานีก่อนหน้า QC เพื่อแก้ไข
-      const prevStation = qcIdx > 0 ? flows[qcIdx - 1] : null;
-      if (prevStation && actualFailQty > 0) {
-        const prevAvailable = prevStation.available_qty + actualFailQty;
-        // ถ้าสถานีก่อนหน้า completed แล้ว ต้องเปิดกลับเป็น in_progress
-        const prevStatus = prevStation.status === 'completed' || prevStation.status === 'pending'
-          ? 'in_progress' : prevStation.status;
-        await admin
-          .from("ticket_station_flow")
-          .update({ available_qty: prevAvailable, status: prevStatus })
-          .eq("id", prevStation.id);
+      // ส่งชิ้นที่ไม่ผ่าน → กลับสถานีที่เลือก หรือเปิดตั๋วใหม่
+      if (actualFailQty > 0 && defectAction === 'rework') {
+        // หา target station: ถ้า user เลือก step ใช้อันนั้น, ไม่งั้นใช้สถานีก่อนหน้า QC
+        const targetStation = reworkTargetStep != null
+          ? flows.find(f => f.step_order === reworkTargetStep)
+          : (qcIdx > 0 ? flows[qcIdx - 1] : null);
 
-        await admin
-          .from("station_qty_transfers")
-          .insert({
-            ticket_no: ticketNo,
-            from_step_order: qcStation.step_order,
-            to_step_order: prevStation.step_order,
-            quantity: actualFailQty
-          });
-        console.log('Sent', actualFailQty, 'failed pieces back to station step', prevStation.step_order, 'for rework');
+        if (targetStation) {
+          const targetAvailable = targetStation.available_qty + actualFailQty;
+          const targetStatus = targetStation.status === 'completed' || targetStation.status === 'pending'
+            ? 'in_progress' : targetStation.status;
+          await admin
+            .from("ticket_station_flow")
+            .update({ available_qty: targetAvailable, status: targetStatus })
+            .eq("id", targetStation.id);
+
+          await admin
+            .from("station_qty_transfers")
+            .insert({
+              ticket_no: ticketNo,
+              from_step_order: qcStation.step_order,
+              to_step_order: targetStation.step_order,
+              quantity: actualFailQty
+            });
+          console.log('Sent', actualFailQty, 'failed pieces to station step', targetStation.step_order, 'for rework');
+        }
+      } else if (actualFailQty > 0 && defectAction === 'new_ticket') {
+        // สร้างตั๋วใหม่สำหรับชิ้นเสีย
+        try {
+          // ดึงข้อมูลตั๋วเดิม
+          const { data: originalTicket } = await admin
+            .from("ticket")
+            .select("*")
+            .eq("no", ticketNo)
+            .single();
+
+          if (originalTicket) {
+            // สร้างเลขตั๋วใหม่: เดิม + "-RW" + timestamp
+            const newTicketNo = `${ticketNo}-RW${Date.now().toString().slice(-4)}`;
+            const { data: newTicket, error: newTicketError } = await admin
+              .from("ticket")
+              .insert({
+                no: newTicketNo,
+                project_id: originalTicket.project_id,
+                source_no: originalTicket.source_no,
+                description: `[แก้ไข] ${originalTicket.description || ''} (จาก ${ticketNo} — ${actualFailQty} ชิ้นไม่ผ่าน QC)`,
+                quantity: actualFailQty,
+                unit: originalTicket.unit,
+                priority: 'High',
+                customer_name: originalTicket.customer_name,
+                due_date: originalTicket.due_date,
+                status: 'Released',
+                remark: `สร้างอัตโนมัติจาก QC ตั๋ว ${ticketNo} — ${actualFailQty} ชิ้นไม่ผ่าน`
+              })
+              .select()
+              .single();
+
+            if (!newTicketError && newTicket) {
+              console.log('Created new ticket for defective pieces:', newTicketNo, 'qty:', actualFailQty);
+
+              // คัดลอก station flow จากตั๋วเดิม (ทุก step ตั้งแต่ต้น)
+              const flowsToCopy = flows.map((f, idx) => ({
+                ticket_no: newTicketNo,
+                station_id: f.station_id,
+                step_order: f.step_order,
+                status: 'pending',
+                total_qty: actualFailQty,
+                available_qty: idx === 0 ? actualFailQty : 0,
+                completed_qty: 0
+              }));
+
+              await admin.from("ticket_station_flow").insert(flowsToCopy);
+              console.log('Copied', flowsToCopy.length, 'station flows to new ticket');
+            } else {
+              console.error('Failed to create new ticket:', newTicketError);
+            }
+          }
+        } catch (newTicketErr) {
+          console.error('Error creating new ticket for defective pieces:', newTicketErr);
+        }
       }
 
       // Check if this is the last station and fully completed

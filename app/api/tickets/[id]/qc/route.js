@@ -412,11 +412,13 @@ export async function POST(request, context) {
     // อัปเดตสถานะตั๋วตาม pass rate - เสร็จเสมอ (ไม่ว่าจะมี defect หรือไม่)
     console.log('Failed Rows:', failedRows);
     try {
-      // เรียก completeQCStation พร้อมจำนวนที่ผ่าน + ไม่ผ่าน
+      // เรียก completeQCStation พร้อมจำนวนที่ผ่าน + ไม่ผ่าน + target rework
       const computedPassQty = body.passQuantity != null ? Number(body.passQuantity) : null;
       const computedFailQty = body.failQuantity != null ? Number(body.failQuantity) : (failedQtyFromRows || null);
-      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%, passQty:', computedPassQty, ', failQty:', computedFailQty, ')');
-      await completeQCStation(ticketNo, computedPassQty, computedFailQty);
+      const defectAction = body.defectAction || 'rework'; // 'rework' | 'new_ticket'
+      const reworkTargetStep = body.reworkTargetStep != null ? Number(body.reworkTargetStep) : null;
+      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%, passQty:', computedPassQty, ', failQty:', computedFailQty, ', defectAction:', defectAction, ', reworkTarget:', reworkTargetStep, ')');
+      await completeQCStation(ticketNo, computedPassQty, computedFailQty, reworkTargetStep, defectAction);
       console.log('completeQCStation completed successfully');
       
       // อัพเดต completed_at ใน qc_sessions เมื่อ QC เสร็จสิ้น
