@@ -594,7 +594,10 @@ export default function ProductionPage() {
           step: flow.stations?.name_th || '',
           status: flow.status || 'pending',
           technician: assignmentMap[`${flow.ticket_no}-${flow.station_id}-${flow.step_order}`] || '',
-          step_order: flow.step_order // เก็บ step_order ไว้ใน roadmap เพื่อใช้ในการตรวจสอบ
+          step_order: flow.step_order,
+          total_qty: flow.total_qty || 0,
+          available_qty: flow.available_qty || 0,
+          completed_qty: flow.completed_qty || 0
         }));
 
         console.log(`[PRODUCTION] Ticket ${ticketNo} roadmap:`, roadmap.map(r => ({ step: r.step, status: r.status, step_order: r.step_order })));
@@ -620,7 +623,7 @@ export default function ProductionPage() {
           return station;
         });
 
-        const currentFlow = sortedTicketFlows.find(f => f.status === 'current');
+        const currentFlow = sortedTicketFlows.find(f => f.status === 'current' || f.status === 'in_progress');
         let assignee = currentFlow ? (assignmentMap[`${currentFlow.ticket_no}-${currentFlow.station_id}-${currentFlow.step_order}`] || '') : '';
         if (!assignee) {
           assignee = assignmentMap[`${sortedTicketFlows[0].ticket_no}-${sortedTicketFlows[0].station_id}-${sortedTicketFlows[0].step_order}`] || '';
@@ -793,10 +796,19 @@ export default function ProductionPage() {
 
   function calculateTicketStatus(stations, roadmap, ticketFlows = []) {
     if (!Array.isArray(stations) || stations.length === 0) return "Pending";
+
+    const ticketNo = ticketFlows[0]?.ticket_no || roadmap[0]?.step_order || 'unknown';
+
+    // ถ้าทุก step completed → Finish ทันที (ไม่ว่าจะ assign ช่างหรือไม่)
+    if (Array.isArray(ticketFlows) && ticketFlows.length > 0) {
+      const allDone = ticketFlows.every(f => (f.status || '').toLowerCase() === 'completed');
+      if (allDone) {
+        return "Finish";
+      }
+    }
+
     const hasAssigned = stations.some(s => (s.technician || '').trim() !== '');
     if (!hasAssigned) return "Pending";
-    
-    const ticketNo = ticketFlows[0]?.ticket_no || roadmap[0]?.step_order || 'unknown';
     
     // เช็คจาก ticketFlows ก่อน (เป็น source of truth)
     if (Array.isArray(ticketFlows) && ticketFlows.length > 0) {
@@ -810,10 +822,10 @@ export default function ProductionPage() {
       console.log(`[PRODUCTION] Ticket ${ticketNo}: Checking ${sortedFlows.length} flows:`, 
         sortedFlows.map(f => `order ${f.step_order} (${f.stations?.name_th}) = ${f.status}`));
       
-      // เช็คว่ามี step ที่กำลังทำอยู่หรือไม่
+      // เช็คว่ามี step ที่กำลังทำอยู่หรือไม่ (รวม in_progress ด้วย)
       const hasCurrent = sortedFlows.some(flow => {
         const flowStatus = (flow.status || 'pending').toLowerCase();
-        return flowStatus === 'current';
+        return flowStatus === 'current' || flowStatus === 'in_progress';
       });
       if (hasCurrent) {
         console.log(`[PRODUCTION] Ticket ${ticketNo}: Has current step, status: In Progress`);
@@ -849,9 +861,9 @@ export default function ProductionPage() {
     
     // Fallback: เช็คจาก roadmap (กรณีที่ ticketFlows ไม่มีข้อมูล)
     if (Array.isArray(roadmap) && roadmap.length > 0) {
-      const hasCurrent = roadmap.some(step => step.status === 'current');
+      const hasCurrent = roadmap.some(step => step.status === 'current' || step.status === 'in_progress');
       if (hasCurrent) {
-        console.log(`[PRODUCTION] Ticket ${ticketNo}: Has current step in roadmap, status: In Progress`);
+        console.log(`[PRODUCTION] Ticket ${ticketNo}: Has current/in_progress step in roadmap, status: In Progress`);
         return "In Progress";
       }
       
@@ -955,16 +967,21 @@ export default function ProductionPage() {
       filtered = tickets;
     } else {
       filtered = tickets.filter((t) => {
-        // สำหรับ Production role ให้เห็นตั๋วที่ assign ให้ตัวเอง
+        // สำหรับ Production role ให้เห็นเฉพาะตั๋วที่สถานีของตัวเองยังไม่เสร็จ
         if (hasProductionRole) {
-          const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
-          if (assigneeLower.includes(myNameLower)) return true;
-          
           const stations = Array.isArray(t.stations) ? t.stations : [];
-          if (stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower))) {
-            return true;
-          }
-          
+          const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
+
+          // เช็คว่ามีสถานีที่ assign ให้ตัวเอง AND สถานีนั้นยังไม่ completed
+          const hasActiveStation = stations.some((s, idx) => {
+            const techLower = ((s.technician || "").toString()).toLowerCase();
+            if (!techLower.includes(myNameLower)) return false;
+            // ดูสถานะจาก roadmap (index ตรงกัน)
+            const stepStatus = roadmap[idx]?.status || 'pending';
+            return stepStatus !== 'completed';
+          });
+
+          if (hasActiveStation) return true;
           return false;
         }
         
@@ -1033,38 +1050,37 @@ export default function ProductionPage() {
           return false;
         }
         
-        // สำหรับ role อื่นๆ (CNC, Packing, และ role ธรรมดา) ใช้ logic เดิม
-        // เช็ค assignee หรือ technician (existing logic)
-        const assigneeLower = ((t.assignee || "").toString()).toLowerCase();
-        if (assigneeLower.includes(myNameLower)) return true;
+        // สำหรับ role อื่นๆ — เห็นเฉพาะตั๋วที่สถานีของตัวเองยังไม่เสร็จ
         const stations = Array.isArray(t.stations) ? t.stations : [];
-        if (stations.some((s) => ((s.technician || "").toString()).toLowerCase().includes(myNameLower))) {
-          return true;
-        }
+        const hasActiveStation2 = stations.some((s, idx) => {
+          const techLower = ((s.technician || "").toString()).toLowerCase();
+          if (!techLower.includes(myNameLower)) return false;
+          const stepStatus = roadmap[idx]?.status || 'pending';
+          return stepStatus !== 'completed';
+        });
+        if (hasActiveStation2) return true;
         
         // เช็ค Role-based visibility สำหรับ CNC และ Packing (เหมือน QC)
         const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
         
-        // เช็คสถานี CNC (เหมือน QC - ไม่ต้อง assign แต่คนที่มี Role เห็นได้)
+        // เช็คสถานี CNC — เห็นเฉพาะตั๋วที่สถานี CNC ยังไม่เสร็จ
         if (hasCNCRole) {
           const hasCNCStation = roadmap.some(step => {
             const stepName = (step.step || '').toLowerCase().trim();
             const stepStatus = (step.status || 'pending').toLowerCase();
-            // เช็คทั้ง "CNC" ตรงๆ และชื่อที่อาจมี "CNC" รวมอยู่ด้วย
-            return (stepName === 'cnc' || stepName.includes('cnc')) && 
-                   (stepStatus === 'pending' || stepStatus === 'current');
+            return (stepName === 'cnc' || stepName.includes('cnc')) &&
+                   stepStatus !== 'completed';
           });
           if (hasCNCStation) return true;
         }
-        
-        // เช็คสถานี Packing (เหมือน QC - ไม่ต้อง assign แต่คนที่มี Role เห็นได้)
+
+        // เช็คสถานี Packing — เห็นเฉพาะตั๋วที่สถานี Packing ยังไม่เสร็จ
         if (hasPackingRole) {
           const hasPackingStation = roadmap.some(step => {
             const stepName = (step.step || '').toLowerCase().trim();
             const stepStatus = (step.status || 'pending').toLowerCase();
-            // เช็คทั้ง "Packing" ตรงๆ และชื่อที่อาจมี "Packing" หรือ "แพ็ค" รวมอยู่ด้วย
-            return (stepName === 'packing' || stepName.includes('packing') || stepName.includes('แพ็ค')) && 
-                   (stepStatus === 'pending' || stepStatus === 'current');
+            return (stepName === 'packing' || stepName.includes('packing') || stepName.includes('แพ็ค')) &&
+                   stepStatus !== 'completed';
           });
           if (hasPackingStation) return true;
         }

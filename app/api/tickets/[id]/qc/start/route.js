@@ -57,20 +57,8 @@ export async function POST(request, context) {
     console.log('QC Station candidate:', qcStation);
     
     if (qcStation) {
-      // สลับ 1: ล้าง status "current" ทั้งหมดก่อนเพื่อป้องกันมีหลายจุด
-      const { error: clearCurrentsError } = await admin
-        .from("ticket_station_flow")
-        .update({ status: "pending" })
-        .eq("ticket_no", ticketNo)
-        .eq("status", "current");
-      
-      if (clearCurrentsError) {
-        console.warn('Warning: could not clear current statuses:', clearCurrentsError);
-      } else {
-        console.log('Cleared all current statuses before starting QC');
-      }
-      
-      // สลับ 2: ตั้ง QC station เป็น current และบันทึก started_at
+      // Progress-based: ไม่ล้าง current/in_progress ของสถานีอื่น เพราะหลายสถานี active พร้อมกันได้
+      // ตั้ง QC station เป็น current และบันทึก started_at
       const startedAt = new Date().toISOString();
       const { error: updateError } = await admin
         .from("ticket_station_flow")

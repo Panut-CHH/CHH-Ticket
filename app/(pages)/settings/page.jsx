@@ -134,18 +134,33 @@ function TicketResetManagement({ user }) {
   const fetchTickets = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('ticket')
-        .select('no, description, status, source_no')
-        .order('no', { ascending: false })
-        .limit(500); // Limit to prevent too many results
-      
-      if (error) {
-        console.error('Error fetching tickets:', error);
+      let allData = [];
+      let from = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      let fetchError = null;
+      while (hasMore) {
+        const { data: page, error: pageError } = await supabase
+          .from('ticket')
+          .select('no, description, status, source_no')
+          .order('no', { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (pageError) { fetchError = pageError; break; }
+        if (page && page.length > 0) {
+          allData = allData.concat(page);
+          from += pageSize;
+          hasMore = page.length === pageSize;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (fetchError) {
+        console.error('Error fetching tickets:', fetchError);
         return;
       }
       
-      setTickets(data || []);
+      setTickets(allData);
     } catch (error) {
       console.error('Error fetching tickets:', error);
     } finally {

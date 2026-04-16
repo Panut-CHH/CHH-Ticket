@@ -318,7 +318,7 @@ export default function DashboardPage() {
         // For each ticket, find the current active station
         ticketFlowsMap.forEach((flows, ticketNo) => {
           const sorted = flows.sort((a, b) => (a.step_order || 0) - (b.step_order || 0));
-          const currentFlow = sorted.find(f => f.status === 'current');
+          const currentFlow = sorted.find(f => f.status === 'current' || f.status === 'in_progress');
           const firstPending = sorted.find(f => f.status === 'pending');
           const active = currentFlow || firstPending;
           if (active) {
@@ -332,7 +332,7 @@ export default function DashboardPage() {
         ticketCurrentStation.forEach(({ station, status }, ticketNo) => {
           if (!stationMap.has(station)) stationMap.set(station, { current: [], pending: [] });
           const bucket = stationMap.get(station);
-          if (status === 'current') bucket.current.push(ticketNo);
+          if (status === 'current' || status === 'in_progress') bucket.current.push(ticketNo);
           else bucket.pending.push(ticketNo);
         });
 

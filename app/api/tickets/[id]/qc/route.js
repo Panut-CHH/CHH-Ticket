@@ -143,7 +143,7 @@ export async function POST(request, context) {
           .not('qc_task_uuid', 'is', null)
           .order('step_order', { ascending: true });
         if (Array.isArray(flows) && flows.length > 0) {
-          const current = flows.find(f => f.status === 'current');
+          const current = flows.find(f => f.status === 'current' || f.status === 'in_progress');
           const pending = flows.find(f => f.status === 'pending');
           resolvedQcTaskUuid = current?.qc_task_uuid || pending?.qc_task_uuid || flows[0]?.qc_task_uuid || null;
         }
@@ -412,9 +412,11 @@ export async function POST(request, context) {
     // อัปเดตสถานะตั๋วตาม pass rate - เสร็จเสมอ (ไม่ว่าจะมี defect หรือไม่)
     console.log('Failed Rows:', failedRows);
     try {
-      // เรียก completeQCStation เสมอ เพื่อให้สถานี QC เป็น completed
-      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%)');
-      await completeQCStation(ticketNo);
+      // เรียก completeQCStation พร้อมจำนวนที่ผ่าน + ไม่ผ่าน
+      const computedPassQty = body.passQuantity != null ? Number(body.passQuantity) : null;
+      const computedFailQty = body.failQuantity != null ? Number(body.failQuantity) : (failedQtyFromRows || null);
+      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%, passQty:', computedPassQty, ', failQty:', computedFailQty, ')');
+      await completeQCStation(ticketNo, computedPassQty, computedFailQty);
       console.log('completeQCStation completed successfully');
       
       // อัพเดต completed_at ใน qc_sessions เมื่อ QC เสร็จสิ้น

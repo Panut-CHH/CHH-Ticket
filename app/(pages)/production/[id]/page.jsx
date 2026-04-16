@@ -7,14 +7,74 @@ import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import { useAuth } from "@/contexts/AuthContext";
-import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info, Printer, X } from "lucide-react";
+import { CheckCircle, Circle, Play, Check, Calendar, Package, Coins, ArrowLeft, FileText, Loader2, Info, Printer, X, Camera, Image } from "lucide-react";
 import DocumentViewer from "@/components/DocumentViewer";
 import PdfViewer from "@/components/PdfViewer";
 import Modal from "@/components/Modal";
 import { supabase } from "@/utils/supabaseClient";
 import { isSupervisor, canSupervisorActForTechnician, canPerformActionsInProduction, isSupervisorProduction, isSupervisorPainting, isProxyOperator } from "@/utils/rolePermissions";
 
-function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
+// ===== QuantityInputModal - Modal สำหรับใส่จำนวนชิ้นงานที่จะส่ง =====
+function QuantityInputModal({ open, onClose, onConfirm, stationName, maxQty, totalQty, completedQty }) {
+  const [qty, setQty] = React.useState(maxQty);
+
+  React.useEffect(() => {
+    if (open) setQty(maxQty);
+  }, [open, maxQty]);
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
+      <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-[90vw] max-w-md p-6" onClick={e => e.stopPropagation()}>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">ส่งชิ้นงาน</h3>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">สถานี: <span className="font-medium text-gray-800 dark:text-gray-200">{stationName}</span></p>
+
+        <div className="mb-4">
+          <div className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
+            <span>ทำเสร็จแล้ว: {completedQty}/{totalQty}</span>
+            <span>เหลือ: {maxQty} ชิ้น</span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-2.5 mb-3">
+            <div className="bg-emerald-500 h-2.5 rounded-full transition-all" style={{ width: `${totalQty > 0 ? (completedQty / totalQty) * 100 : 0}%` }} />
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">จำนวนที่จะส่ง</label>
+          <input
+            type="number"
+            min={1}
+            max={maxQty}
+            value={qty}
+            onChange={e => {
+              const v = parseInt(e.target.value) || 0;
+              setQty(Math.min(Math.max(v, 1), maxQty));
+            }}
+            className="w-full px-4 py-3 text-lg font-semibold text-center border border-gray-300 dark:border-slate-600 rounded-xl bg-white dark:bg-slate-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-3 rounded-xl border border-gray-300 dark:border-slate-600 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-slate-700"
+          >
+            ยกเลิก
+          </button>
+          <button
+            onClick={() => onConfirm(qty)}
+            className="flex-1 px-4 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-semibold"
+          >
+            ส่ง {qty} ชิ้น
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DetailCard({ ticket, onDone, onStart, onPartialComplete, me, isAdmin = false, batches = [], userId = null, userRoles = [] }) {
   console.log('🚀 [DetailCard] Component RENDERED');
   // Debug: Check ticket data
   console.log('[DetailCard] Ticket received:', ticket ? { id: ticket.id, hasStations: !!ticket.stations, stationsLength: ticket.stations?.length } : 'null');
@@ -25,15 +85,17 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
     return null;
   }
   
-  const currentIndex = ticket.roadmap.findIndex((s) => s.status === "current");
+  const isActiveLike = (status) => status === "current" || status === "in_progress";
+  const currentIndex = ticket.roadmap.findIndex((s) => isActiveLike(s.status));
   const nextIndex = currentIndex >= 0 ? currentIndex + 1 : -1;
   const currentStep = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.step : null;
   const nextStep = nextIndex >= 0 ? ticket.roadmap[nextIndex]?.step : null;
   const isCompletedLike = (status) => status === "completed";
   const isFinished = currentIndex === -1 && ticket.roadmap.every((s) => isCompletedLike(s.status));
-  const hasPending = ticket.roadmap.some((s) => !isCompletedLike(s.status));
-  const canStart = !currentStep && hasPending && !isFinished;
-  const firstPendingIndex = ticket.roadmap.findIndex((s) => !isCompletedLike(s.status));
+  const hasPending = ticket.roadmap.some((s) => !isCompletedLike(s.status) && !isActiveLike(s.status));
+  // canStart: มี step ที่ยังไม่ได้เริ่มและมี available_qty > 0
+  const canStart = hasPending && !isFinished;
+  const firstPendingIndex = ticket.roadmap.findIndex((s) => !isCompletedLike(s.status) && !isActiveLike(s.status));
   const firstPendingStep = firstPendingIndex >= 0 ? ticket.roadmap[firstPendingIndex]?.step : null;
 
   // Get assigned technician from stations array
@@ -157,6 +219,21 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
   // QC gating flags
   const isPendingQC = (firstPendingStep || "").toUpperCase().includes("QC");
   const isCurrentQC = (currentStep || "").toUpperCase().includes("QC");
+
+  // เลือกสถานีที่จะ action (กดที่ card ด้านล่างเพื่อเปลี่ยน)
+  const [selectedStepIndex, setSelectedStepIndex] = useState(currentIndex >= 0 ? currentIndex : firstPendingIndex >= 0 ? firstPendingIndex : -1);
+  // Sync selectedStepIndex เมื่อ roadmap เปลี่ยน (เช่น หลัง reload)
+  useEffect(() => {
+    // ถ้า step ที่เลือกอยู่เป็น completed แล้ว หรือ -1 ให้เลือก active ตัวแรก
+    const sel = ticket.roadmap[selectedStepIndex];
+    if (!sel || sel.status === 'completed') {
+      const newIdx = ticket.roadmap.findIndex((s) => isActiveLike(s.status));
+      setSelectedStepIndex(newIdx >= 0 ? newIdx : firstPendingIndex >= 0 ? firstPendingIndex : -1);
+    }
+  }, [ticket.roadmap, ticket._refreshKey]);
+
+  // Partial complete modal state
+  const [partialModal, setPartialModal] = useState({ open: false, stationName: '', stationId: null, stepOrder: null, maxQty: 0, totalQty: 0, completedQty: 0 });
 
   // Cooldown to prevent repeated clicks
   const [cooldownUntil, setCooldownUntil] = useState(0);
@@ -344,19 +421,65 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
 
   function onDoneClick() {
     if (isCoolingDown || !isAssignedToCurrent) return;
-    // Allow DONE if there's a current step
     if (currentIndex === -1) return;
     onDone(ticket.id);
     setCooldownUntil(Date.now() + 2000);
     setSavingStart(false);
-    
-    // Reload work sessions after completing
+
     setTimeout(() => {
       loadWorkSessions();
     }, 1000);
   }
 
+  // เปิด modal ส่งชิ้นงานบางส่วน
+  function onPartialClick() {
+    if (isCoolingDown || !isAssignedToCurrent || currentIndex === -1) return;
+    const step = ticket.roadmap[currentIndex];
+    const stationData = stations[currentIndex];
+    const totalQty = step?.total_qty || ticket.quantity || 0;
+    const completedQty = step?.completed_qty || 0;
+    const availableQty = step?.available_qty || totalQty;
+    const maxQty = availableQty - completedQty;
+
+    // stationId มาจาก stations array ซึ่งใช้ camelCase
+    const stationId = stationData?.stationId || stationData?.station_id || stationData?.id || null;
+
+    console.log('[PARTIAL_CLICK]', { currentIndex, stationId, totalQty, completedQty, availableQty, maxQty, step, stationData });
+
+    if (maxQty <= 0) {
+      console.warn('[PARTIAL_CLICK] maxQty <= 0, aborting');
+      return;
+    }
+    if (!stationId) {
+      console.error('[PARTIAL_CLICK] No stationId found!', stationData);
+      alert('ไม่พบ station_id กรุณา refresh หน้า');
+      return;
+    }
+
+    setPartialModal({
+      open: true,
+      stationName: step?.step || '',
+      stationId,
+      stepOrder: currentIndex + 1,
+      maxQty,
+      totalQty,
+      completedQty
+    });
+  }
+
+  function onPartialConfirm(qty) {
+    // ต้องอ่านค่าจาก state ก่อน close เพราะ closure จะเห็นค่าเก่า
+    const { stationId, stepOrder } = partialModal;
+    setPartialModal(m => ({ ...m, open: false }));
+    if (onPartialComplete && stationId) {
+      onPartialComplete(ticket.id, stationId, stepOrder, qty);
+      setCooldownUntil(Date.now() + 2000);
+      setTimeout(() => { loadWorkSessions(); }, 1000);
+    }
+  }
+
   const canDone = currentIndex >= 0 && !isFinished && isAssignedToCurrent && !isCurrentQC;
+  const canPartial = canDone && (ticket.quantity || 0) > 1;
 
   // Get current work session data
   const currentSession = workSessions.find(session => {
@@ -850,48 +973,128 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
               </>
             ) : (
               <>
-                <div className="text-gray-600 dark:text-gray-400 dark:text-gray-500 mb-1">ขั้นตอนปัจจุบัน</div>
                 {(() => {
-                  const headerStepName = currentIndex >= 0 ? (currentStep || "-") : (firstPendingStep || "-");
-                  const headerStatusText = currentIndex >= 0 ? "กำลังทำ" : "ยังไม่เริ่ม";
+                  // ใช้ selectedStepIndex เพื่อแสดงสถานีที่เลือก (กดเลือกจาก card ด้านล่าง)
+                  const selIdx = selectedStepIndex;
+                  const selStep = selIdx >= 0 ? ticket.roadmap[selIdx] : null;
+                  const selStation = selIdx >= 0 ? stations[selIdx] : null;
+                  const selName = selStep?.step || firstPendingStep || "-";
+                  const selIsActive = selStep && isActiveLike(selStep.status);
+                  const selIsPending = selStep && selStep.status === 'pending';
+                  const selIsQC = (selName || "").toUpperCase().includes("QC");
+                  const selTotalQty = selStep?.total_qty || ticket.quantity || 0;
+                  const selCompletedQty = selStep?.completed_qty || 0;
+                  const selAvailableQty = selStep?.available_qty ?? 0;
+                  const selRemaining = selAvailableQty - selCompletedQty;
+                  const selPct = selTotalQty > 0 ? Math.round((selCompletedQty / selTotalQty) * 100) : 0;
+                  const selStationId = selStation?.stationId || selStation?.station_id || selStation?.id || null;
+                  const selStatusText = selIsActive ? "กำลังทำ" : selIsPending ? "รอเริ่ม" : selStep?.status === 'completed' ? "เสร็จ" : "รอ";
+
+                  // ปุ่ม conditions
+                  const btnCanStart = selIsPending && selAvailableQty > 0 && !selIsQC && canActionInProduction;
+                  const btnCanPartial = selIsActive && selRemaining > 0 && !selIsQC && canActionInProduction;
+                  const btnCanComplete = selIsActive && selRemaining > 0 && !selIsQC && canActionInProduction;
+
                   return (
                     <>
-                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{headerStepName}</div>
-                      <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">สถานะ: <span className={`font-medium ${headerStatusText === 'กำลังทำ' ? 'text-amber-700' : 'text-gray-700 dark:text-gray-300'}`}>{headerStatusText}</span></div>
+                      <div className="text-gray-600 dark:text-gray-400 mb-1 text-sm">
+                        สถานีที่เลือก <span className="text-xs text-gray-400">(กดเลือกจาก card ด้านล่าง)</span>
+                      </div>
+                      <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">{selName}</div>
+                      {selTotalQty > 0 && (
+                        <div className="mt-2">
+                          <div className="flex items-center justify-between text-sm mb-1">
+                            <span className="text-gray-600 dark:text-gray-400">ความคืบหน้า</span>
+                            <span className={`font-semibold ${selPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>{selCompletedQty}/{selTotalQty} ชิ้น ({selPct}%)</span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-slate-600 rounded-full h-3">
+                            <div className={`h-3 rounded-full transition-all duration-500 ${selPct >= 100 ? 'bg-emerald-500' : 'bg-amber-500'}`} style={{ width: `${selPct}%` }} />
+                          </div>
+                        </div>
+                      )}
+                      <div className="mt-1 text-sm text-gray-500">
+                        สถานะ: <span className={`font-medium ${selIsActive ? 'text-amber-700' : selStep?.status === 'completed' ? 'text-emerald-700' : 'text-gray-700 dark:text-gray-300'}`}>{selStatusText}</span>
+                        {selIsActive && selRemaining > 0 && <span className="ml-2 text-gray-400">เหลือ {selRemaining} ชิ้น</span>}
+                      </div>
+
+                      {/* Action buttons — เปลี่ยนตามสถานีที่เลือก */}
+                      <div className="mt-3 flex flex-col sm:flex-row items-stretch gap-3">
+                        {btnCanStart && (
+                          <button
+                            onClick={() => { onStart(ticket.id); setCooldownUntil(Date.now() + 2000); setSavingStart(true); setTimeout(() => { loadWorkSessions(); }, 1000); }}
+                            disabled={isCoolingDown}
+                            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          ><Play className="w-5 h-5" /> เริ่มทำ {selName}</button>
+                        )}
+                        {btnCanPartial && (
+                          <button
+                            onClick={() => {
+                              setPartialModal({
+                                open: true,
+                                stationName: selName,
+                                stationId: selStationId,
+                                stepOrder: selIdx + 1,
+                                maxQty: selRemaining,
+                                totalQty: selTotalQty,
+                                completedQty: selCompletedQty
+                              });
+                            }}
+                            disabled={isCoolingDown}
+                            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold bg-amber-500 hover:bg-amber-600 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          ><Package className="w-5 h-5" /> ส่งชิ้นงาน (บางส่วน)</button>
+                        )}
+                        {btnCanComplete && (
+                          <button
+                            onClick={() => {
+                              if (onPartialComplete && selStationId) {
+                                onPartialComplete(ticket.id, selStationId, selIdx + 1, selRemaining);
+                                setCooldownUntil(Date.now() + 2000);
+                                setTimeout(() => { loadWorkSessions(); }, 1000);
+                              }
+                            }}
+                            disabled={isCoolingDown}
+                            className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                          ><Check className="w-5 h-5" /> เสร็จทั้งหมด ({selRemaining})</button>
+                        )}
+                        {!btnCanStart && !btnCanPartial && !btnCanComplete && selStep?.status === 'completed' && (
+                          <div className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-emerald-600 font-semibold bg-emerald-50 border border-emerald-200">
+                            <Check className="w-5 h-5" /> สถานีนี้เสร็จแล้ว
+                          </div>
+                        )}
+                        {!btnCanStart && !btnCanPartial && !btnCanComplete && selIsPending && selAvailableQty === 0 && !selIsQC && (
+                          <div className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-gray-500 font-medium bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600">
+                            ชิ้นงานยังมาไม่ถึงสถานีนี้ — รอสถานีก่อนหน้าส่งมาก่อน
+                          </div>
+                        )}
+                        {selIsQC && !selIsActive && selAvailableQty === 0 && (
+                          <div className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-gray-500 font-medium bg-gray-50 dark:bg-slate-700 border border-gray-200 dark:border-slate-600">
+                            รอชิ้นงานมาถึง QC ก่อน
+                          </div>
+                        )}
+                        {selIsQC && (selIsActive || selAvailableQty > 0) && (
+                          <div className="flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-indigo-600 font-semibold bg-indigo-50 border border-indigo-200">
+                            สถานี QC — ต้องตรวจจากหน้า QC ({selAvailableQty} ชิ้นรอตรวจ)
+                          </div>
+                        )}
+                      </div>
                     </>
                   );
                 })()}
-                <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 dark:text-gray-500">ถัดไป: <span className="text-gray-800 dark:text-gray-200 font-medium">{nextStep || "รอเริ่มงาน"}</span></div>
               </>
             )}
           </div>
 
           <div className="mt-4">
-            {isPendingQC && !isAssignedToPending && !isAdmin && (
-              <div className="mb-3 p-3 rounded-lg border bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-900 dark:text-yellow-300 text-sm">
-                ขั้นตอนปัจจุบันเป็น QC กรุณารอให้ทีม QC ตรวจสอบให้เสร็จก่อนจึงจะเริ่มขั้นตอนถัดไปได้
-              </div>
-            )}
-            <div className="flex flex-col sm:flex-row items-stretch gap-3">
-              <button
-                onClick={onStartClick}
-                disabled={!canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC || !canActionInProduction}
-                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${
-                  !canStart || isFinished || isCoolingDown || !isAssignedToPending || isPendingQC || !canActionInProduction
-                    ? "bg-gray-400 text-gray-600 dark:bg-gray-600 dark:text-gray-400 cursor-not-allowed" 
-                    : "bg-blue-600 hover:bg-blue-700"
-                }`}
-              >
-                <Play className="w-5 h-5" /> เริ่มทำขั้นตอน {firstPendingStep || "-"}
-              </button>
-              <button
-                onClick={onDoneClick}
-                disabled={!canDone || isCoolingDown || !canActionInProduction}
-                className={`flex-1 inline-flex items-center justify-center gap-2 px-6 py-4 rounded-xl text-white font-semibold transition-colors ${!canDone || isCoolingDown || !canActionInProduction ? "bg-gray-300 text-gray-500 dark:text-gray-400 dark:text-gray-500 cursor-not-allowed" : "bg-green-600 hover:bg-green-700"}`}
-              >
-                <Check className="w-5 h-5" /> DONE (ทำขั้นตอนนี้เสร็จแล้ว)
-              </button>
-            </div>
+            {/* QuantityInputModal for partial completion */}
+            <QuantityInputModal
+              open={partialModal.open}
+              onClose={() => setPartialModal(m => ({ ...m, open: false }))}
+              onConfirm={onPartialConfirm}
+              stationName={partialModal.stationName}
+              maxQty={partialModal.maxQty}
+              totalQty={partialModal.totalQty}
+              completedQty={partialModal.completedQty}
+            />
             
             {/* Warning message when user is not assigned to current step or cannot perform actions */}
               {!canActionInProduction && (
@@ -918,36 +1121,57 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                 const isQCStep = (step.step || "").toUpperCase().includes("QC");
                 const techName = isQCStep ? "-" : (stationData?.technician || "ยังไม่ได้มอบหมาย");
                 const isMyStation = !isQCStep && stationData?.technician && me && stationData.technician.includes(me);
-                const showReworkCount = false;
+                // Progress qty data
+                const stepTotalQty = step.total_qty || ticket.quantity || 0;
+                const stepCompletedQty = step.completed_qty || 0;
+                const stepAvailableQty = step.available_qty || 0;
+                const stepRemaining = stepAvailableQty - stepCompletedQty;
+                const progressPct = stepTotalQty > 0 ? Math.round((stepCompletedQty / stepTotalQty) * 100) : 0;
+                const isActive = step.status === 'current' || step.status === 'in_progress';
+                const statusLabel = isActive ? 'กำลังทำ' : step.status === 'completed' ? 'เสร็จ' : 'รอ';
+                const isSelected = index === selectedStepIndex;
                 return (
-                  <div key={index} className={`min-w-[220px] rounded-xl border p-4 shadow-sm ${
-                    step.status === 'current' ? 'border-amber-300 bg-amber-50' : 
-                    step.status === 'completed' ? 'border-emerald-200 bg-emerald-50' : 
-                    false ? 'border-orange-300 bg-orange-50' :
-                    'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800'
-                  }`}>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 dark:text-gray-500">ขั้นที่ {index + 1}</div>
+                  <div key={index}
+                    onClick={() => setSelectedStepIndex(index)}
+                    className={`min-w-[220px] rounded-xl border-2 p-4 shadow-sm flex flex-col cursor-pointer transition-all ${
+                    isSelected ? 'border-blue-500 ring-2 ring-blue-300 dark:ring-blue-700 shadow-md' :
+                    isActive ? 'border-amber-300 bg-amber-50 dark:border-amber-600 dark:bg-amber-900/20' :
+                    step.status === 'completed' ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20' :
+                    stepAvailableQty > 0 && step.status === 'pending' ? 'border-blue-200 bg-blue-50/50 dark:border-blue-800 dark:bg-blue-900/10' :
+                    'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 opacity-60'
+                  } ${isSelected ? (isActive ? 'bg-amber-100 dark:bg-amber-900/30' : step.status === 'completed' ? 'bg-emerald-100 dark:bg-emerald-900/30' : 'bg-blue-50 dark:bg-blue-900/20') : ''}`}>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500 dark:text-gray-400">ขั้นที่ {index + 1}</div>
+                      {stepTotalQty > 0 && (
+                        <div className={`text-xs font-semibold ${step.status === 'completed' ? 'text-emerald-600' : isActive ? 'text-amber-600' : 'text-gray-400'}`}>
+                          {stepCompletedQty}/{stepTotalQty}
+                        </div>
+                      )}
+                    </div>
                     <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{step.step}</div>
-                    <div className={`mt-3 h-2 rounded-full ${
-                      step.status === 'completed' ? 'bg-emerald-500' : 
-                      step.status === 'current' ? 'bg-amber-500 animate-pulse' : 
-                      false ? 'bg-orange-500' :
-                      'bg-gray-200'
-                    }`} />
-                    <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500">สถานะ: <span className={`font-medium ${
-                      step.status === 'current' ? 'text-amber-700' : 
-                      step.status === 'completed' ? 'text-emerald-700' : 
-                      false ? 'text-orange-700' :
-                      'text-gray-600 dark:text-gray-400 dark:text-gray-500'
-                    }`}>{step.status}</span></div>
-                    {/* แสดงจำนวน defect เมื่อเป็น QC step ที่เสร็จแล้วและมี defect */}
+                    {/* Progress bar */}
+                    <div className="mt-3 h-2.5 rounded-full bg-gray-200 dark:bg-slate-600 overflow-hidden">
+                      <div className={`h-full rounded-full transition-all duration-500 ${
+                        step.status === 'completed' ? 'bg-emerald-500' :
+                        isActive ? 'bg-amber-500' :
+                        'bg-gray-300'
+                      }`} style={{ width: `${progressPct}%` }} />
+                    </div>
+                    <div className="mt-2 flex items-center justify-between">
+                      <span className={`text-xs font-medium ${
+                        isActive ? 'text-amber-700 dark:text-amber-400' :
+                        step.status === 'completed' ? 'text-emerald-700 dark:text-emerald-400' :
+                        'text-gray-500'
+                      }`}>{statusLabel}</span>
+                      {stepTotalQty > 0 && <span className="text-xs text-gray-500 dark:text-gray-400">{progressPct}%</span>}
+                    </div>
                     {isQCStep && step.status === 'completed' && step.qc_task_uuid && ticket.defectCounts?.[step.qc_task_uuid] > 0 && (
                       <div className="mt-1 text-[11px] text-red-700 dark:text-red-400 font-medium">
                         Defect: {ticket.defectCounts[step.qc_task_uuid]} {ticket.unit || 'ชิ้น'}
                       </div>
                     )}
                     {!isQCStep && (
-                      <div className="mt-2 text-xs text-gray-600 dark:text-gray-400 dark:text-gray-500">
+                      <div className="mt-2 text-xs text-gray-600 dark:text-gray-400">
                         ช่าง: <span className={`font-medium ${isMyStation ? 'text-blue-700' : 'text-gray-900 dark:text-gray-100'}`}>{techName}</span>
                         {isMyStation && <span className="ml-1 text-blue-600">✓</span>}
                       </div>
@@ -957,6 +1181,55 @@ function DetailCard({ ticket, onDone, onStart, me, isAdmin = false, batches = []
                         มอบหมาย: {new Date(step.assignedAt).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' })}{' '}
                         {new Date(step.assignedAt).toLocaleTimeString('th-TH', { hour: '2-digit', minute: '2-digit' })}
                       </div>
+                    )}
+                    {/* รูปถ่ายงาน — ถ่ายได้เมื่อ active, แสดงเมื่อมีรูป */}
+                    {step.photo_url && (
+                      <div className="mt-2">
+                        <a href={step.photo_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-800">
+                          <Image className="w-3 h-3" /> ดูรูปงาน
+                        </a>
+                      </div>
+                    )}
+                    {isActive && !isQCStep && canActionInProduction && !step.photo_url && (
+                      <div className="mt-2">
+                        <label className="inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-blue-600 cursor-pointer">
+                          <Camera className="w-3 h-3" /> ถ่ายรูปแนบ
+                          <input
+                            type="file"
+                            accept="image/*"
+                            capture="environment"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              const sid = stationData?.stationId || stationData?.station_id || stationData?.id;
+                              if (!sid) return;
+                              try {
+                                const fd = new FormData();
+                                fd.append('file', file);
+                                fd.append('step_order', String(index + 1));
+                                fd.append('station_id', sid);
+                                const ticketId = ticket.id.replace('#', '');
+                                const res = await fetch(`/api/production/${ticketId}/photo`, { method: 'POST', body: fd });
+                                const result = await res.json();
+                                if (result.success) {
+                                  alert('อัปโหลดรูปสำเร็จ');
+                                  loadWorkSessions();
+                                } else {
+                                  alert(result.error || 'อัปโหลดไม่สำเร็จ');
+                                }
+                              } catch (err) {
+                                alert('เกิดข้อผิดพลาด: ' + err.message);
+                              }
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                    {/* Selected indicator */}
+                    {isSelected && (
+                      <div className="mt-2 text-center text-[11px] font-semibold text-blue-600 dark:text-blue-400">▲ เลือกอยู่</div>
                     )}
                   </div>
                 );
@@ -1438,15 +1711,23 @@ export default function ProductionDetailPage() {
         
         if (!qcError && Array.isArray(qcSessions) && qcSessions.length > 0) {
           const sessionIds = qcSessions.map(s => s.id);
-          
-          // ดึง qc_rows ที่ pass = false เพื่อนับ defect
-          const { data: qcRows, error: rowsError } = await supabase
-            .from('qc_rows')
-            .select('session_id, actual_qty, pass')
-            .in('session_id', sessionIds)
-            .eq('pass', false);
-          
-          if (!rowsError && Array.isArray(qcRows)) {
+
+          // ดึง qc_rows ที่ pass = false เพื่อนับ defect (chunking เพื่อป้องกัน URL ยาวเกิน)
+          let qcRows = [];
+          const CHUNK = 50;
+          for (let i = 0; i < sessionIds.length; i += CHUNK) {
+            const chunk = sessionIds.slice(i, i + CHUNK);
+            const { data: chunkRows, error: chunkError } = await supabase
+              .from('qc_rows')
+              .select('session_id, actual_qty, pass')
+              .in('session_id', chunk)
+              .eq('pass', false);
+            if (!chunkError && Array.isArray(chunkRows)) {
+              qcRows = qcRows.concat(chunkRows);
+            }
+          }
+
+          if (qcRows.length > 0) {
             // Group by session_id and sum defect quantities
             const defectsBySession = {};
             qcRows.forEach(row => {
@@ -1897,7 +2178,11 @@ export default function ProductionDetailPage() {
         status: flow.status || 'pending',
         technician: assignmentMap[techKey] || '',
         assignedAt: assignedAtMap[techKey] || null,
-        qc_task_uuid: flow.qc_task_uuid || null
+        qc_task_uuid: flow.qc_task_uuid || null,
+        total_qty: flow.total_qty || 0,
+        available_qty: flow.available_qty || 0,
+        completed_qty: flow.completed_qty || 0,
+        photo_url: flow.photo_url || null
       };
     });
     
@@ -2009,18 +2294,19 @@ export default function ProductionDetailPage() {
     if (actionBusy) return;
     setActionBusy(true);
 
-    // Update UI optimistically
+    // Update UI optimistically (complete = ส่งที่เหลือทั้งหมด)
     setTicket((t) => {
       if (!t || t.id !== id) return t;
       const roadmap = t.roadmap.map((s) => ({ ...s }));
-      const currentIndex = roadmap.findIndex((s) => s.status === "current");
+      const currentIndex = roadmap.findIndex((s) => s.status === "current" || s.status === "in_progress");
       if (currentIndex === -1) return t;
       roadmap[currentIndex].status = "completed";
+      roadmap[currentIndex].completed_qty = roadmap[currentIndex].total_qty || t.quantity || 0;
       const allCompleted = roadmap.every((s) => s.status === "completed");
       if (allCompleted) {
         return { ...t, roadmap, status: "Finish", statusClass: "text-emerald-600" };
       }
-      const nextPendingIndex = roadmap.findIndex((s) => s.status !== "completed");
+      const nextPendingIndex = roadmap.findIndex((s) => s.status !== "completed" && s.status !== "current" && s.status !== "in_progress");
       const nextPendingStep = nextPendingIndex >= 0 ? roadmap[nextPendingIndex]?.step || "" : "";
       const waitingForQC = (nextPendingStep || "").toUpperCase().includes("QC");
       if (waitingForQC) {
@@ -2032,7 +2318,7 @@ export default function ProductionDetailPage() {
     // Persist to database via API
     try {
       // Get current flow's station_id from ticket roadmap
-      const currentRoadmap = ticket?.roadmap?.find(r => r.status === 'current');
+      const currentRoadmap = ticket?.roadmap?.find(r => r.status === 'current' || r.status === 'in_progress');
       if (!currentRoadmap) {
         console.warn('[DONE] No current step found in UI');
         setActionBusy(false);
@@ -2046,13 +2332,13 @@ export default function ProductionDetailPage() {
         .eq('ticket_no', ticketId)
         .order('step_order', { ascending: true });
 
-      // Prefer DB truth: the one marked as current
+      // Prefer DB truth: the one marked as current or in_progress
       let currentStationFlow = Array.isArray(flows)
-        ? flows.find(f => f.status === 'current')
+        ? flows.find(f => f.status === 'current' || f.status === 'in_progress')
         : null;
-      // Fallback: match by name (in case realtime lag), choose the earliest pending/current
+      // Fallback: match by name
       if (!currentStationFlow && Array.isArray(flows)) {
-        currentStationFlow = flows.find(f => f.stations?.name_th === currentRoadmap.step && (f.status === 'current' || f.status === 'pending')) || null;
+        currentStationFlow = flows.find(f => f.stations?.name_th === currentRoadmap.step && (f.status === 'current' || f.status === 'in_progress' || f.status === 'pending')) || null;
       }
 
       if (!currentStationFlow) {
@@ -2102,6 +2388,50 @@ export default function ProductionDetailPage() {
     }
   }
 
+  async function handlePartialComplete(id, stationId, stepOrder, qty) {
+    if (actionBusy) return;
+    setActionBusy(true);
+
+    try {
+      console.log('[PARTIAL] Sending partial complete:', { ticketId, stationId, stepOrder, qty });
+
+      const apiResponse = await fetch(`/api/production/${ticketId}/update-flow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'partial_complete',
+          station_id: stationId,
+          step_order: stepOrder,
+          user_id: user?.id,
+          qty: qty
+        })
+      });
+
+      const apiResult = await apiResponse.json();
+      console.log('[PARTIAL] API response:', apiResult);
+
+      if (!apiResponse.ok || !apiResult.success) {
+        alert(apiResult.error || 'ไม่สามารถส่งชิ้นงานได้');
+        setActionBusy(false);
+        return;
+      }
+
+      // Reload ticket data
+      const refreshed = await reloadTicketData();
+      setTicket({ ...refreshed, _refreshKey: Date.now() });
+
+    } catch (e) {
+      console.error('[PARTIAL] Failed:', e);
+      alert('เกิดข้อผิดพลาด: ' + (e?.message || 'Unknown error'));
+      try {
+        const refreshed = await reloadTicketData();
+        setTicket({ ...refreshed, _refreshKey: Date.now() });
+      } catch {}
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   async function handleStart(id) {
     if (actionBusy) {
       console.log('[START] Already busy, skipping');
@@ -2123,23 +2453,14 @@ export default function ProductionDetailPage() {
     }
 
     // Update UI optimistically (non-QC only)
+    // Progress-based: ไม่ต้องเช็ค hasCurrent แล้ว เพราะหลายสถานี active พร้อมกันได้
     setTicket((t) => {
-      if (!t || t.id !== id) {
-        console.log('[START] Ticket mismatch or null, skipping UI update');
-        return t;
-      }
+      if (!t || t.id !== id) return t;
       const roadmap = t.roadmap.map((s) => ({ ...s }));
-      const hasCurrent = roadmap.some((s) => s.status === 'current');
-      if (hasCurrent) {
-        console.log('[START] Already has current step in UI');
-        return t;
-      }
-      const firstPending = roadmap.findIndex((s) => s.status !== 'completed');
+      const firstPending = roadmap.findIndex((s) => s.status === 'pending' && (s.available_qty > 0 || s === roadmap[0]));
       if (firstPending !== -1) {
-        // Double-check prevent QC from being set as current in UI
         const isQC = (roadmap[firstPending]?.step || '').toUpperCase().includes('QC');
         if (isQC) return t;
-        console.log('[START] Setting step', firstPending, 'to current in UI');
         roadmap[firstPending].status = 'current';
         return { ...t, roadmap, status: 'In Progress', statusClass: 'text-amber-600' };
       }
@@ -2180,22 +2501,12 @@ export default function ProductionDetailPage() {
         status: f.status
       })));
 
-      // 2) Check if there's already a current step
-      const currentFlow = flows.find(f => f.status === 'current');
-      if (currentFlow) {
-        console.log('[START] Already have current step in DB:', currentFlow.stations?.name_th);
-        alert('มีขั้นตอนที่กำลังทำอยู่แล้ว กรุณาทำให้เสร็จก่อน');
-        setActionBusy(false);
-        // Reload to sync UI with DB
-        const refreshed = await reloadTicketData();
-        setTicket({ ...refreshed, _refreshKey: Date.now() });
-        return;
-      }
-
-      // 3) Find first pending step that's not QC
+      // 2) Find first pending step that's not QC and has available_qty > 0
+      // (Progress-based: multiple stations can be active simultaneously)
       const firstPending = flows.find(f => {
         const isQC = (f.stations?.name_th || '').toUpperCase().includes('QC');
-        return f.status === 'pending' && !isQC;
+        const hasAvailable = f.available_qty > 0 || f.step_order === 1;
+        return (f.status === 'pending' || f.status === 'in_progress') && !isQC && hasAvailable;
       });
 
       if (!firstPending) {
@@ -2319,10 +2630,11 @@ export default function ProductionDetailPage() {
         )}
 
         {ticket && !loading && (
-          <DetailCard 
-            ticket={ticket} 
-            onDone={handleDone} 
-            onStart={handleStart} 
+          <DetailCard
+            ticket={ticket}
+            onDone={handleDone}
+            onStart={handleStart}
+            onPartialComplete={handlePartialComplete}
             me={myName}
             isAdmin={(user?.roles || (user?.role ? [user.role] : [])).some(r => r.toLowerCase() === 'admin' || r.toLowerCase() === 'superadmin')}
             userId={user?.id || null}

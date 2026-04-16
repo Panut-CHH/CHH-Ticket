@@ -61,6 +61,10 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   // QC Start state
   const [qcStarted, setQcStarted] = useState(false);
   const [startingQc, setStartingQc] = useState(false);
+  // จำนวนชิ้นงานที่มาถึง QC step จริง (available_qty - completed_qty)
+  const [qcInspectQty, setQcInspectQty] = useState(null);
+  // รูปถ่ายงานจากสถานีก่อนหน้า QC
+  const [prevStationPhoto, setPrevStationPhoto] = useState(null);
   
   // Ticket data
   const [ticketData, setTicketData] = useState(null);
@@ -222,13 +226,27 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
           const code = String(f?.stations?.code || '').toUpperCase();
           const name = String(f?.stations?.name_th || '').toUpperCase();
           const isQC = code === 'QC' || name.includes('QC') || name.includes('ตรวจ') || name.includes('คุณภาพ');
-          return isQC && ['pending','current'].includes(f.status || 'pending');
+          return isQC && ['pending','current','in_progress'].includes(f.status || 'pending');
         })[0] || null;
       // active QC task uuid no longer used
       // หากสถานี QC ของตั๋วนี้เป็นสถานะกำลังดำเนินการอยู่ (current)
       // ให้เปิดฟอร์มอัตโนมัติ โดยไม่ต้องกด "เริ่ม QC" ใหม่
-      if (activeQc && String(activeQc.status || '') === 'current') {
+      if (activeQc && (String(activeQc.status || '') === 'current' || String(activeQc.status || '') === 'in_progress')) {
         setQcStarted(true);
+      }
+      // เก็บจำนวนที่ต้องตรวจจริง (available - completed ของ QC step)
+      if (activeQc) {
+        const avail = activeQc.available_qty ?? 0;
+        const done = activeQc.completed_qty ?? 0;
+        const remaining = avail - done;
+        setQcInspectQty(remaining > 0 ? remaining : null);
+
+        // หารูปถ่ายจากสถานีก่อนหน้า QC
+        const qcStepOrder = activeQc.step_order;
+        const prevFlow = (flows || []).find(f => f.step_order === qcStepOrder - 1);
+        if (prevFlow?.photo_url) {
+          setPrevStationPhoto(prevFlow.photo_url);
+        }
       }
 
       // แปลงเป็น default roadmap
@@ -426,8 +444,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
       return { passQuantity: 0, failQuantity: 0, totalQuantity: 0, passRate: 0 };
     }
 
-    // จำนวนชิ้นงานทั้งหมดจากตั๋ว — แสดงจำนวนเต็มเสมอ (ไม่ลดเมื่อมี defect)
-    const totalTicketQuantity = ticketData?.quantity ?? 0;
+    // ใช้จำนวนที่มาถึง QC จริง (qcInspectQty) ถ้ามี, ไม่งั้นใช้ ticket.quantity
+    const totalTicketQuantity = qcInspectQty ?? ticketData?.quantity ?? 0;
     
     if (totalTicketQuantity === 0) {
       // ถ้าไม่มีข้อมูลตั๋ว ให้ใช้วิธีเดิม
@@ -1037,15 +1055,28 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
                 {ticketData && (
                   <div className="mt-2 space-y-1">
                     <p className="text-xs sm:text-sm">
-                      <span className="font-medium">จำนวนที่ต้องผลิต:</span> 
+                      <span className="font-medium">จำนวนที่ต้องตรวจรอบนี้:</span>
                       <span className="ml-2 text-blue-600 dark:text-blue-400 font-semibold">
-                        {(ticketData?.quantity ?? 0).toLocaleString()} {ticketData?.unit || 'ชิ้น'}
+                        {(qcInspectQty ?? ticketData?.quantity ?? 0).toLocaleString()} {ticketData?.unit || 'ชิ้น'}
                       </span>
+                      {qcInspectQty != null && qcInspectQty !== (ticketData?.quantity ?? 0) && (
+                        <span className="ml-2 text-xs text-gray-400">(ทั้งหมด {(ticketData?.quantity ?? 0).toLocaleString()})</span>
+                      )}
                     </p>
                     <p className="text-xs sm:text-sm">
-                      <span className="font-medium">รายการ:</span> 
+                      <span className="font-medium">รายการ:</span>
                       <span className="ml-2">{ticketData?.description || '-'}</span>
                     </p>
+                    {prevStationPhoto && (
+                      <div className="mt-2">
+                        <a href={prevStationPhoto} target="_blank" rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/20 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 text-xs sm:text-sm font-medium hover:bg-purple-100 transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                          ดูรูปงานจากช่าง
+                        </a>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

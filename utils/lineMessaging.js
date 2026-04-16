@@ -34,12 +34,12 @@ export async function sendLinePushMessage(lineUserId, message) {
 }
 
 /**
- * แจ้งเตือนช่างสถานีถัดไปผ่าน LINE เมื่อสถานีก่อนหน้าทำเสร็จ
- * (ตั๋วมาถึงสถานีของเขาแล้ว)
+ * แจ้งเตือนช่างสถานีถัดไปผ่าน LINE เมื่อสถานีก่อนหน้าทำเสร็จ (หรือส่งชิ้นงานบางส่วน)
  * @param {string} ticketNo - หมายเลขตั๋ว
  * @param {number} completedStepOrder - step_order ที่เพิ่งทำเสร็จ
+ * @param {number|null} transferQty - จำนวนชิ้นที่ส่ง (null = แบบเดิม ไม่ระบุจำนวน)
  */
-export async function sendLineNextStationNotification(ticketNo, completedStepOrder) {
+export async function sendLineNextStationNotification(ticketNo, completedStepOrder, transferQty = null) {
   const admin = supabaseServer;
   console.log(`[LINE] sendLineNextStationNotification: ticket=${ticketNo}, completedStep=${completedStepOrder}`);
 
@@ -48,7 +48,7 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
     .from("ticket_station_flow")
     .select("station_id, step_order")
     .eq("ticket_no", ticketNo)
-    .eq("status", "pending")
+    .in("status", ["pending", "in_progress"])
     .gt("step_order", completedStepOrder)
     .order("step_order", { ascending: true })
     .limit(1)
@@ -72,7 +72,7 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
   const isQC = stationCode === "QC" || stationName.toUpperCase().includes("QC") || stationName.includes("ตรวจ") || stationName.includes("คุณภาพ");
   console.log(`[LINE] isQC=${isQC}`);
   if (isQC) {
-    await sendLineQCNotification(ticketNo, stationName);
+    await sendLineQCNotification(ticketNo, stationName, transferQty);
     return;
   }
 
@@ -98,7 +98,8 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
   console.log(`[LINE] technician line_user_id:`, user?.line_user_id ? "found" : "not set");
   if (!user?.line_user_id) return;
 
-  const message = `📋 ตั๋ว ${ticketNo} ถึงสถานี ${stationName} แล้ว\nกรุณาเริ่มงาน`;
+  const qtyInfo = transferQty ? ` (${transferQty} ชิ้น)` : '';
+  const message = `📋 ตั๋ว ${ticketNo} ถึงสถานี ${stationName} แล้ว${qtyInfo}\nกรุณาเริ่มงาน`;
   await sendLinePushMessage(user.line_user_id, message);
 }
 
@@ -106,8 +107,9 @@ export async function sendLineNextStationNotification(ticketNo, completedStepOrd
  * แจ้งเตือน QC ทุกคนผ่าน LINE เมื่อตั๋วพร้อมสำหรับ QC
  * @param {string} ticketNo - หมายเลขตั๋ว
  * @param {string} stationName - ชื่อสถานี QC
+ * @param {number|null} transferQty - จำนวนชิ้นที่���่งมา
  */
-export async function sendLineQCNotification(ticketNo, stationName) {
+export async function sendLineQCNotification(ticketNo, stationName, transferQty = null) {
   const admin = supabaseServer;
   console.log(`[LINE] sendLineQCNotification: ticket=${ticketNo}, station=${stationName}`);
 
@@ -121,7 +123,8 @@ export async function sendLineQCNotification(ticketNo, stationName) {
   console.log(`[LINE] QC users found: ${qcUsers?.length || 0}`, qcError?.message);
   if (!qcUsers || qcUsers.length === 0) return;
 
-  const message = `🔍 ตั๋ว ${ticketNo} พร้อมสำหรับ QC ที่สถานี ${stationName || "QC"}\nกรุณาตรวจสอบ`;
+  const qtyInfo = transferQty ? ` (${transferQty} ชิ้น)` : '';
+  const message = `🔍 ตั๋ว ${ticketNo} พร้อมสำหรับ QC ที่สถานี ${stationName || "QC"}${qtyInfo}\nกรุณาตรวจสอบ`;
 
   await Promise.all(
     qcUsers.map((user) => sendLinePushMessage(user.line_user_id, message))

@@ -382,28 +382,36 @@ export default function ReportPage() {
         }
       }
 
-      // ===== Phase 2: ดึง flows (ต้องรอ station IDs) =====
-      const { data: flows, error: flowError } = await supabase
-        .from("ticket_station_flow")
-        .select(`
-          ticket_no,
-          station_id,
-          step_order,
-          status,
-          completed_at,
-          price_type,
-          price,
-          stations ( name_th, code )
-        `)
-        .eq("status", "completed")
-        .not("completed_at", "is", null)
-        .in("station_id", targetStationIds)
-        .order("completed_at", { ascending: false })
-        .limit(5000);
+      // ===== Phase 2: ดึง flows (ต้องรอ station IDs) — ไม่จำกัดจำนวน =====
+      let flows = [];
+      {
+        let from = 0;
+        const pageSize = 1000;
+        let hasMore = true;
+        while (hasMore) {
+          const { data: page, error: pageError } = await supabase
+            .from("ticket_station_flow")
+            .select(`
+              ticket_no, station_id, step_order, status, completed_at,
+              price_type, price, stations ( name_th, code )
+            `)
+            .eq("status", "completed")
+            .not("completed_at", "is", null)
+            .in("station_id", targetStationIds)
+            .order("completed_at", { ascending: false })
+            .range(from, from + pageSize - 1);
+          if (pageError) throw pageError;
+          if (page && page.length > 0) {
+            flows = flows.concat(page);
+            from += pageSize;
+            hasMore = page.length === pageSize;
+          } else {
+            hasMore = false;
+          }
+        }
+      }
 
-      if (flowError) throw flowError;
-
-      const filteredFlows = flows || [];
+      const filteredFlows = flows;
 
       // ===== Phase 3: ดึง assignments, tickets, qc_sessions พร้อมกัน (ทั้งหมดพึ่ง flowTicketNos) =====
       const flowTicketNos = [...new Set(filteredFlows.map((f) => f.ticket_no))];

@@ -1132,7 +1132,7 @@ export default function UITicket() {
           status: flow.status || "pending"
         }));
         // กำหนด assignee ให้โชว์บนการ์ด: แสดงเฉพาะช่างของสถานีปัจจุบัน
-        const currentFlow = ticketFlows.find(f => f.status === 'current');
+        const currentFlow = ticketFlows.find(f => f.status === 'current' || f.status === 'in_progress');
         let primaryAssignee = currentFlow?.ticket_assignments?.[0]?.users?.name || '';
         if (!primaryAssignee) {
           // หากยังไม่เริ่มงาน (ไม่มี current) ให้แสดงช่างของสถานีแรกตามลำดับ
@@ -1204,7 +1204,7 @@ export default function UITicket() {
 
     // ตรวจสอบความคืบหน้าใน roadmap
     if (Array.isArray(roadmap) && roadmap.length > 0) {
-      const hasCurrentStep = roadmap.some(step => step.status === 'current');
+      const hasCurrentStep = roadmap.some(step => (step.status === 'current' || step.status === 'in_progress'));
       const allCompleted = roadmap.every(step => step.status === 'completed');
       
       if (allCompleted) {
@@ -1468,7 +1468,7 @@ export default function UITicket() {
               status: flow.status || "pending"
             }));
             // กำหนด assignee ให้โชว์บนการ์ด: แสดงเฉพาะช่างของสถานีปัจจุบัน
-            const currentFlow = ticketFlows.find(f => f.status === 'current');
+            const currentFlow = ticketFlows.find(f => f.status === 'current' || f.status === 'in_progress');
             let primaryAssignee = currentFlow?.ticket_assignments?.[0]?.users?.name || '';
             if (!primaryAssignee) {
               // หากยังไม่เริ่มงาน (ไม่มี current) ให้แสดงช่างของสถานีแรกตามลำดับ
@@ -1576,7 +1576,7 @@ export default function UITicket() {
     const [editLoading, setEditLoading] = useState(false);
     const cleanedRpd = String(ticket.rpd || ticket.id || '').replace(/^#/, '').trim();
     const editHref = `/tickets/${encodeURIComponent(cleanedRpd)}/edit`;
-    const currentIndex = ticket.roadmap.findIndex((step) => step.status === 'current');
+    const currentIndex = ticket.roadmap.findIndex((step) => (step.status === 'current' || step.status === 'in_progress'));
     const currentTech = currentIndex >= 0 ? ticket.roadmap[currentIndex]?.technician : undefined;
     const firstPendingIndex = ticket.roadmap.findIndex((s) => s.status !== 'completed');
     
@@ -1759,18 +1759,18 @@ export default function UITicket() {
                             <div className={`rounded-full border-2 transition-all duration-300 ${
                               step.status === 'completed'
                                 ? 'w-3 h-3 sm:w-3.5 sm:h-3.5 md:w-3.5 md:h-3.5 lg:w-3.5 lg:h-3.5 xl:w-4 xl:h-4 bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-500 shadow-md'
-                                : step.status === 'current'
+                                : (step.status === 'current' || step.status === 'in_progress')
                                 ? 'w-3.5 h-3.5 sm:w-4 sm:h-4 md:w-4 md:h-4 lg:w-4 lg:h-4 xl:w-4 xl:h-4 bg-amber-500 border-amber-500 shadow-lg shadow-amber-500/30 animate-pulse ring-2 ring-amber-300/40'
                                 : 'w-2.5 h-2.5 sm:w-3 sm:h-3 md:w-3 md:h-3 lg:w-3 lg:h-3 xl:w-3 xl:h-3 bg-gray-200 border-gray-200'
                             }`} />
-                            {(step.status === 'completed' || step.status === 'current') && (
+                            {(step.status === 'completed' || (step.status === 'current' || step.status === 'in_progress')) && (
                               <div className={`${step.status === 'completed' ? 'bg-emerald-400/30' : 'bg-amber-400/30'} absolute -inset-1 rounded-full blur-md opacity-50 pointer-events-none`} />
                             )}
                           </div>
                           <div className={`mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] md:text-[10px] lg:text-[10px] xl:text-xs px-1.5 sm:px-2 py-1 bg-white dark:bg-slate-800 rounded border text-center min-w-fit transition-transform duration-200 ${
                             step.status === 'completed'
                               ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 shadow-[0_1px_6px_rgba(16,185,129,0.12)]'
-                              : step.status === 'current'
+                              : (step.status === 'current' || step.status === 'in_progress')
                               ? 'text-amber-600 dark:text-amber-400 font-medium border-amber-200 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 shadow-[0_1px_6px_rgba(245,158,11,0.16)]'
                               : 'text-gray-500 dark:text-gray-400 border-gray-200 dark:border-slate-700'
                           } group-hover:-translate-y-0.5`}>
@@ -1807,11 +1807,11 @@ export default function UITicket() {
                   <div className="flex items-center gap-2">
                     <span className="text-gray-600 dark:text-gray-400">{language === 'th' ? 'ขั้นตอนปัจจุบัน:' : 'Current Step:'}</span>
                     <span className="font-medium text-gray-900 dark:text-gray-100">
-                      {ticket.roadmap.find(step => step.status === 'current')?.step || 
+                      {ticket.roadmap.find(step => (step.status === 'current' || step.status === 'in_progress'))?.step || 
                        ticket.roadmap.find(step => step.status === 'completed')?.step || 
                        (language === 'th' ? 'รอเริ่มต้น' : 'Waiting to start')}
                     </span>
-                    {ticket.roadmap.find(step => step.status === 'current') && (
+                    {ticket.roadmap.find(step => (step.status === 'current' || step.status === 'in_progress')) && (
                       <span className="text-xs bg-amber-100 text-amber-800 px-2 py-1 rounded">
                         {language === 'th' ? 'กำลังดำเนินการ' : 'In Progress'}
                       </span>
@@ -1823,7 +1823,7 @@ export default function UITicket() {
                       <span className="text-xs sm:text-sm">{language === 'th' ? 'ช่างประจำสถานี:' : 'Station Technician:'} <span className="font-medium">{currentTech}</span></span>
                     </div>
                   )}
-                  {!currentTech && ticket.roadmap.find(step => step.status === 'current') && (
+                  {!currentTech && ticket.roadmap.find(step => (step.status === 'current' || step.status === 'in_progress')) && (
                     <div className="inline-flex items-center gap-2 text-orange-600 dark:text-orange-400">
                       <User className="w-3 h-3 sm:w-4 sm:h-4" />
                       <span className="text-xs sm:text-sm">{language === 'th' ? 'ยังไม่ได้มอบหมายช่าง' : 'No technician assigned'}</span>

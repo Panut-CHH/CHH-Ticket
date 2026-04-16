@@ -252,6 +252,23 @@ export async function POST(request, { params }) {
 
       console.log(`[API SAVE] Station ${station.name} (${stationId}) step ${i + 1}: preserving status=${preservedStatus}, completed_at=${completedAt}, planned_at=${plannedAt}`);
 
+      // คำนวณ qty fields สำหรับ progress-based tracking
+      const ticketQuantity = ticketView?.quantity || 0;
+      let flowTotalQty = ticketQuantity;
+      let flowAvailableQty = 0;
+      let flowCompletedQty = 0;
+
+      if (preservedStatus === 'completed') {
+        flowAvailableQty = ticketQuantity;
+        flowCompletedQty = ticketQuantity;
+      } else if (preservedStatus === 'current' || preservedStatus === 'in_progress') {
+        flowAvailableQty = ticketQuantity;
+        flowCompletedQty = 0;
+      } else if (i === 0) {
+        // สถานีแรก: available_qty = total_qty ทันที
+        flowAvailableQty = ticketQuantity;
+      }
+
       const flowData = {
         ticket_no: ticketId,
         station_id: stationId,
@@ -261,6 +278,9 @@ export async function POST(request, { params }) {
         price: station.price || 0,
         completed_at: completedAt,
         planned_at: plannedAt,
+        total_qty: flowTotalQty,
+        available_qty: flowAvailableQty,
+        completed_qty: flowCompletedQty,
       };
 
       console.log(`[API SAVE] Inserting flow data:`, flowData);

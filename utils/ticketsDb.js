@@ -176,7 +176,11 @@ export async function loadActiveQcQueue() {
         stationId: flow.station_id,
         stepOrder: flow.step_order,
         updatedAt: flow.updated_at || flow.created_at,
-        qcTaskUuid: flow.qc_task_uuid || null
+        qcTaskUuid: flow.qc_task_uuid || null,
+        total_qty: flow.total_qty || 0,
+        available_qty: flow.available_qty || 0,
+        completed_qty: flow.completed_qty || 0,
+        photo_url: flow.photo_url || null
       }));
       // derive assignee = technician at previous station of active QC step
       let assignee = t.assignee;
@@ -200,15 +204,18 @@ export async function loadActiveQcQueue() {
     return t;
   });
 
-  // 5) Select QC candidates where the first active step is QC and status in pending/current
+  // 5) Select QC candidates where any active QC step has available_qty > 0
   const qcCandidates = merged.filter(t => {
     const steps = Array.isArray(t.roadmap) ? t.roadmap : [];
     if (steps.length === 0) return false;
-    const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
-    if (firstActiveIdx < 0) return false;
-    const stepName = String(steps[firstActiveIdx]?.step || '').toUpperCase();
-    const stepStatus = steps[firstActiveIdx]?.status || 'pending';
-    return stepName.includes('QC') && (stepStatus === 'pending' || stepStatus === 'current');
+    // หา QC step ที่มีชิ้นงานรอตรวจจริง (remaining > 0)
+    return steps.some(s => {
+      const stepName = String(s.step || '').toUpperCase();
+      if (!stepName.includes('QC')) return false;
+      if (s.status === 'completed') return false;
+      const remaining = (s.available_qty ?? 0) - (s.completed_qty ?? 0);
+      return remaining > 0;
+    });
   });
 
   // 6) Compute assignee map for previous station display (QC target)
