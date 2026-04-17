@@ -331,12 +331,21 @@ export default function ProductionPage() {
           .in('ticket_no', allTicketNumbers);
         if (!qcSessErr && Array.isArray(qcSessions) && qcSessions.length > 0) {
           const sessionIds = qcSessions.map(s => s.id);
-          const { data: qcRows, error: rowsErr } = await supabase
-            .from('qc_rows')
-            .select('session_id, actual_qty')
-            .in('session_id', sessionIds)
-            .eq('pass', false);
-          if (!rowsErr && Array.isArray(qcRows)) {
+          // Chunk .in() เพื่อป้องกัน URL ยาวเกิน
+          let qcRows = [];
+          const CHUNK = 50;
+          for (let i = 0; i < sessionIds.length; i += CHUNK) {
+            const chunk = sessionIds.slice(i, i + CHUNK);
+            const { data: chunkRows, error: chunkErr } = await supabase
+              .from('qc_rows')
+              .select('session_id, actual_qty')
+              .in('session_id', chunk)
+              .eq('pass', false);
+            if (!chunkErr && Array.isArray(chunkRows)) {
+              qcRows = qcRows.concat(chunkRows);
+            }
+          }
+          if (qcRows.length > 0) {
             const defectBySession = {};
             qcRows.forEach(row => {
               const qty = Number(row.actual_qty) || 0;
@@ -1050,6 +1059,7 @@ export default function ProductionPage() {
         
         // สำหรับ role อื่นๆ — เห็นเฉพาะตั๋วที่สถานีของตัวเองยังไม่เสร็จ
         const stations = Array.isArray(t.stations) ? t.stations : [];
+        const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
         const hasActiveStation2 = stations.some((s, idx) => {
           const techLower = ((s.technician || "").toString()).toLowerCase();
           if (!techLower.includes(myNameLower)) return false;
@@ -1057,9 +1067,7 @@ export default function ProductionPage() {
           return stepStatus !== 'completed';
         });
         if (hasActiveStation2) return true;
-        
         // เช็ค Role-based visibility สำหรับ CNC และ Packing (เหมือน QC)
-        const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
         
         // เช็คสถานี CNC — เห็นเฉพาะตั๋วที่สถานี CNC ยังไม่เสร็จ
         if (hasCNCRole) {
