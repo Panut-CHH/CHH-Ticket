@@ -8,7 +8,7 @@ import { t } from "@/utils/translations";
 import { transformErpData } from "@/utils/erpApi";
 import { getAllProjects, createProject, deleteProject, getProjectStats, getUserName } from "@/utils/projectDb";
 import { supabase } from "@/utils/supabaseClient";
-import { 
+import {
   Plus,
   Search,
   Filter,
@@ -23,7 +23,12 @@ import {
   FolderOpen,
   CheckCircle,
   Clock,
-  AlertCircle
+  AlertCircle,
+  FileWarning,
+  ChevronDown,
+  ChevronRight,
+  Zap,
+  Flame
 } from "lucide-react";
 import Modal from "@/components/Modal";
 
@@ -68,6 +73,13 @@ export default function UIProject() {
   const [erpError, setErpError] = useState("");
   const [erpConnectionStatus, setErpConnectionStatus] = useState(null);
 
+  // Pending drawings (items with no uploaded drawing files)
+  const [pendingGroups, setPendingGroups] = useState([]);
+  const [pendingTotals, setPendingTotals] = useState({ totalItems: 0, totalProjects: 0, totalUrgent: 0 });
+  const [loadingPending, setLoadingPending] = useState(false);
+  const [expandedPendingProjects, setExpandedPendingProjects] = useState({});
+  const [activeTab, setActiveTab] = useState('projects'); // 'projects' | 'pending'
+
   // Product units states
   const [productUnits, setProductUnits] = useState([]);
   const [loadingUnits, setLoadingUnits] = useState(false);
@@ -97,7 +109,38 @@ export default function UIProject() {
   useEffect(() => {
     loadProjectsFromDatabase();
     loadProductUnits();
+    loadPendingDrawings();
   }, []);
+
+  // โหลดรายการ item ที่ยังไม่มีไฟล์แบบ
+  const loadPendingDrawings = async () => {
+    try {
+      setLoadingPending(true);
+      const response = await fetch('/api/projects/pending-files');
+      const result = await response.json();
+      if (result.success && result.data) {
+        setPendingGroups(result.data.groups || []);
+        setPendingTotals({
+          totalItems: result.data.totalItems || 0,
+          totalProjects: result.data.totalProjects || 0,
+          totalUrgent: result.data.totalUrgent || 0
+        });
+      } else {
+        setPendingGroups([]);
+        setPendingTotals({ totalItems: 0, totalProjects: 0, totalUrgent: 0 });
+      }
+    } catch (error) {
+      console.error('Error loading pending drawings:', error);
+      setPendingGroups([]);
+      setPendingTotals({ totalItems: 0, totalProjects: 0, totalUrgent: 0 });
+    } finally {
+      setLoadingPending(false);
+    }
+  };
+
+  const togglePendingProject = (projectId) => {
+    setExpandedPendingProjects(prev => ({ ...prev, [projectId]: !prev[projectId] }));
+  };
 
   // โหลดหน่วยสินค้าจาก API
   const loadProductUnits = async () => {
@@ -444,6 +487,7 @@ export default function UIProject() {
           setProjects(projects.filter(p => p.id !== selectedProject.id));
           setShowDeleteModal(false);
           setSelectedProject(null);
+          loadPendingDrawings();
         } else {
           alert(result.error || t('deleteFailed', language));
         }
@@ -600,7 +644,8 @@ export default function UIProject() {
         };
         
         setProjects(prev => [newProject, ...prev]);
-        
+        loadPendingDrawings();
+
         // Reset form
         setUploadForm({
           file: null,
@@ -804,7 +849,191 @@ export default function UIProject() {
           </div>
         </div>
 
+        {/* Tabs */}
+        <div className="mb-4 border-b border-slate-200 dark:border-slate-700 animate-fadeInUpSmall" style={{ animationDelay: '0.55s' }}>
+          <div className="flex gap-1 sm:gap-2 overflow-x-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab('projects')}
+              className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm sm:text-base font-medium border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === 'projects'
+                  ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4" />
+              <span>{t('projectList', language)}</span>
+              <span className="px-2 py-0.5 rounded-full text-xs bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                {sortedFilteredProjects.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('pending')}
+              className={`inline-flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm sm:text-base font-medium border-b-2 whitespace-nowrap transition-colors ${
+                activeTab === 'pending'
+                  ? 'border-amber-500 text-amber-700 dark:text-amber-300'
+                  : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+              }`}
+            >
+              <FileWarning className="w-4 h-4" />
+              <span>{t('pendingDrawings', language)}</span>
+              <span className="px-2 py-0.5 rounded-full text-xs bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                {loadingPending ? '…' : pendingTotals.totalItems}
+              </span>
+              {pendingTotals.totalUrgent > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 urgent-glow border border-red-400">
+                  <Flame className="w-3 h-3" />
+                  {pendingTotals.totalUrgent}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Pending Drawings Panel */}
+        {activeTab === 'pending' && (
+          <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fadeInUpSmall" style={{ animationDelay: '0.6s' }}>
+            <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700 flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">
+                    {t('pendingDrawings', language)}
+                  </h2>
+                  <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 break-words">
+                    {t('pendingDrawingsDesc', language)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <span className="px-2 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
+                    {pendingTotals.totalItems} {t('pendingItemsCount', language)}
+                  </span>
+                  <span className="hidden sm:inline-block px-2 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 whitespace-nowrap">
+                    {pendingTotals.totalProjects} {t('pendingProjectsCount', language)}
+                  </span>
+                </div>
+              </div>
+              {pendingTotals.totalUrgent > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-900/40">
+                  <Flame className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+                  <span className="text-xs sm:text-sm text-red-700 dark:text-red-300 break-words">
+                    {t('urgentLegend', language)}
+                    <span className="ml-2 font-semibold">({pendingTotals.totalUrgent} {t('pendingItemsCount', language)})</span>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="divide-y divide-slate-200 dark:divide-slate-700">
+              {loadingPending ? (
+                <div className="p-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                  <div className="inline-block w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : pendingGroups.length === 0 ? (
+                <div className="p-6 sm:p-8 text-center text-gray-500 dark:text-gray-400">
+                  <CheckCircle className="w-10 h-10 mx-auto mb-3 text-emerald-500" />
+                  <p className="text-sm sm:text-base">{t('noPendingDrawings', language)}</p>
+                </div>
+              ) : (
+                pendingGroups.map((group) => {
+                  const isOpen = expandedPendingProjects[group.projectId] ?? true;
+                  return (
+                    <div key={group.projectId} className="bg-white dark:bg-slate-800">
+                      <button
+                        type="button"
+                        onClick={() => togglePendingProject(group.projectId)}
+                        className="w-full px-4 sm:px-6 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/40 dark:hover:bg-amber-900/10 transition-colors text-left"
+                      >
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                          {isOpen ? (
+                            <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                          )}
+                          <FolderOpen className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span className="font-semibold text-sm sm:text-base text-gray-900 dark:text-gray-100 truncate">
+                            {group.projectName || '-'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded-full text-xs bg-white dark:bg-slate-700 text-gray-700 dark:text-gray-200 border border-slate-200 dark:border-slate-600 flex-shrink-0">
+                            PN: {group.projectNumber || '-'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {group.urgentCount > 0 && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border border-red-300 whitespace-nowrap">
+                              <Flame className="w-3 h-3" />
+                              {group.urgentCount}
+                            </span>
+                          )}
+                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 whitespace-nowrap">
+                            {group.items.length} {t('pendingItemsCount', language)}
+                          </span>
+                        </div>
+                      </button>
+
+                      {isOpen && (
+                        <ul className="px-4 sm:px-6 pb-3 pt-0 space-y-1.5">
+                          {group.items.map((item) => (
+                            <li
+                              key={item.id}
+                              className={`flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors ${
+                                item.isUrgent
+                                  ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-800 urgent-glow'
+                                  : 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30'
+                              }`}
+                              title={item.isUrgent ? t('urgentUploadTooltip', language) : undefined}
+                            >
+                              <div className="flex items-center gap-2 min-w-0">
+                                {item.isUrgent ? (
+                                  <Flame className="w-4 h-4 text-red-500 flex-shrink-0" />
+                                ) : (
+                                  <FileWarning className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                )}
+                                <span className="font-mono text-xs sm:text-sm text-gray-900 dark:text-gray-100 truncate">
+                                  {item.itemCode}
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] sm:text-xs bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200 flex-shrink-0">
+                                  {item.itemType}
+                                </span>
+                                {item.isUrgent && (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] sm:text-xs font-semibold bg-red-500 text-white flex-shrink-0">
+                                    <Zap className="w-3 h-3" />
+                                    <span className="hidden sm:inline">{t('urgentUpload', language)}</span>
+                                  </span>
+                                )}
+                                {item.isUrgent && item.ticketNos?.length > 0 && (
+                                  <span className="hidden md:inline text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                                    RPD: {item.ticketNos.slice(0, 2).join(', ')}
+                                    {item.ticketNos.length > 2 ? '…' : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                onClick={() => handleViewProject(group.projectId)}
+                                className={`pressable inline-flex items-center gap-1 px-2 py-1 rounded-md border transition-colors text-xs font-medium flex-shrink-0 ${
+                                  item.isUrgent
+                                    ? 'border-red-400 bg-red-500 text-white hover:bg-red-600'
+                                    : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/10'
+                                }`}
+                                title={language === 'th' ? 'อัปไฟล์แบบ' : 'Upload drawing'}
+                              >
+                                <Upload className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">{language === 'th' ? 'อัปไฟล์' : 'Upload'}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Projects List */}
+        {activeTab === 'projects' && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden animate-fadeInUpSmall" style={{ animationDelay: '0.6s' }}>
           <div className="p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700">
             <h2 className="text-base sm:text-lg font-semibold text-gray-900 dark:text-gray-100 break-words">{t('projectList', language)} ({sortedFilteredProjects.length})</h2>
@@ -870,6 +1099,7 @@ export default function UIProject() {
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Upload Modal */}

@@ -237,6 +237,14 @@ export const translations = {
     uploadDate: "วันที่อัปโหลด",
     viewDetails: "ดูรายละเอียด",
     deleteProject: "ลบโปรเจ็ค",
+    pendingDrawings: "รายการที่ยังไม่ได้อัปไฟล์แบบ",
+    pendingDrawingsDesc: "รายการ FG/RM/WP/EX ที่ยังไม่มีไฟล์แบบ แยกตามโครงการ",
+    noPendingDrawings: "ทุกรายการมีไฟล์แบบครบแล้ว",
+    pendingItemsCount: "รายการ",
+    pendingProjectsCount: "โครงการ",
+    urgentUpload: "ต้องอัปแบบด่วน",
+    urgentUploadTooltip: "มี RPD จาก ERP และสร้าง roadmap แล้ว — ช่างรอแบบอยู่",
+    urgentLegend: "แถวที่เรืองแสง = ช่างพร้อมทำงานแล้ว รอแบบอยู่",
     
     // Ticket Management
     ticketList: "รายการตั๋ว",
@@ -740,6 +748,14 @@ export const translations = {
     uploadDate: "Upload Date",
     viewDetails: "View Details",
     deleteProject: "Delete Project",
+    pendingDrawings: "Items Without Drawing Files",
+    pendingDrawingsDesc: "FG/RM/WP/EX items that have no drawing files yet, grouped by project",
+    noPendingDrawings: "All items have drawing files",
+    pendingItemsCount: "items",
+    pendingProjectsCount: "projects",
+    urgentUpload: "Urgent upload",
+    urgentUploadTooltip: "RPD exists in ERP and roadmap is built — workers are waiting",
+    urgentLegend: "Glowing rows = workers ready, waiting for drawings",
     
     // Ticket Management
     ticketList: "Ticket List",

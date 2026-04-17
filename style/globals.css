@@ -1085,3 +1085,27 @@ select::-webkit-scrollbar-thumb:active {
     max-width: 100%;
   }
 }
+
+/* Urgent pending-drawing indicator — เรืองแสงเพื่อเตือนให้ฝ่ายแบบรีบอัปไฟล์ */
+@keyframes urgentGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.55), 0 0 10px 2px rgba(239, 68, 68, 0.35);
+    border-color: rgba(239, 68, 68, 0.9);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(239, 68, 68, 0), 0 0 20px 6px rgba(239, 68, 68, 0.55);
+    border-color: rgba(248, 113, 113, 1);
+  }
+}
+
+.urgent-glow {
+  animation: urgentGlow 1.8s ease-in-out infinite;
+  border-width: 1.5px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .urgent-glow {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.6);
+  }
+}
