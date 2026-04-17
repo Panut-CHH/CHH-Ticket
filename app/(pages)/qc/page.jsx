@@ -274,13 +274,23 @@ export default function QCPage() {
         }, {}) || {};
         Object.values(byTicket).forEach(list => {
           // ใช้ลำดับภายในรายการ เผื่อกรณี step_order เป็น null
+          const isQcName = (n) => n && /qc/i.test(n);
           for (let i = 0; i < list.length; i++) {
             const f = list[i];
             if (!f.qc_task_uuid) continue;
+            const selfName = f.stations?.name_th || f.stations?.code || null;
             const prev = i > 0 ? list[i - 1] : null;
-            const name = prev?.stations?.name_th || prev?.stations?.code || null;
-            if (name) prevStationByQcTask[f.qc_task_uuid] = name;
-            if (prev?.station_id) prevStationIdByQcTask[f.qc_task_uuid] = prev.station_id;
+            // ถ้า flow นี้เป็น QC เอง → สถานีที่ถูกตรวจ = step ก่อนหน้า
+            // ถ้าไม่ใช่ (qc_task_uuid ติดอยู่กับ flow ที่ไม่ใช่ QC — เช่น legacy data)
+            //   → สถานีที่ถูกตรวจ = flow นี้เอง
+            if (isQcName(selfName)) {
+              const name = prev?.stations?.name_th || prev?.stations?.code || null;
+              if (name) prevStationByQcTask[f.qc_task_uuid] = name;
+              if (prev?.station_id) prevStationIdByQcTask[f.qc_task_uuid] = prev.station_id;
+            } else if (selfName) {
+              prevStationByQcTask[f.qc_task_uuid] = selfName;
+              if (f.station_id) prevStationIdByQcTask[f.qc_task_uuid] = f.station_id;
+            }
           }
         });
       }

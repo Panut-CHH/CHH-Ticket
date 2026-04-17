@@ -133,31 +133,80 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   // Presence channel for soft-lock teamwork guard
   useEffect(() => {
     if (!id || !user?.id) return;
+
+    // ถือว่า presence อายุเกิน 45 วินาที = stale (กันเคส browser close ไม่ได้ส่ง leave event)
+    const STALE_MS = 45 * 1000;
+    // ส่ง heartbeat refresh presence ทุก 20 วินาที (น้อยกว่า STALE_MS เผื่อ jitter)
+    const HEARTBEAT_MS = 20 * 1000;
+
     const channel = supabase.channel(`qc-form-${id}`, {
       config: { presence: { key: user.id } }
     });
 
-    channel.on('presence', { event: 'sync' }, () => {
+    const computeOthers = () => {
       try {
         const state = channel.presenceState();
+        const now = Date.now();
         const others = Object.entries(state)
           .filter(([key]) => key !== user.id)
           .flatMap(([, arr]) => arr)
+          // filter stale: ถ้ามี online_at และเก่าเกิน STALE_MS ถือว่าออกไปแล้ว
+          .filter((p) => {
+            if (!p?.online_at) return true;
+            const t = new Date(p.online_at).getTime();
+            return !isNaN(t) && (now - t) <= STALE_MS;
+          })
           .map((p) => ({ userId: p.user_id, name: p.name }));
         setCollaborators(others);
       } catch {}
-    });
+    };
 
+    channel.on('presence', { event: 'sync' }, computeOthers);
+    channel.on('presence', { event: 'join' }, computeOthers);
+    channel.on('presence', { event: 'leave' }, computeOthers);
+
+    const trackNow = async () => {
+      try {
+        await channel.track({
+          user_id: user.id,
+          name: user.name || user.email || 'user',
+          online_at: new Date().toISOString()
+        });
+      } catch {}
+    };
+
+    let heartbeatTimer = null;
     channel.subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
-        try {
-          await channel.track({ user_id: user.id, name: user.name || user.email || 'user' });
-        } catch {}
+        await trackNow();
+        heartbeatTimer = setInterval(trackNow, HEARTBEAT_MS);
       }
     });
 
+    // re-filter stale ทุกๆ 10 วินาที (กันกรณีไม่มี sync event แต่ผู้อื่นหายไปเงียบๆ)
+    const stalePoll = setInterval(computeOthers, 10_000);
+
+    // เวลา tab ซ่อน/ปิด ให้พยายาม untrack ก่อนปล่อย
+    const handleHide = () => {
+      try { channel.untrack(); } catch {}
+    };
+    window.addEventListener('pagehide', handleHide);
+    window.addEventListener('beforeunload', handleHide);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') handleHide();
+      else trackNow();
+    });
+
     return () => {
-      try { supabase.removeChannel(channel); } catch {}
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
+      clearInterval(stalePoll);
+      window.removeEventListener('pagehide', handleHide);
+      window.removeEventListener('beforeunload', handleHide);
+      (async () => {
+        try { await channel.untrack(); } catch {}
+        try { await channel.unsubscribe(); } catch {}
+        try { supabase.removeChannel(channel); } catch {}
+      })();
     };
   }, [id, user?.id]);
 
@@ -568,6 +617,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
     const payload = {
       formType: 'main_qc',
+      qc_task_uuid: overrideQcTaskUuid || null,
       header: {
         inspector: inspectorName,
         inspector_id: user?.id || null,
@@ -647,10 +697,8 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
   // ฟังก์ชันส่ง QC ไป API จริง (เรียกจาก saveForm หรือ defect popup)
   const submitQCToAPI = async (payload) => {
     try {
-      if (othersEditing) {
-        showToast(language === 'th' ? 'มีผู้ใช้อื่นกำลังแก้ไขอยู่ กรุณารอสักครู่' : 'Someone else is editing. Please wait.', 'warning');
-        return;
-      }
+      // หมายเหตุ: presence เป็นแค่ soft-warning (banner ด้านบน) ไม่ block การบันทึก
+      // เพราะ presence อาจค้างได้ (tab closed ผิดปกติ, heartbeat lag) — ไม่ควรกัน save
       setSaving(true);
 
       // Get session token for authorization
@@ -733,6 +781,7 @@ export default function QCMainForm({ params, forceQcTaskUuid = null, forceTicket
 
       const payload = {
         formType: 'main_qc',
+        qc_task_uuid: overrideQcTaskUuid || null,
         header: {
           inspector: inspectorName,
           inspectedDate,

@@ -9,17 +9,18 @@ import { createNotification, createQCReadyNotification, createTicketCompletedNot
  * @param {number|null} failQty - จำนวนที่ไม่ผ่าน (null = 0)
  * @param {number|null} reworkTargetStep - step_order ที่จะส่ง fail กลับไป (null = สถานีก่อนหน้า QC)
  * @param {string} defectAction - 'rework' | 'new_ticket' (default = 'rework')
+ * @param {string|null} qcTaskUuid - UUID ของ QC task ที่กำลังทำอยู่ (สำคัญเมื่อมี QC step active หลายอันพร้อมกัน)
  */
-export async function completeQCStation(ticketNo, passQty = null, failQty = null, reworkTargetStep = null, defectAction = 'rework') {
+export async function completeQCStation(ticketNo, passQty = null, failQty = null, reworkTargetStep = null, defectAction = 'rework', qcTaskUuid = null) {
   console.log('=== completeQCStation Debug ===');
-  console.log('Ticket No:', ticketNo, 'passQty:', passQty, 'failQty:', failQty, 'reworkTarget:', reworkTargetStep, 'defectAction:', defectAction);
+  console.log('Ticket No:', ticketNo, 'passQty:', passQty, 'failQty:', failQty, 'reworkTarget:', reworkTargetStep, 'defectAction:', defectAction, 'qcTaskUuid:', qcTaskUuid);
 
   const admin = supabaseServer;
 
   try {
     const { data: flows, error } = await admin
       .from("ticket_station_flow")
-      .select("id, status, step_order, total_qty, available_qty, completed_qty, stations(name_th, code)")
+      .select("id, status, step_order, total_qty, available_qty, completed_qty, qc_task_uuid, stations(name_th, code)")
       .eq("ticket_no", ticketNo)
       .order("step_order", { ascending: true });
 
@@ -35,16 +36,36 @@ export async function completeQCStation(ticketNo, passQty = null, failQty = null
       return;
     }
 
-    // หาเฉพาะ QC step ที่ active (progress-based: หลาย step active พร้อมกันได้)
+    // หาเฉพาะ QC step ที่ active
     const isQCStation = (f) => {
       const name = (f.stations?.name_th || f.stations?.code || '').toUpperCase();
       return name.includes('QC') || name.includes('ตรวจ') || name.includes('คุณภาพ');
     };
-    const qcIdx = flows.findIndex((f) => {
-      const isActive = f.status === "current" || f.status === "in_progress";
-      return isActive && isQCStation(f);
-    });
-    console.log('QC station index:', qcIdx);
+
+    // 1) ใช้ qcTaskUuid เป็น primary identifier (แม่นยำสุด)
+    // 2) Fallback: QC step ที่ active + มีงานเหลือให้ตรวจ (available - completed > 0)
+    // 3) Last fallback: QC step แรกที่ active (เผื่อ legacy flow)
+    let qcIdx = -1;
+    if (qcTaskUuid) {
+      qcIdx = flows.findIndex(f => f.qc_task_uuid === qcTaskUuid && isQCStation(f));
+      if (qcIdx < 0) {
+        console.warn('qcTaskUuid not matched to any QC flow; falling back to active-with-remaining search');
+      }
+    }
+    if (qcIdx < 0) {
+      qcIdx = flows.findIndex((f) => {
+        const isActive = f.status === "current" || f.status === "in_progress";
+        const remaining = (f.available_qty || 0) - (f.completed_qty || 0);
+        return isActive && isQCStation(f) && remaining > 0;
+      });
+    }
+    if (qcIdx < 0) {
+      qcIdx = flows.findIndex((f) => {
+        const isActive = f.status === "current" || f.status === "in_progress";
+        return isActive && isQCStation(f);
+      });
+    }
+    console.log('QC station index:', qcIdx, qcIdx >= 0 ? flows[qcIdx] : null);
 
     if (qcIdx >= 0) {
       const qcStation = flows[qcIdx];

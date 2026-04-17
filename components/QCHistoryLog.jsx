@@ -232,8 +232,15 @@ export default function QCHistoryLog({ ticketNo }) {
               </div>
               <div className="flex items-center gap-2 text-xs flex-shrink-0">
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300">ผ่าน {passTotal}</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">ไม่ผ่าน {failTotal}</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">Defect {defectQtyTotal}</span>
+                <span
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300"
+                  title={defectQtyTotal > 0 && defectQtyTotal !== failTotal ? `รวม ${defectQtyTotal} ชิ้น` : undefined}
+                >
+                  ไม่ผ่าน {failTotal}
+                  {defectQtyTotal > 0 && defectQtyTotal !== failTotal && (
+                    <span className="opacity-70">({defectQtyTotal} ชิ้น)</span>
+                  )}
+                </span>
                 <span className={`ml-2 transform transition-transform ${isOpen ? 'rotate-180' : ''}`}>▾</span>
               </div>
             </button>
@@ -257,8 +264,15 @@ export default function QCHistoryLog({ ticketNo }) {
                         </div>
                         <div className="flex items-center gap-1.5 text-xs">
                           <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-300">ผ่าน {pass}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300">ไม่ผ่าน {fail}</span>
-                          <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">Defect {defectQty}</span>
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-300"
+                            title={defectQty > 0 && defectQty !== fail ? `รวม ${defectQty} ชิ้น` : undefined}
+                          >
+                            ไม่ผ่าน {fail}
+                            {defectQty > 0 && defectQty !== fail && (
+                              <span className="opacity-70"> ({defectQty} ชิ้น)</span>
+                            )}
+                          </span>
                         </div>
                       </div>
                       {s.remark && (

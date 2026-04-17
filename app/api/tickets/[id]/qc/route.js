@@ -417,8 +417,8 @@ export async function POST(request, context) {
       const computedFailQty = body.failQuantity != null ? Number(body.failQuantity) : (failedQtyFromRows || null);
       const defectAction = body.defectAction || 'rework'; // 'rework' | 'new_ticket'
       const reworkTargetStep = body.reworkTargetStep != null ? Number(body.reworkTargetStep) : null;
-      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%, passQty:', computedPassQty, ', failQty:', computedFailQty, ', defectAction:', defectAction, ', reworkTarget:', reworkTargetStep, ')');
-      await completeQCStation(ticketNo, computedPassQty, computedFailQty, reworkTargetStep, defectAction);
+      console.log('QC completed - calling completeQCStation (passRate:', passRate, '%, passQty:', computedPassQty, ', failQty:', computedFailQty, ', defectAction:', defectAction, ', reworkTarget:', reworkTargetStep, ', qcTaskUuid:', resolvedQcTaskUuid, ')');
+      await completeQCStation(ticketNo, computedPassQty, computedFailQty, reworkTargetStep, defectAction, resolvedQcTaskUuid);
       console.log('completeQCStation completed successfully');
       
       // อัพเดต completed_at ใน qc_sessions เมื่อ QC เสร็จสิ้น
