@@ -972,17 +972,15 @@ export default function ProductionPage() {
           const stations = Array.isArray(t.stations) ? t.stations : [];
           const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
 
-          // เช็คว่ามีสถานีที่ assign ให้ตัวเอง AND สถานีนั้นยังไม่ completed
           const hasActiveStation = stations.some((s, idx) => {
             const techLower = ((s.technician || "").toString()).toLowerCase();
             if (!techLower.includes(myNameLower)) return false;
-            // ดูสถานะจาก roadmap (index ตรงกัน)
             const stepStatus = roadmap[idx]?.status || 'pending';
             return stepStatus !== 'completed';
           });
 
           if (hasActiveStation) return true;
-          return false;
+          // ไม่ return false — ให้เช็ค role อื่นต่อ (CNC, Packing)
         }
         
         // สำหรับ Painting role ให้เช็คเฉพาะสถานีสีที่ assign ให้ตัวเองเท่านั้น
