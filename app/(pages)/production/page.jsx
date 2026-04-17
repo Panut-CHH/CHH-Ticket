@@ -1342,8 +1342,8 @@ export default function ProductionPage() {
     if (selectedStation) {
       // Filter by station name (current or next step)
       const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
-      const currentStep = roadmap.find(step => step.status === 'current');
-      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      const currentStep = roadmap.find(step => step.status === 'current' || step.status === 'in_progress');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending' && (step.available_qty ?? 0) > 0);
       const currentStation = currentStep?.step || '';
       const nextStation = nextPendingStep?.step || '';
       // Check if selected station matches current or next station
@@ -1526,10 +1526,10 @@ export default function ProductionPage() {
     const cleanedId = (ticket.id || "").replace(/^#/, "");
     const ticketBatches = batches.filter(batch => batch.ticket_no === ticket.id);
     const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
-    const currentStep = roadmap.find(step => step.status === 'current');
+    const currentStep = roadmap.find(step => step.status === 'current' || step.status === 'in_progress');
     const currentStation = currentStep?.step || null;
     const currentTechnician = currentStep?.technician || null;
-    const firstPendingStep = roadmap.find(step => step.status === 'pending');
+    const firstPendingStep = roadmap.find(step => step.status === 'pending' && (step.available_qty ?? 0) > 0);
     const pendingStation = firstPendingStep?.step || null;
     const pendingTechnician = firstPendingStep?.technician || null;
     const isUpdatingStatus = updatingStatus.has(ticket.id);
