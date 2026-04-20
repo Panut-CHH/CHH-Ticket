@@ -429,8 +429,17 @@ export default function QCPage() {
         const firstActiveIdx = steps.findIndex(s => (s.status || 'pending') !== 'completed');
         const active = firstActiveIdx >= 0 ? steps[firstActiveIdx] : null;
         const arrival = active?.updatedAt ? new Date(active.updatedAt).getTime() : null;
-        // หา QC step ปัจจุบัน (pending/current) และ previous station สำหรับการ filter
-        const qcIdx = steps.findIndex(s => String(s.step || '').toUpperCase().includes('QC') && ['pending','current'].includes(s.status || 'pending'));
+        // หา QC step ที่ "รอตรวจจริง" (มี remaining > 0) ให้ตรงกับ loadActiveQcQueue
+        // หมายเหตุ: ต้องครอบคลุมสถานะ in_progress ด้วย เพราะ qcWorkflow จะตั้ง in_progress
+        // เมื่อ available_qty > 0 ถ้าเช็คแค่ pending/current จะข้ามไปเจอ QC ขั้นหลัง Packing
+        // แล้วทำให้ตั๋วไปโผล่ผิดกลุ่มสถานี
+        const qcIdx = steps.findIndex(s => {
+          const name = String(s.step || '').toUpperCase();
+          if (!name.includes('QC')) return false;
+          if ((s.status || 'pending') === 'completed') return false;
+          const remaining = (s.available_qty ?? 0) - (s.completed_qty ?? 0);
+          return remaining > 0;
+        });
         const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
         const prevStationId = prev?.stationId || '';
         const prevStationName = prev?.step || '';
