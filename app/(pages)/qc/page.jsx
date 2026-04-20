@@ -630,6 +630,12 @@ export default function QCPage() {
             onClick={() => setActiveTab('history')}
             className={`px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 ${activeTab === 'history' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300'}`}
           >{language === 'th' ? 'ประวัติการตรวจ' : 'QC History'}</button>
+          <Link
+            href="/qc/kpi"
+            className="px-3 py-1.5 rounded-md text-sm font-medium whitespace-nowrap shrink-0 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-700 inline-flex items-center gap-1.5"
+          >
+            📊 {language === 'th' ? 'KPI' : 'KPI'}
+          </Link>
       </div>
 
       {loading && (
