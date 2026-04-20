@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Bluetooth, Printer, Plug, PlugZap, Send, Loader2 } from "lucide-react";
+import { Bluetooth, Printer, Plug, PlugZap, Send, Loader2, Copy, Download, Trash2 } from "lucide-react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import RoleGuard from "@/components/RoleGuard";
 import {
@@ -107,6 +107,56 @@ function PrintTestInner() {
       log(`✗ hex parse error: ${e.message}`);
     }
   };
+
+  const buildLogText = () => {
+    const header = [
+      `# QC Printer POC log`,
+      `# generated: ${new Date().toISOString()}`,
+      `# userAgent: ${typeof navigator !== "undefined" ? navigator.userAgent : "n/a"}`,
+      `# device: ${deviceName || "-"}`,
+      `# characteristic: ${chUuid || "-"}`,
+      ``,
+    ].join("\n");
+    return header + logs.join("\n") + "\n";
+  };
+
+  const copyLog = async () => {
+    const text = buildLogText();
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      log("✓ log copied to clipboard");
+    } catch (e) {
+      log(`✗ copy failed: ${e.message}`);
+    }
+  };
+
+  const downloadLog = () => {
+    const text = buildLogText();
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `qc-printer-log-${stamp}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    log("✓ log downloaded");
+  };
+
+  const clearLog = () => setLogs([]);
 
   const printBatch = async () => {
     const n = Math.max(1, Math.min(100, Number(copies) || 1));
@@ -281,7 +331,35 @@ function PrintTestInner() {
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-gray-900 p-3 shadow-sm">
-          <div className="mb-2 text-xs font-semibold text-gray-300">Log</div>
+          <div className="mb-2 flex items-center gap-2">
+            <div className="text-xs font-semibold text-gray-300">Log</div>
+            <div className="ml-auto flex gap-1">
+              <button
+                onClick={copyLog}
+                disabled={logs.length === 0}
+                className="inline-flex items-center gap-1 rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 disabled:opacity-40"
+                title="Copy log to clipboard"
+              >
+                <Copy className="h-3 w-3" /> Copy
+              </button>
+              <button
+                onClick={downloadLog}
+                disabled={logs.length === 0}
+                className="inline-flex items-center gap-1 rounded border border-gray-600 px-2 py-1 text-xs text-gray-200 hover:bg-gray-800 disabled:opacity-40"
+                title="Download log as .txt"
+              >
+                <Download className="h-3 w-3" /> Download
+              </button>
+              <button
+                onClick={clearLog}
+                disabled={logs.length === 0}
+                className="inline-flex items-center gap-1 rounded border border-gray-600 px-2 py-1 text-xs text-red-300 hover:bg-gray-800 disabled:opacity-40"
+                title="Clear log"
+              >
+                <Trash2 className="h-3 w-3" /> Clear
+              </button>
+            </div>
+          </div>
           <div
             ref={logBoxRef}
             className="h-64 overflow-y-auto rounded bg-black p-2 font-mono text-xs text-emerald-300"
