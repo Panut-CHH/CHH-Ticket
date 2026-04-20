@@ -11,9 +11,12 @@ import {
   disconnect,
   getStatus,
   parseHex,
+  listWritableCandidates,
+  setActiveCharacteristic,
 } from "@/utils/btPrinter";
 import { escposHello, escposLabel } from "@/utils/escpos";
 import { tsplHello, tsplQcLabel } from "@/utils/tspl";
+import { catFeedPaper, catGetStatus, catPrintBlackTest } from "@/utils/catPrinter";
 
 export default function PrintTestPage() {
   return (
@@ -30,6 +33,7 @@ function PrintTestInner() {
   const [connected, setConnected] = useState(false);
   const [deviceName, setDeviceName] = useState("");
   const [chUuid, setChUuid] = useState("");
+  const [candidates, setCandidates] = useState([]);
   const [busy, setBusy] = useState(false);
   const [copies, setCopies] = useState(3);
   const [labelW, setLabelW] = useState(40);
@@ -63,7 +67,17 @@ function PrintTestInner() {
     setConnected(s.connected);
     setDeviceName(s.deviceName || "");
     setChUuid(s.characteristicUuid || "");
+    setCandidates(listWritableCandidates());
   }, []);
+
+  const onPickCharacteristic = (uuid) => {
+    try {
+      setActiveCharacteristic(uuid, { log });
+      refreshStatus();
+    } catch (e) {
+      log(`✗ switch error: ${e.message}`);
+    }
+  };
 
   const onConnect = async () => {
     setBusy(true);
@@ -99,6 +113,9 @@ function PrintTestInner() {
   const sendEscposHello = () => send(escposHello(), "ESC/POS hello");
   const sendTsplHello = () =>
     send(tsplHello({ widthMm: labelW, heightMm: labelH }), "TSPL hello");
+  const sendCatFeed = () => send(catFeedPaper(80), "Cat feed paper 80pts");
+  const sendCatStatus = () => send(catGetStatus(), "Cat get status");
+  const sendCatBlack = () => send(catPrintBlackTest({ rows: 30 }), "Cat black test");
   const sendRawHex = () => {
     try {
       const bytes = parseHex(rawHex);
@@ -236,6 +253,40 @@ function PrintTestInner() {
               )}
             </div>
           </div>
+          {candidates.length > 1 && (
+            <div className="mt-3 border-t border-gray-100 pt-3">
+              <div className="mb-1 text-xs font-semibold text-gray-700">
+                Write channel (เลือก characteristic สำหรับส่งข้อมูล)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {candidates.map((c) => {
+                  const short = c.uuid.slice(4, 8).toUpperCase();
+                  const svcShort = c.serviceUuid.slice(4, 8).toUpperCase();
+                  const active = c.uuid === chUuid;
+                  return (
+                    <button
+                      key={c.uuid}
+                      onClick={() => onPickCharacteristic(c.uuid)}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-mono ${
+                        active
+                          ? "border-emerald-500 bg-emerald-50 text-emerald-800"
+                          : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
+                      title={`${c.serviceUuid} / ${c.uuid} [${c.props.join(",")}]`}
+                    >
+                      svc {svcShort} · ch {short}
+                      <span className="ml-1 text-gray-500">
+                        [{c.props.join(",")}]
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-1 text-[11px] text-gray-500">
+                ลองสลับ channel แล้วสั่งพิมพ์ — ถ้า channel ถูก กระดาษจะออกทันที
+              </p>
+            </div>
+          )}
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm space-y-3">
@@ -257,6 +308,40 @@ function PrintTestInner() {
             >
               Print TSPL hello
             </button>
+          </div>
+          <div className="border-t border-gray-100 pt-3">
+            <div className="mb-2 text-xs font-semibold text-amber-800">
+              🐱 Cat-Printer family (ลองถ้า ESC/POS + TSPL ไม่ออก)
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={sendCatFeed}
+                disabled={!connected || busy}
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-medium text-white hover:bg-amber-700 disabled:opacity-50"
+                title="ถ้ากระดาษขยับ = protocol family ถูก"
+              >
+                Cat: Feed paper
+              </button>
+              <button
+                onClick={sendCatStatus}
+                disabled={!connected || busy}
+                className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+                title="ดู notify response ใน log"
+              >
+                Cat: Get status
+              </button>
+              <button
+                onClick={sendCatBlack}
+                disabled={!connected || busy}
+                className="rounded-md bg-amber-700 px-4 py-2 text-sm font-medium text-white hover:bg-amber-800 disabled:opacity-50"
+              >
+                Cat: Print black block
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500">
+              Feed paper เป็นคำสั่งง่ายสุด — ถ้ากระดาษออกมานิดเดียว = เจอ
+              protocol family ถูกแล้ว
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-gray-600">
             <label className="flex items-center gap-1">

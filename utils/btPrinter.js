@@ -22,6 +22,28 @@ const BLE_CHUNK_SIZE = 180; // safe under typical BLE MTU (185) after ATT overhe
 
 let currentDevice = null;
 let currentCharacteristic = null;
+let writableCandidates = []; // [{uuid, serviceUuid, characteristic, props}]
+let notifyChars = []; // [{uuid, characteristic}]
+
+function bytesToHex(view) {
+  const arr = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+}
+
+function propsToList(p) {
+  const keys = [
+    "broadcast",
+    "read",
+    "writeWithoutResponse",
+    "write",
+    "notify",
+    "indicate",
+    "authenticatedSignedWrites",
+    "reliableWrite",
+    "writableAuxiliaries",
+  ];
+  return keys.filter((k) => p[k]);
+}
 
 export function isSupported() {
   return typeof navigator !== "undefined" && !!navigator.bluetooth;
@@ -62,28 +84,74 @@ export async function requestAndConnect({ namePrefix, log } = {}) {
   const services = await server.getPrimaryServices();
   log?.(`found ${services.length} primary service(s)`);
 
-  let writable = null;
+  writableCandidates = [];
+  notifyChars = [];
   for (const svc of services) {
     const chars = await svc.getCharacteristics();
     for (const ch of chars) {
+      const propList = propsToList(ch.properties);
       const canWrite = ch.properties.write || ch.properties.writeWithoutResponse;
-      log?.(
-        `  svc ${svc.uuid} / ch ${ch.uuid} ` +
-          `[${Object.entries(ch.properties)
-            .filter(([, v]) => v)
-            .map(([k]) => k)
-            .join(",")}]`,
-      );
-      if (canWrite && !writable) writable = ch;
+      log?.(`  svc ${svc.uuid} / ch ${ch.uuid} [${propList.join(",") || "none"}]`);
+      if (canWrite) {
+        writableCandidates.push({
+          uuid: ch.uuid,
+          serviceUuid: svc.uuid,
+          characteristic: ch,
+          props: propList,
+        });
+      }
+      if (ch.properties.notify || ch.properties.indicate) {
+        notifyChars.push({ uuid: ch.uuid, characteristic: ch });
+      }
     }
   }
 
-  if (!writable) throw new Error("ไม่พบ writable characteristic");
-  log?.(`→ using write char ${writable.uuid}`);
+  // Auto-subscribe all notify chars so we can see responses from the printer.
+  for (const { uuid, characteristic } of notifyChars) {
+    try {
+      await characteristic.startNotifications();
+      characteristic.addEventListener("characteristicvaluechanged", (ev) => {
+        const v = ev.target.value;
+        log?.(`← notify ${uuid.slice(4, 8)}: ${bytesToHex(v)}`);
+      });
+      log?.(`✓ subscribed notify ${uuid}`);
+    } catch (e) {
+      log?.(`⚠ subscribe ${uuid} failed: ${e.message}`);
+    }
+  }
 
+  if (writableCandidates.length === 0) {
+    throw new Error("ไม่พบ writable characteristic");
+  }
+
+  // Prefer 0x2af0 (data channel on many Chinese BLE printers), else first writable.
+  const preferred =
+    writableCandidates.find((c) => c.uuid.startsWith("00002af0")) ||
+    writableCandidates[0];
   currentDevice = device;
-  currentCharacteristic = writable;
-  return { device, characteristic: writable };
+  currentCharacteristic = preferred.characteristic;
+  log?.(
+    `→ using write char ${preferred.uuid} ` +
+      `(${writableCandidates.length} writable total, use setActiveCharacteristic() to switch)`,
+  );
+
+  return { device, characteristic: preferred.characteristic };
+}
+
+export function listWritableCandidates() {
+  return writableCandidates.map(({ uuid, serviceUuid, props }) => ({
+    uuid,
+    serviceUuid,
+    props,
+  }));
+}
+
+export function setActiveCharacteristic(uuid, { log } = {}) {
+  const found = writableCandidates.find((c) => c.uuid === uuid);
+  if (!found) throw new Error(`characteristic not found: ${uuid}`);
+  currentCharacteristic = found.characteristic;
+  log?.(`→ switched write char to ${uuid}`);
+  return found.characteristic;
 }
 
 export async function writeBytes(bytes, { log } = {}) {
@@ -109,6 +177,8 @@ export function disconnect({ log } = {}) {
   } finally {
     currentDevice = null;
     currentCharacteristic = null;
+    writableCandidates = [];
+    notifyChars = [];
   }
 }
 
