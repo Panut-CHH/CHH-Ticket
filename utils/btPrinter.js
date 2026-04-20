@@ -33,7 +33,10 @@ export async function requestAndConnect({ namePrefix, log } = {}) {
   const filters = namePrefix
     ? [{ namePrefix }]
     : [
+        { namePrefix: "LuckP" },
+        { namePrefix: "Luck" },
         { namePrefix: "L2X" },
+        { namePrefix: "L2" },
         { namePrefix: "ZJT" },
         { namePrefix: "Printer" },
         { namePrefix: "MPT" },
