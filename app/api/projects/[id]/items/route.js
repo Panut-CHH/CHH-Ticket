@@ -105,46 +105,51 @@ async function getStationId(stationName, supabase) {
  * @param {object} supabase - Supabase client
  * @returns {Promise<{success: boolean, created: number, errors: string[]}>}
  */
-async function createTicketFlows(ticketNo, steps, supabase) {
+async function createTicketFlows(ticketNo, steps, supabase, ticketQuantity = 0) {
   // ตรวจสอบว่ามี flows อยู่แล้วหรือไม่
   const { data: existingFlows, error: checkError } = await supabase
     .from('ticket_station_flow')
     .select('id')
     .eq('ticket_no', ticketNo)
     .limit(1);
-  
+
   if (checkError) {
     console.error(`[ROADMAP] Error checking existing flows for ticket ${ticketNo}:`, checkError);
     return { success: false, created: 0, errors: [checkError.message] };
   }
-  
+
   if (existingFlows && existingFlows.length > 0) {
     console.log(`[ROADMAP] Ticket ${ticketNo} already has flows, skipping`);
     return { success: true, created: 0, errors: [] };
   }
-  
+
   // สร้าง flows ใหม่
   const flowsToInsert = [];
   const errors = [];
-  
+
   for (let i = 0; i < steps.length; i++) {
     const stationName = steps[i];
     const stationId = await getStationId(stationName, supabase);
-    
+
     if (!stationId) {
       const errorMsg = `Station "${stationName}" not found`;
       console.warn(`[ROADMAP] ${errorMsg} for ticket ${ticketNo}`);
       errors.push(errorMsg);
       continue; // Skip this step but continue with others
     }
-    
+
+    // สถานีแรก (i===0) → available_qty = ticketQuantity เพื่อให้เริ่มทำได้ทันที
+    // สถานีถัดไป → available_qty = 0 (รอสถานีก่อนหน้าส่งมา)
     flowsToInsert.push({
       ticket_no: ticketNo,
       station_id: stationId,
       step_order: i + 1,
       status: 'pending',
       price_type: 'flat',
-      price: 0
+      price: 0,
+      total_qty: ticketQuantity,
+      available_qty: i === 0 ? ticketQuantity : 0,
+      completed_qty: 0,
     });
   }
   
@@ -288,7 +293,7 @@ export async function POST(request, ctx) {
       // ค้นหา tickets ที่มี source_no = item_code
       const { data: tickets, error: ticketsError } = await supabaseServer
         .from('ticket')
-        .select('no')
+        .select('no, quantity')
         .eq('source_no', itemCode);
       
       if (ticketsError) {
@@ -307,7 +312,7 @@ export async function POST(request, ctx) {
           let totalErrors = 0;
           
           for (const ticket of tickets) {
-            const flowResult = await createTicketFlows(ticket.no, roadmapSteps, supabaseServer);
+            const flowResult = await createTicketFlows(ticket.no, roadmapSteps, supabaseServer, ticket.quantity || 0);
             
             if (flowResult.success) {
               totalCreated += flowResult.created;
