@@ -78,10 +78,28 @@ export async function requestAndConnect({ namePrefix, log } = {}) {
     currentCharacteristic = null;
   });
 
-  const server = await device.gatt.connect();
+  // Some Android BT stacks drop the GATT session if probed too fast.
+  // Retry getPrimaryServices a few times with backoff.
+  let server = await device.gatt.connect();
   log?.("gatt connected, probing services…");
 
-  const services = await server.getPrimaryServices();
+  let services = null;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      await new Promise((r) => setTimeout(r, 300 * attempt));
+      if (!device.gatt.connected) {
+        log?.(`  reconnecting (attempt ${attempt})…`);
+        server = await device.gatt.connect();
+      }
+      services = await server.getPrimaryServices();
+      break;
+    } catch (e) {
+      lastErr = e;
+      log?.(`  attempt ${attempt} failed: ${e.message}`);
+    }
+  }
+  if (!services) throw lastErr || new Error("ไม่สามารถอ่าน services ได้");
   log?.(`found ${services.length} primary service(s)`);
 
   writableCandidates = [];

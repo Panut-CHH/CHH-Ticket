@@ -207,6 +207,7 @@ export default function ProductionPage() {
               technician_id,
               users!ticket_assignments_technician_fk(name)
             `)
+            .order('technician_id', { ascending: true })
             .range(assignFrom, assignFrom + assignPageSize - 1);
 
           if (assignmentError) break;
@@ -264,6 +265,7 @@ export default function ProductionPage() {
             .from('ticket')
             .select('no, source_no, project_id, description, description_2, due_date, priority, customer_name, quantity, pass_quantity, store_status, unit, remark')
             .order('created_at', { ascending: false })
+            .order('no', { ascending: true })
             .range(from, from + pageSize - 1);
           if (pageError) throw pageError;
           if (page && page.length > 0) {
@@ -439,6 +441,7 @@ export default function ProductionPage() {
                 `)
                 .in('ticket_no', ticketChunk)
                 .order('step_order', { ascending: true })
+                .order('id', { ascending: true })
                 .range(from, from + pageSize - 1);
               
               if (error) {
@@ -502,6 +505,7 @@ export default function ProductionPage() {
               technician_id,
               users!ticket_assignments_technician_fk(name)
             `)
+            .order('id', { ascending: true })
             .range(assignFrom, assignFrom + assignPageSize - 1);
 
           if (assignmentError) {
@@ -513,6 +517,7 @@ export default function ProductionPage() {
               const { data: simpleData } = await supabase
                 .from('ticket_assignments')
                 .select('ticket_no, station_id, step_order, technician_id')
+                .order('id', { ascending: true })
                 .range(fbFrom, fbFrom + assignPageSize - 1);
               if (simpleData && simpleData.length > 0) {
                 fallbackAssignments = fallbackAssignments.concat(simpleData);
