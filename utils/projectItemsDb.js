@@ -14,18 +14,34 @@ const db = typeof window === 'undefined' ? supabaseServer : supabase;
  */
 export async function getAllProjectItems(projectId) {
   try {
-    const { data, error } = await db
-      .from('project_items')
-      .select('*')
-      .eq('project_id', projectId)
-      .order('created_at', { ascending: false });
+    // Paginated fetch — โปรเจ็คใหญ่อาจมี item เกิน 1000 แถว
+    const data = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page, error } = await db
+        .from('project_items')
+        .select('*')
+        .eq('project_id', projectId)
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error('Error fetching project items:', error);
-      return { success: false, error: error.message, data: [] };
+      if (error) {
+        console.error('Error fetching project items:', error);
+        return { success: false, error: error.message, data: [] };
+      }
+
+      if (page && page.length > 0) {
+        data.push(...page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
     }
 
-    return { success: true, data: data || [], error: null };
+    return { success: true, data, error: null };
   } catch (error) {
     console.error('Error fetching project items:', error);
     return { success: false, error: error.message, data: [] };

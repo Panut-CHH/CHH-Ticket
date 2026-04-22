@@ -39,18 +39,34 @@ export async function GET(request) {
       return NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 });
     }
 
-    let query = supabaseAdmin
-      .from('misc_deductions')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Paginated fetch — deductions สะสมข้ามหลาย payment rounds อาจเกิน 1000 แถว
+    const data = [];
+    {
+      let from = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        let query = supabaseAdmin
+          .from('misc_deductions')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .range(from, from + pageSize - 1);
 
-    if (technician_id) query = query.eq('technician_id', technician_id);
-    if (payment_round) query = query.eq('payment_round', payment_round);
+        if (technician_id) query = query.eq('technician_id', technician_id);
+        if (payment_round) query = query.eq('payment_round', payment_round);
 
-    const { data, error } = await query;
-
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        const { data: page, error } = await query;
+        if (error) {
+          return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+        }
+        if (page && page.length > 0) {
+          data.push(...page);
+          from += pageSize;
+          hasMore = page.length === pageSize;
+        } else {
+          hasMore = false;
+        }
+      }
     }
 
     return NextResponse.json({ success: true, data });

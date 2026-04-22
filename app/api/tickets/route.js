@@ -138,34 +138,50 @@ export async function POST(request) {
  */
 export async function GET(request) {
   try {
-    const { data: tickets, error } = await supabaseServer
-      .from('ticket')
-      .select(`
-        *,
-        projects (
-          id,
-          project_number,
-          project_name,
-          item_code
-        )
-      `)
-      .order('no', { ascending: false });
+    // Paginated fetch — โรงงาน scale อาจเกิน 1000 แถว (Supabase default cap)
+    const tickets = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page, error } = await supabaseServer
+        .from('ticket')
+        .select(`
+          *,
+          projects (
+            id,
+            project_number,
+            project_name,
+            item_code
+          )
+        `)
+        .order('no', { ascending: false })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error('Error fetching tickets:', error);
-      await logError(error, {
-        action: 'read',
-        entityType: 'ticket'
-      }, request);
-      return NextResponse.json(
-        { success: false, error: error.message },
-        { status: 500 }
-      );
+      if (error) {
+        console.error('Error fetching tickets:', error);
+        await logError(error, {
+          action: 'read',
+          entityType: 'ticket'
+        }, request);
+        return NextResponse.json(
+          { success: false, error: error.message },
+          { status: 500 }
+        );
+      }
+
+      if (page && page.length > 0) {
+        tickets.push(...page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
     }
 
     // Log successful read
     await logApiCall(request, 'read', 'ticket', null, {
-      count: tickets?.length || 0
+      count: tickets.length
     }, 'success', null);
 
     return NextResponse.json({

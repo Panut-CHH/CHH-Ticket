@@ -20,15 +20,30 @@ const isAdminOrManager = (roles) => {
 
 export async function GET() {
   try {
-    const { data, error } = await supabaseAdmin
-      .from('supply_items')
-      .select('*')
-      .eq('is_active', true)
-      .order('category')
-      .order('name');
+    // Paginated fetch — supply catalog อาจเกิน 1000 รายการในโรงงานใหญ่
+    const data = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page, error } = await supabaseAdmin
+        .from('supply_items')
+        .select('*')
+        .eq('is_active', true)
+        .order('category')
+        .order('name')
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      if (error) {
+        return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+      }
+      if (page && page.length > 0) {
+        data.push(...page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
     }
     return NextResponse.json({ success: true, data });
   } catch (e) {

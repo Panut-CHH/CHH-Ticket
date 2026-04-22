@@ -33,17 +33,32 @@ import { logActivity } from './clientLogger';
  */
 export async function getAllProjects() {
   try {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Paginated fetch — projects สะสมยาวข้ามหลายปี อาจเกิน 1000 แถว
+    const data = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page, error } = await supabase
+        .from('projects')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error('Error fetching projects:', error);
-      return { success: false, error: error.message, data: [] };
+      if (error) {
+        console.error('Error fetching projects:', error);
+        return { success: false, error: error.message, data: [] };
+      }
+      if (page && page.length > 0) {
+        data.push(...page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
     }
 
-    return { success: true, data: data || [], error: null };
+    return { success: true, data, error: null };
   } catch (error) {
     console.error('Error fetching projects:', error);
     return { success: false, error: error.message, data: [] };
@@ -222,18 +237,33 @@ export async function deleteProject(projectId) {
  */
 export async function searchProjects(searchTerm) {
   try {
-    const { data, error } = await supabase
-      .from('projects')
-      .select('*')
-      .or(`item_code.ilike.%${searchTerm}%,file_name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
-      .order('created_at', { ascending: false });
+    // Paginated fetch — search แบบ ilike อาจ match เยอะเกิน 1000 ในโรงงานที่มี projects สะสม
+    const data = [];
+    let from = 0;
+    const pageSize = 1000;
+    let hasMore = true;
+    while (hasMore) {
+      const { data: page, error } = await supabase
+        .from('projects')
+        .select('*')
+        .or(`item_code.ilike.%${searchTerm}%,file_name.ilike.%${searchTerm}%,description.ilike.%${searchTerm}%`)
+        .order('created_at', { ascending: false })
+        .range(from, from + pageSize - 1);
 
-    if (error) {
-      console.error('Error searching projects:', error);
-      return { success: false, error: error.message, data: [] };
+      if (error) {
+        console.error('Error searching projects:', error);
+        return { success: false, error: error.message, data: [] };
+      }
+      if (page && page.length > 0) {
+        data.push(...page);
+        from += pageSize;
+        hasMore = page.length === pageSize;
+      } else {
+        hasMore = false;
+      }
     }
 
-    return { success: true, data: data || [], error: null };
+    return { success: true, data, error: null };
   } catch (error) {
     console.error('Error searching projects:', error);
     return { success: false, error: error.message, data: [] };
