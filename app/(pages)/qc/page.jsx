@@ -201,6 +201,7 @@ export default function QCPage() {
         .from('qc_sessions')
         .select('id,ticket_no,station_id,station,qc_task_uuid,created_at,inspector_id,inspector', { count: 'exact' })
         .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(fromIdx, toIdx);
 
       if (historyFilters.ticketNo) {
@@ -252,9 +253,10 @@ export default function QCPage() {
           while (chunkHasMore) {
             const { data: flowPage } = await supabase
               .from('ticket_station_flow')
-              .select('ticket_no, step_order, station_id, qc_task_uuid, status, available_qty, completed_qty, total_qty, stations(name_th, code)')
+              .select('id, ticket_no, step_order, station_id, qc_task_uuid, status, available_qty, completed_qty, total_qty, stations(name_th, code)')
               .in('ticket_no', chunk)
               .order('step_order', { ascending: true })
+              .order('id', { ascending: true })
               .range(chunkFrom, chunkFrom + 999);
             if (flowPage && flowPage.length > 0) {
               allFlows = allFlows.concat(flowPage);
@@ -350,6 +352,7 @@ export default function QCPage() {
           .from('qc_sessions')
           .select('id')
           .gte('created_at', start.toISOString())
+          .order('id', { ascending: true })
           .range(sessionFrom, sessionFrom + sessionPageSize - 1);
         if (sessionsError) throw sessionsError;
         allSessions = allSessions.concat(sessionPage || []);

@@ -126,6 +126,7 @@ function QCKpiContent() {
           .gte('created_at', fromIso)
           .lte('created_at', toIso)
           .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
       );
 
       if (sessions.length === 0) {
@@ -139,8 +140,9 @@ function QCKpiContent() {
       const sessionIds = sessions.map(s => s.id);
       const rows = await paginateInSelect(sessionIds, (chunk) =>
         supabase.from('qc_rows')
-          .select('session_id, sample_qty, actual_qty, pass')
+          .select('id, session_id, sample_qty, actual_qty, pass')
           .in('session_id', chunk)
+          .order('id', { ascending: true })
       );
       const qtyBySession = {};
       (rows || []).forEach(r => {
@@ -156,9 +158,10 @@ function QCKpiContent() {
       const ticketNos = sessions.map(s => s.ticket_no).filter(Boolean);
       const flows = await paginateInSelect(ticketNos, (chunk) =>
         supabase.from('ticket_station_flow')
-          .select('ticket_no, station_id, step_order, status, started_at, completed_at, updated_at, qc_task_uuid, stations(name_th, code)')
+          .select('id, ticket_no, station_id, step_order, status, started_at, completed_at, updated_at, qc_task_uuid, stations(name_th, code)')
           .in('ticket_no', chunk)
           .order('step_order', { ascending: true })
+          .order('id', { ascending: true })
       );
       const flowByTicket = {};
       (flows || []).forEach(f => {
@@ -245,9 +248,11 @@ function QCKpiContent() {
     // Pending QC steps: status != completed, step name contains QC, remaining > 0
     const qcFlows = await paginateSelect(() =>
       supabase.from('ticket_station_flow')
-        .select('ticket_no, station_id, step_order, status, available_qty, completed_qty, stations(name_th, code)')
+        .select('id, ticket_no, station_id, step_order, status, available_qty, completed_qty, stations(name_th, code)')
         .neq('status', 'completed')
         .order('ticket_no', { ascending: true })
+        .order('step_order', { ascending: true })
+        .order('id', { ascending: true })
     );
     const qcOnly = (qcFlows || []).filter(f => {
       const name = String(f.stations?.name_th || f.stations?.code || '').toUpperCase();
@@ -262,9 +267,10 @@ function QCKpiContent() {
     const ticketNos = Array.from(new Set(qcOnly.map(f => f.ticket_no)));
     const allFlowsForPrev = await paginateInSelect(ticketNos, (chunk) =>
       supabase.from('ticket_station_flow')
-        .select('ticket_no, station_id, step_order, stations(name_th, code)')
+        .select('id, ticket_no, station_id, step_order, stations(name_th, code)')
         .in('ticket_no', chunk)
         .order('step_order', { ascending: true })
+        .order('id', { ascending: true })
     );
     const byTicket = {};
     (allFlowsForPrev || []).forEach(f => {

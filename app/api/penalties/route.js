@@ -31,6 +31,7 @@ export async function GET(request) {
         approver:users!penalty_deductions_approved_by_fkey(id, name, email)
       `, { count: 'exact' })
       .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
       .range(offset, offset + limit - 1);
 
     if (status) {

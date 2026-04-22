@@ -73,7 +73,8 @@ export async function GET(request) {
           email
         )
       `)
-      .order('started_at', { ascending: false });
+      .order('started_at', { ascending: false })
+      .order('id', { ascending: true });
 
     // Apply filters
     const toIso = (d) => new Date(d).toISOString();

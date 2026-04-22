@@ -28,7 +28,11 @@ async function loadAssignmentMap() {
     while (true) {
       const { data: page } = await client
         .from('view_ticket_assignments_with_user')
-        .select('ticket_no, station_id, step_order, technician_name')
+        .select('ticket_no, station_id, step_order, technician_id, technician_name')
+        .order('ticket_no', { ascending: true })
+        .order('step_order', { ascending: true })
+        .order('station_id', { ascending: true })
+        .order('technician_id', { ascending: true })
         .range(aFrom, aFrom + aPageSize - 1);
       allAssignments = allAssignments.concat(page || []);
       if (!page || page.length < aPageSize) break;
@@ -63,6 +67,7 @@ export async function loadActiveQcQueue() {
         .from('ticket')
         .select('no, source_no, description, priority, quantity, pass_quantity')
         .order('created_at', { ascending: false })
+        .order('no', { ascending: true })
         .range(from, from + pageSize - 1);
       if (page && page.length > 0) {
         dbTickets = dbTickets.concat(page);
@@ -126,6 +131,7 @@ export async function loadActiveQcQueue() {
             .select(`*, stations(name_th, code)`)
             .in('ticket_no', ticketChunk)
             .order('step_order', { ascending: true })
+            .order('id', { ascending: true })
             .range(from, from + pageSize - 1);
           
           if (error) {

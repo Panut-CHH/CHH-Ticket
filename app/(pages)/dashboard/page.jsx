@@ -88,7 +88,7 @@ export default function DashboardPage() {
           const pageSize = 1000;
           let hasMore = true;
           while (hasMore) {
-            const { data: page } = await supabase.from('ticket').select('status, created_at').range(from, from + pageSize - 1);
+            const { data: page } = await supabase.from('ticket').select('status, created_at').order('no', { ascending: true }).range(from, from + pageSize - 1);
             if (page && page.length > 0) {
               tickets = tickets.concat(page);
               from += pageSize;
@@ -148,6 +148,7 @@ export default function DashboardPage() {
             const { data: flowPage } = await supabase
               .from('ticket_station_flow')
               .select('station_id, status, stations(name_th)')
+              .order('id', { ascending: true })
               .range(flowFrom, flowFrom + flowPageSize - 1);
             allFlows = allFlows.concat(flowPage || []);
             if (!flowPage || flowPage.length < flowPageSize) break;
@@ -178,6 +179,8 @@ export default function DashboardPage() {
               .from('technician_work_sessions')
               .select('started_at, completed_at')
               .gte('started_at', since.toISOString())
+              .order('started_at', { ascending: true })
+              .order('id', { ascending: true })
               .range(sessFrom, sessFrom + sessPageSize - 1);
             sessions = sessions.concat(sessPage || []);
             if (!sessPage || sessPage.length < sessPageSize) break;
@@ -213,7 +216,7 @@ export default function DashboardPage() {
           const pageSize = 1000;
           let hasMore = true;
           while (hasMore) {
-            const { data: page } = await supabase.from('ticket').select('no, status, source_no, priority').range(from, from + pageSize - 1);
+            const { data: page } = await supabase.from('ticket').select('no, status, source_no, priority').order('no', { ascending: true }).range(from, from + pageSize - 1);
             if (page && page.length > 0) {
               data = data.concat(page);
               from += pageSize;
@@ -300,6 +303,7 @@ export default function DashboardPage() {
             .from('ticket_station_flow')
             .select('ticket_no, station_id, status, step_order, stations(name_th)')
             .in('status', ['pending', 'current'])
+            .order('id', { ascending: true })
             .range(flowDetailFrom, flowDetailFrom + flowDetailPageSize - 1);
           allFlowsDetail = allFlowsDetail.concat(page || []);
           if (!page || page.length < flowDetailPageSize) break;

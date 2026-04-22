@@ -75,8 +75,12 @@ export async function GET(request) {
       while (true) {
         const { data: a } = await supabaseAdmin
           .from('view_ticket_assignments_with_user')
-          .select('ticket_no, station_id, step_order, technician_name')
+          .select('ticket_no, station_id, step_order, technician_id, technician_name')
           .in('ticket_no', ticketNos)
+          .order('ticket_no', { ascending: true })
+          .order('step_order', { ascending: true })
+          .order('station_id', { ascending: true })
+          .order('technician_id', { ascending: true })
           .range(from, from + ps - 1);
         assignments = assignments.concat(a || []);
         if (!a || a.length < ps) break;
@@ -93,6 +97,7 @@ export async function GET(request) {
             .from('ticket_assignments')
             .select('ticket_no, station_id, step_order, technician_id, users(name)')
             .in('ticket_no', ticketNos)
+            .order('id', { ascending: true })
             .range(from, from + ps - 1);
           raw = raw.concat(ta || []);
           if (!ta || ta.length < ps) break;

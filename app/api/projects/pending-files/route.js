@@ -33,6 +33,7 @@ export async function GET(request) {
             )
           `)
           .order('created_at', { ascending: false })
+          .order('id', { ascending: true })
           .range(from, from + pageSize - 1);
 
         if (itemsError) {
@@ -69,8 +70,9 @@ export async function GET(request) {
         while (hasMore) {
           const { data: filesPage, error: filesError } = await supabaseServer
             .from('project_files')
-            .select('project_item_id')
+            .select('project_item_id, id')
             .in('project_item_id', chunk)
+            .order('id', { ascending: true })
             .range(from, from + pageSize - 1);
 
           if (filesError) {

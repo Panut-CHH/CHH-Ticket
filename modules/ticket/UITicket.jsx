@@ -96,28 +96,43 @@ export default function UITicket() {
         // รวม item codes จาก project_items ด้วย (ครอบคลุมกรณีเพิ่ม item ภายหลัง)
         // สร้าง projectIdMap เพื่อ map project_items.project_id -> project
         const projectIdMap = new Map(projects.map(p => [p.id, p]));
+
+        // ดึง project_items ทั้งหมดแบบ paginated (โรงงาน scale อาจเกิน 1000 แถว)
+        const allProjectItems = [];
         try {
-          const { data: projectItems, error: projectItemsError } = await supabase
-            .from('project_items')
-            .select('project_id, item_code');
-          
-          if (!projectItemsError && Array.isArray(projectItems)) {
-            for (const it of projectItems) {
-              if (it?.item_code) {
-                itemCodes.push(it.item_code);
-              }
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page, error: projectItemsError } = await supabase
+              .from('project_items')
+              .select('project_id, item_code')
+              .range(from, from + pageSize - 1);
+            if (projectItemsError) break;
+            if (page && page.length > 0) {
+              allProjectItems.push(...page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
             }
           }
         } catch {}
-        
+
+        for (const it of allProjectItems) {
+          if (it?.item_code) {
+            itemCodes.push(it.item_code);
+          }
+        }
+
         // ทำให้ itemCodes เป็น unique และคงลำดับล่าสุดไว้
         const itemCodesSet = Array.from(new Set(itemCodes.filter(Boolean)));
-        
+
         if (!itemCodesSet.length) {
           if (active) setErpTickets([]);
           return;
         }
-        
+
         // สร้าง project map: map item_code -> project (รองรับทั้ง projects.item_code และ project_items.item_code)
         const projectMap = new Map();
         projects.forEach(p => {
@@ -125,21 +140,13 @@ export default function UITicket() {
             projectMap.set(p.item_code, p);
           }
         });
-        // เติมจาก project_items
-        try {
-          const { data: projectItems, error: projectItemsError } = await supabase
-            .from('project_items')
-            .select('project_id, item_code');
-          
-          if (!projectItemsError && Array.isArray(projectItems)) {
-            for (const it of projectItems) {
-              const proj = projectIdMap.get(it.project_id);
-              if (proj && it?.item_code && !projectMap.has(it.item_code)) {
-                projectMap.set(it.item_code, proj);
-              }
-            }
+        // เติมจาก project_items (ใช้ข้อมูลที่ดึง paginated ไว้แล้ว)
+        for (const it of allProjectItems) {
+          const proj = projectIdMap.get(it.project_id);
+          if (proj && it?.item_code && !projectMap.has(it.item_code)) {
+            projectMap.set(it.item_code, proj);
           }
-        } catch {}
+        }
 
         // เก็บ projectMap ไว้ใช้ในมุมมองแบบ grouped ด้วย
         setProjectMapByItemCode(projectMap);
@@ -540,13 +547,29 @@ export default function UITicket() {
     let active = true;
     const loadItemCodesAndErpAll = async () => {
       try {
-        // ดึง item_code ทั้งหมดจาก project_items
-        const { data: items, error: itemsError } = await supabase
-          .from('project_items')
-          .select('item_code');
-        if (itemsError) throw itemsError;
+        // ดึง item_code ทั้งหมดจาก project_items (paginated — โรงงาน scale อาจเกิน 1000 แถว)
+        const items = [];
+        {
+          let from = 0;
+          const pageSize = 1000;
+          let hasMore = true;
+          while (hasMore) {
+            const { data: page, error: itemsError } = await supabase
+              .from('project_items')
+              .select('item_code')
+              .range(from, from + pageSize - 1);
+            if (itemsError) throw itemsError;
+            if (page && page.length > 0) {
+              items.push(...page);
+              from += pageSize;
+              hasMore = page.length === pageSize;
+            } else {
+              hasMore = false;
+            }
+          }
+        }
 
-        const codes = [...new Set((items || []).map(i => i?.item_code).filter(Boolean))];
+        const codes = [...new Set(items.map(i => i?.item_code).filter(Boolean))];
         if (active) setItemCodes(codes);
 
         // ถ้าไม่มี item code ให้จบ
