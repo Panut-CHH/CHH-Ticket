@@ -1009,10 +1009,12 @@ export default function QCPage() {
                         {(() => {
                           const steps = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
                           const qcIdx = qcIndex;
-                          const qc = qcIdx >= 0 ? steps[qcIdx] : null;
-                          const ts = qc?.updatedAt ? new Date(qc.updatedAt) : null;
+                          const prev = qcIdx > 0 ? steps[qcIdx - 1] : null;
+                          const raw = prev?.completedAt || prev?.updatedAt || null;
+                          const ts = raw ? new Date(raw) : null;
                           const text = ts ? ts.toLocaleString('th-TH', { hour12: false }) : '-';
-                          return <span>{text}</span>;
+                          const label = language === 'th' ? 'ส่งถึง QC' : 'Sent to QC';
+                          return <span title={label}>{label}: {text}</span>;
                         })()}
                       </div>
                     </div>

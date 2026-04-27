@@ -234,6 +234,7 @@ export default function UITicket() {
                 )
               `)
               .not('no', 'like', 'TICKET-%')
+              .order('no', { ascending: true })
               .range(from, from + pageSize - 1);
             if (page && page.length > 0) {
               dbTickets = dbTickets.concat(page);
@@ -783,8 +784,9 @@ export default function UITicket() {
               )
             `)
             .order('step_order', { ascending: true })
+            .order('id', { ascending: true })
             .range(from, from + pageSize - 1);
-          
+
           if (flowError) {
             console.error('Failed to load station flows:', flowError);
             if (active) setDbStationFlows([]);
@@ -821,6 +823,10 @@ export default function UITicket() {
                   technician_id,
                   users!ticket_assignments_technician_fk(name)
                 `)
+                .order('ticket_no', { ascending: true })
+                .order('station_id', { ascending: true })
+                .order('step_order', { ascending: true })
+                .order('technician_id', { ascending: true })
                 .range(assignFrom, assignFrom + assignPageSize - 1);
 
               if (assignmentError) {
@@ -833,6 +839,10 @@ export default function UITicket() {
                   const { data: simpleData } = await supabase
                     .from('ticket_assignments')
                     .select('ticket_no, station_id, step_order, technician_id')
+                    .order('ticket_no', { ascending: true })
+                    .order('station_id', { ascending: true })
+                    .order('step_order', { ascending: true })
+                    .order('technician_id', { ascending: true })
                     .range(fbFrom, fbFrom + assignPageSize - 1);
                   if (simpleData && simpleData.length > 0) {
                     fallbackAssignments = fallbackAssignments.concat(simpleData);

@@ -182,6 +182,7 @@ export async function loadActiveQcQueue() {
         stationId: flow.station_id,
         stepOrder: flow.step_order,
         updatedAt: flow.updated_at || flow.created_at,
+        completedAt: flow.completed_at || null,
         qcTaskUuid: flow.qc_task_uuid || null,
         total_qty: flow.total_qty || 0,
         available_qty: flow.available_qty || 0,
