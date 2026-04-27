@@ -681,6 +681,7 @@ export default function UITicket() {
   // State สำหรับข้อมูลจาก Supabase
   const [dbTickets, setDbTickets] = useState([]);
   const [dbStationFlows, setDbStationFlows] = useState([]);
+  const [stationFlowsLoaded, setStationFlowsLoaded] = useState(false);
   const [dbBoms, setDbBoms] = useState([]); // BOM data
 
   // โหลดข้อมูล tickets และ station flows จาก Supabase
@@ -943,7 +944,10 @@ export default function UITicket() {
       }
     };
 
-    loadStationFlows();
+    setStationFlowsLoaded(false);
+    loadStationFlows().finally(() => {
+      if (active) setStationFlowsLoaded(true);
+    });
     return () => { active = false; };
   }, [refreshTrigger]);
 
@@ -1785,6 +1789,9 @@ export default function UITicket() {
                 <div className="w-full overflow-x-auto overflow-y-hidden pb-2 roadmap-scroll">
                   {/* เนื้อหา roadmap ใช้ inline-flex ให้ยาวเฉพาะในกล่อง scroll นี้ */}
                   <div className="inline-flex items-center gap-2 sm:gap-2 lg:gap-3">
+                    {ticket.roadmap.length === 0 && !stationFlowsLoaded && (
+                      <RoadmapSkeleton steps={5} />
+                    )}
                     {ticket.roadmap.map((step, stepIndex) => (
                       <div key={stepIndex} className="flex items-center flex-shrink-0 relative">
                         <div className="flex flex-col items-center">
@@ -2603,6 +2610,27 @@ export default function UITicket() {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+function RoadmapSkeleton({ steps = 5 }) {
+  return (
+    <div className="inline-flex items-center gap-2 sm:gap-2 lg:gap-3 animate-pulse" aria-busy="true" aria-label="Loading roadmap">
+      {Array.from({ length: steps }).map((_, i) => (
+        <div key={i} className="flex items-center flex-shrink-0">
+          <div className="flex flex-col items-center">
+            <div className="w-3 h-3 sm:w-3.5 sm:h-3.5 xl:w-4 xl:h-4 rounded-full bg-gray-200 dark:bg-slate-700 border-2 border-gray-200 dark:border-slate-700" />
+            <div className="mt-1.5 sm:mt-2 px-1.5 sm:px-2 py-1 rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800">
+              <div className="h-2 w-3 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="mt-1 h-2 w-10 sm:w-12 rounded bg-gray-200 dark:bg-slate-700" />
+            </div>
+          </div>
+          {i < steps - 1 && (
+            <div className="w-8 sm:w-10 lg:w-10 xl:w-16 mx-1 sm:mx-2 xl:mx-3 h-0.5 bg-gray-200 dark:bg-slate-700" />
+          )}
+        </div>
+      ))}
     </div>
   );
 }
