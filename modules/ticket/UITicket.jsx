@@ -2189,13 +2189,7 @@ export default function UITicket() {
       {/* Tab Content */}
       <div className="space-y-6" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
         {loadingInitial ? (
-          <div className="text-center py-12">
-            <div className="flex flex-col items-center gap-4">
-              <div className="w-12 h-12 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
-              <div className="text-lg font-medium text-gray-700 dark:text-gray-300">กำลังโหลดข้อมูลตั๋ว...</div>
-              <div className="text-sm text-gray-500 dark:text-gray-400">กรุณารอสักครู่</div>
-            </div>
-          </div>
+          <TicketListSkeleton count={5} />
         ) : currentTab ? (
           <div className="space-y-4" style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
             {/* แสดงผลแบบกลุ่มตาม Item Code ก่อน */}
@@ -2609,6 +2603,54 @@ export default function UITicket() {
         </div>
       )}
       </div>
+    </div>
+  );
+}
+
+function TicketListSkeleton({ count = 5 }) {
+  return (
+    <div className="space-y-4" aria-busy="true" aria-label="Loading tickets">
+      {Array.from({ length: count }).map((_, i) => (
+        <div
+          key={i}
+          className="ticket-card bg-white dark:bg-slate-800 rounded-lg shadow-sm border border-gray-200 dark:border-slate-700 animate-pulse"
+        >
+          <div className="flex items-center justify-between p-4 sm:p-5">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div className="w-4 h-4 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="h-5 w-40 sm:w-56 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="h-5 w-24 rounded-full bg-gray-200 dark:bg-slate-700 hidden sm:block" />
+            </div>
+            <div className="h-4 w-16 rounded bg-gray-200 dark:bg-slate-700" />
+          </div>
+          <div className="border-t border-gray-100 dark:border-slate-700 p-4 sm:p-5 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="h-5 w-28 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="h-5 w-20 rounded-full bg-gray-200 dark:bg-slate-700" />
+              <div className="h-5 w-24 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="h-5 w-32 rounded bg-gray-200 dark:bg-slate-700" />
+            </div>
+            <div className="space-y-2">
+              <div className="h-4 w-3/4 rounded bg-gray-200 dark:bg-slate-700" />
+              <div className="h-3 w-1/2 rounded bg-gray-200 dark:bg-slate-700" />
+            </div>
+            <div className="border border-gray-100 dark:border-slate-700 rounded-lg p-3 sm:p-4 bg-gray-50 dark:bg-slate-800/50">
+              <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
+                {Array.from({ length: 7 }).map((__, s) => (
+                  <React.Fragment key={s}>
+                    <div className="flex flex-col items-center gap-2 flex-shrink-0">
+                      <div className="w-3.5 h-3.5 rounded-full bg-gray-200 dark:bg-slate-700" />
+                      <div className="h-6 w-12 sm:w-14 rounded bg-gray-200 dark:bg-slate-700" />
+                    </div>
+                    {s < 6 && <div className="w-8 sm:w-10 h-0.5 bg-gray-200 dark:bg-slate-700 flex-shrink-0" />}
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+            <div className="h-9 w-full rounded-lg bg-gray-100 dark:bg-slate-700/60" />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
