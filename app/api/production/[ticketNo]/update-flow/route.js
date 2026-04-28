@@ -251,10 +251,42 @@ export async function POST(request, { params }) {
       // ตรวจสอบว่า step นี้มีชิ้นงานพร้อมทำหรือยัง (available_qty > 0)
       const targetFlow = flows?.find(f => f.station_id === station_id && f.step_order === step_order);
       if (targetFlow && targetFlow.available_qty <= 0 && targetFlow.step_order !== 1) {
-        return NextResponse.json(
-          { success: false, error: 'ยังไม่มีชิ้นงานมาถึงสถานีนี้' },
-          { status: 400 }
-        );
+        // Auto-backfill: ถ้า step ก่อนหน้า completed แล้วแต่ qty ยังไม่ถูก forward
+        // (เช่น ตั๋วเก่าก่อน migration หรือ race condition ใน completeQCStation)
+        const prevFlow = flows.find(f => f.step_order === step_order - 1);
+        const prevAlreadyForwarded = prevFlow ? (flows || [])
+          .filter(f => f.step_order > prevFlow.step_order)
+          .reduce((sum, f) => sum + (Number(f.available_qty) || 0), 0) : 0;
+        const recoverableQty = prevFlow && prevFlow.status === 'completed'
+          ? Math.max(0, (Number(prevFlow.completed_qty) || 0) - prevAlreadyForwarded)
+          : 0;
+
+        if (recoverableQty > 0) {
+          console.warn('[API] Auto-backfill available_qty:', {
+            ticketNo, step_order,
+            prev_completed: prevFlow.completed_qty,
+            already_forwarded: prevAlreadyForwarded,
+            backfilled: recoverableQty
+          });
+          await supabaseAdmin
+            .from('ticket_station_flow')
+            .update({ available_qty: recoverableQty })
+            .eq('id', targetFlow.id);
+          await supabaseAdmin
+            .from('station_qty_transfers')
+            .insert({
+              ticket_no: ticketNo,
+              from_step_order: prevFlow.step_order,
+              to_step_order: step_order,
+              quantity: recoverableQty
+            });
+          targetFlow.available_qty = recoverableQty;
+        } else {
+          return NextResponse.json(
+            { success: false, error: 'ยังไม่มีชิ้นงานมาถึงสถานีนี้' },
+            { status: 400 }
+          );
+        }
       }
 
       // Update to current - อนุญาตให้หลายสถานี active พร้อมกันได้ (Progress-based)
