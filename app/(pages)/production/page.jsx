@@ -1027,8 +1027,8 @@ export default function ProductionPage() {
               return false;
             }
             
-            // ถ้าสถานีสีเป็น current และ assign ให้ตัวเอง แสดงได้เลย
-            if (paintingStatus === 'current') {
+            // ถ้าสถานีสีเป็น current หรือ in_progress และ assign ให้ตัวเอง แสดงได้เลย
+            if (paintingStatus === 'current' || paintingStatus === 'in_progress') {
               return true;
             }
             
