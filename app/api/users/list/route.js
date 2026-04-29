@@ -17,13 +17,26 @@ const supabaseAdmin = createClient(
 /**
  * GET /api/users/list
  * Get list of users for filter dropdowns
+ *
+ * Query params:
+ *   - includeInactive=true → คืนทั้ง active + inactive (ใช้ในหน้า settings/รายงานย้อนหลัง)
+ *   - default → คืนเฉพาะ user ที่ status='active' (ใช้ใน dropdown assign / filter ตั๋วใหม่)
  */
 export async function GET(request) {
   try {
-    const { data: users, error } = await supabaseAdmin
+    const { searchParams } = new URL(request.url);
+    const includeInactive = searchParams.get('includeInactive') === 'true';
+
+    let query = supabaseAdmin
       .from('users')
-      .select('id, name, email, role, roles')
+      .select('id, name, email, role, roles, status')
       .order('name', { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('status', 'active');
+    }
+
+    const { data: users, error } = await query;
 
     if (error) {
       console.error('[API] Error fetching users:', error);

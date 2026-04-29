@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect } from "react";
-import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database, RotateCcw, Banknote, Save, Loader2 } from "lucide-react";
+import { User as UserIcon, Users, Shield, Check, Search, Plus, Pencil, Trash2, X, Database, RotateCcw, Banknote, Save, Loader2, UserX, UserCheck } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { t } from "@/utils/translations";
@@ -392,26 +392,37 @@ function UserManagement() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteUser = async (userId) => {
-    if (confirm(language === 'th' ? "คุณแน่ใจหรือไม่ที่จะลบผู้ใช้นี้?" : "Are you sure you want to delete this user?")) {
-      try {
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', userId);
-        
-        if (error) {
-          console.error('Error deleting user:', error);
-          alert(language === 'th' ? 'เกิดข้อผิดพลาดในการลบผู้ใช้' : 'Error deleting user');
-          return;
-        }
-        
-        // Refresh the users list
-        await fetchUsers();
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        alert(language === 'th' ? 'เกิดข้อผิดพลาดในการลบผู้ใช้' : 'Error deleting user');
+  const handleToggleUserStatus = async (user) => {
+    const willDeactivate = user.status === 'active';
+    const confirmMsg = willDeactivate
+      ? (language === 'th'
+          ? `ปิดการใช้งานผู้ใช้ "${user.name}"?\n\nผู้ใช้จะไม่ปรากฏในรายการมอบหมายงาน/ตัวกรองตั๋วใหม่\nแต่ข้อมูลเก่า (ตั๋ว, รายงานการเงิน) จะยังคงอยู่ครบ`
+          : `Deactivate user "${user.name}"?\n\nThe user will be hidden from assignment & filter dropdowns,\nbut historical records (tickets, financial reports) remain intact.`)
+      : (language === 'th'
+          ? `เปิดการใช้งานผู้ใช้ "${user.name}" อีกครั้ง?`
+          : `Reactivate user "${user.name}"?`);
+
+    if (!confirm(confirmMsg)) return;
+
+    try {
+      const { error } = await supabase
+        .from('users')
+        .update({
+          status: willDeactivate ? 'inactive' : 'active',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        console.error('Error toggling user status:', error);
+        alert(language === 'th' ? 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้' : 'Error changing user status');
+        return;
       }
+
+      await fetchUsers();
+    } catch (error) {
+      console.error('Error toggling user status:', error);
+      alert(language === 'th' ? 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะผู้ใช้' : 'Error changing user status');
     }
   };
 
@@ -541,11 +552,23 @@ function UserManagement() {
                             <Pencil className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 transition-colors"
-                            title={language === 'th' ? 'ลบ' : 'Delete'}
+                            onClick={() => handleToggleUserStatus(user)}
+                            className={`p-1.5 rounded-lg transition-colors ${
+                              user.status === 'active'
+                                ? 'hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600'
+                                : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20 text-emerald-600'
+                            }`}
+                            title={
+                              user.status === 'active'
+                                ? (language === 'th' ? 'ปิดการใช้งาน' : 'Deactivate')
+                                : (language === 'th' ? 'เปิดการใช้งาน' : 'Reactivate')
+                            }
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {user.status === 'active' ? (
+                              <UserX className="w-4 h-4" />
+                            ) : (
+                              <UserCheck className="w-4 h-4" />
+                            )}
                           </button>
                         </div>
                       </td>

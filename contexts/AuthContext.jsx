@@ -391,9 +391,32 @@ export const AuthProvider = ({ children }) => {
       if (process.env.NODE_ENV === 'development') {
         console.log('AuthContext: Login successful, user:', supaUser.email);
       }
-      
+
+      // เช็คว่า user ยังเปิดการใช้งานอยู่ไหม (soft-deactivate guard)
+      const { data: profileRow, error: profileError } = await supabase
+        .from('users')
+        .select('status')
+        .eq('id', supaUser.id)
+        .maybeSingle();
+
+      if (profileError) {
+        console.warn('AuthContext: failed to fetch user status:', profileError.message);
+      }
+
+      if (profileRow && profileRow.status !== 'active') {
+        await supabase.auth.signOut().catch(() => {});
+        await logAuthEvent('login_failed', false, {
+          email,
+          errorMessage: 'user_inactive'
+        }).catch(err => console.warn('Failed to log auth event:', err));
+        return {
+          success: false,
+          error: 'บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ'
+        };
+      }
+
       // Normalize roles: support both old format (role) and new format (roles)
-      const roles = supaUser.user_metadata?.roles || 
+      const roles = supaUser.user_metadata?.roles ||
                    (supaUser.user_metadata?.role ? [supaUser.user_metadata.role] : ["user"]);
       
       const profile = {
