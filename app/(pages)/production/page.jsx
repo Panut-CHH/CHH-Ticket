@@ -58,6 +58,8 @@ export default function ProductionPage() {
   
   // All technicians from users table
   const [allTechnicians, setAllTechnicians] = useState([]);
+  // ชื่อช่างที่ถูกปิดการใช้งาน — ใช้กรองออกจาก dropdown ถึงแม้จะปรากฏในตั๋วเก่า
+  const [inactiveTechnicianNames, setInactiveTechnicianNames] = useState([]);
   
   // Tab state for completed/incomplete tickets
   // Initialize from URL parameter if present, otherwise default to 'incomplete'
@@ -168,34 +170,45 @@ export default function ProductionPage() {
       const technicianNames = new Set();
       
       // Method 1: Load from users table with production-related roles
+      // ดึงทั้ง active + inactive เพื่อรู้ว่าใครถูกปิดใช้งาน (ใช้ exclude ภายหลัง)
+      const inactiveNames = new Set();
       try {
         const { data: usersData, error: usersError } = await supabase
           .from('users')
           .select('id, name, role, roles, status')
-          .eq('status', 'active')
           .order('name', { ascending: true });
-        
+
         if (!usersError && Array.isArray(usersData)) {
           usersData.forEach(user => {
+            const trimmedName = user.name?.trim();
+            if (!trimmedName) return;
+
+            if (user.status !== 'active') {
+              inactiveNames.add(trimmedName);
+              return;
+            }
+
             // Check if user has production-related role
             const userRoles = user.roles || (user.role ? [user.role] : []);
             const hasProductionRole = userRoles.some(r => {
               const role = String(r).toLowerCase();
-              return role === 'production' || role === 'painting' || role === 'packing' || 
+              return role === 'production' || role === 'painting' || role === 'packing' ||
                      role === 'cnc' || role === 'storage' || role === 'viewer';
             });
-            
-            if (hasProductionRole && user.name && user.name.trim()) {
-              technicianNames.add(user.name.trim());
+
+            if (hasProductionRole) {
+              technicianNames.add(trimmedName);
             }
           });
         }
       } catch (e) {
         console.warn('Failed to load technicians from users table:', e);
       }
+      setInactiveTechnicianNames(Array.from(inactiveNames));
       
       // Method 2: Also load from ticket_assignments to catch any technicians that might be missing
       // ใช้ pagination เพราะ ticket_assignments เกิน 1000 แถวแล้ว
+      // กรองเฉพาะ user ที่ status='active' เพื่อไม่ให้คนที่ถูกปิดการใช้งานโผล่ใน filter
       try {
         let assignFrom = 0;
         const assignPageSize = 1000;
@@ -205,7 +218,7 @@ export default function ProductionPage() {
             .from('ticket_assignments')
             .select(`
               technician_id,
-              users!ticket_assignments_technician_fk(name)
+              users!ticket_assignments_technician_fk(name, status)
             `)
             .order('technician_id', { ascending: true })
             .range(assignFrom, assignFrom + assignPageSize - 1);
@@ -213,8 +226,9 @@ export default function ProductionPage() {
           if (assignmentError) break;
           if (assignmentData && assignmentData.length > 0) {
             assignmentData.forEach(assignment => {
-              if (assignment.users?.name && assignment.users.name.trim()) {
-                technicianNames.add(assignment.users.name.trim());
+              const u = assignment.users;
+              if (u?.name && u.name.trim() && u.status === 'active') {
+                technicianNames.add(u.name.trim());
               }
             });
             assignFrom += assignPageSize;
@@ -1266,12 +1280,14 @@ export default function ProductionPage() {
 
   // Get all unique technician names - combine from users table and tickets
   // Priority: Use allTechnicians from users table, then add any from tickets that might be missing
+  // กรองชื่อ user ที่ถูกปิดการใช้งานออก ถึงแม้จะปรากฏในตั๋วเก่า (ตั๋วยังโชว์ชื่อปกติ — แค่ไม่ขึ้นใน filter)
   const availableTechnicians = useMemo(() => {
     const technicians = new Set();
-    
+    const excludeSet = new Set(inactiveTechnicianNames);
+
     // First, add all technicians from users table
     allTechnicians.forEach(tech => technicians.add(tech));
-    
+
     // Then, also add technicians from tickets (in case some are in tickets but not in users table with proper role)
     tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
@@ -1295,9 +1311,9 @@ export default function ProductionPage() {
         techs.forEach(tech => technicians.add(tech));
       }
     });
-    
-    return Array.from(technicians).sort();
-  }, [allTechnicians, tickets]);
+
+    return Array.from(technicians).filter(name => !excludeSet.has(name)).sort();
+  }, [allTechnicians, inactiveTechnicianNames, tickets]);
 
   // Get all unique project names from tickets
   // Use 'tickets' instead of 'myTickets' to show all available projects in the system
