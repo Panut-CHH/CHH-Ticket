@@ -305,8 +305,8 @@ export default function ReportPage() {
 
   // คำนวณตำแหน่ง preview: วางทางซ้ายของไอคอน, fallback ทางขวาถ้าซ้ายไม่พอ, จำกัดในจอ
   const computePlanPreviewPosition = useCallback((rect) => {
-    const PREVIEW_W = 480;
-    const PREVIEW_H = 380;
+    const PREVIEW_W = 720;
+    const PREVIEW_H = 560;
     const MARGIN = 12;
     let left = rect.left - PREVIEW_W - MARGIN;
     if (left < MARGIN) {
@@ -1476,7 +1476,7 @@ ${deductionPageHtml}
               const isImage = url ? [".png", ".jpg", ".jpeg", ".webp", ".gif"].some((ext) => String(url).toLowerCase().endsWith(ext)) || String(url).toLowerCase().includes("data:image/") : false;
               return (
                 <div
-                  className="fixed z-[9999] w-[480px] h-[380px] rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden flex flex-col pointer-events-none"
+                  className="fixed z-[9999] w-[720px] h-[560px] rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden flex flex-col pointer-events-none"
                   style={{ left: planPreview.left, top: planPreview.top }}
                   role="tooltip"
                 >
