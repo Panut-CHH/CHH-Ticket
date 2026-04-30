@@ -302,8 +302,29 @@ export default function ProductionPage() {
         return;
       }
       // 2) Load projects & project_items to map itemCode -> project name (เช่น Bristal Bangkok)
-      const projectMap = new Map();      // key: item_code → project row
-      const projectByIdMap = new Map();  // key: projects.id → project row (fallback ตอน source_no ไม่ match)
+      const projectMap = new Map();        // key: item_code (full) → project row
+      const projectByIdMap = new Map();    // key: projects.id → project row
+      const projectByPrefixMap = new Map();// key: FG-NNNNN prefix → project row (ถ้า unique เท่านั้น)
+      const conflictedPrefixes = new Set();
+      // จับ prefix แบบ "FG-00003" จาก item_code (ใช้ตอน source_no ของตั๋วเป็น variant ที่ไม่ได้ register ใน project_items)
+      const extractPrefix = (code) => {
+        if (!code) return '';
+        const m = String(code).match(/^([A-Za-z]+-\d+)/);
+        return m ? m[1] : '';
+      };
+      const registerPrefix = (prefix, proj) => {
+        if (!prefix || !proj?.id) return;
+        if (conflictedPrefixes.has(prefix)) return;
+        const existing = projectByPrefixMap.get(prefix);
+        if (existing && existing.id !== proj.id) {
+          // prefix ชี้ไปหลาย project → ใช้ไม่ได้ ต้องอาศัย full match อย่างเดียว
+          projectByPrefixMap.delete(prefix);
+          conflictedPrefixes.add(prefix);
+        } else if (!existing) {
+          projectByPrefixMap.set(prefix, proj);
+        }
+      };
+
       try {
         const { data: projects, error: projectsError } = await supabase
           .from('projects')
@@ -317,6 +338,7 @@ export default function ProductionPage() {
             }
             if (p.item_code) {
               projectMap.set(p.item_code, p);
+              registerPrefix(extractPrefix(p.item_code), p);
             }
           });
         }
@@ -329,8 +351,11 @@ export default function ProductionPage() {
           if (!projectItemsError && Array.isArray(projectItems)) {
             projectItems.forEach(it => {
               const proj = projectByIdMap.get(it.project_id);
-              if (proj && it?.item_code && !projectMap.has(it.item_code)) {
-                projectMap.set(it.item_code, proj);
+              if (proj && it?.item_code) {
+                if (!projectMap.has(it.item_code)) {
+                  projectMap.set(it.item_code, proj);
+                }
+                registerPrefix(extractPrefix(it.item_code), proj);
               }
             });
           }
@@ -387,12 +412,13 @@ export default function ProductionPage() {
         const id = (t.no || '').replace('#','');
         const fullQuantity = typeof t.quantity === 'number' ? t.quantity : (t.quantity || 0);
 
-        // ดึงชื่อโปรเจ็คจาก projectMap ตาม itemCode/source_no
-        // ถ้าไม่เจอ → fallback ใช้ t.project_id ไปค้นใน projectByIdMap
-        // (มีตั๋วบางส่วนที่ source_no ไม่ตรงกับ projects.item_code/project_items.item_code แต่ project_id ตั้งไว้แล้ว)
+        // ดึงชื่อโปรเจ็คตามลำดับ: source_no (full match) → project_id → source_no prefix
+        // (ตั๋วบางส่วนเป็น variant ของ item_code ที่ยังไม่ได้ register ใน project_items แต่ prefix FG-NNNNN ระบุ project ได้แน่ชัด)
+        const sourcePrefix = t.source_no ? (String(t.source_no).match(/^([A-Za-z]+-\d+)/)?.[1] || '') : '';
         const projectFromMap =
           (t.source_no ? projectMap.get(t.source_no) : null) ||
-          (t.project_id ? projectByIdMap.get(t.project_id) : null);
+          (t.project_id ? projectByIdMap.get(t.project_id) : null) ||
+          (sourcePrefix ? projectByPrefixMap.get(sourcePrefix) : null);
         const projectNameFromMap =
           projectFromMap?.project_name ||
           projectFromMap?.description ||
