@@ -1298,12 +1298,12 @@ export default function ProductionPage() {
     tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
       // Get current step
-      const currentStep = roadmap.find(step => step.status === 'current');
+      const currentStep = roadmap.find(step => step.status === 'current' || step.status === 'in_progress');
       if (currentStep?.step) {
         stations.add(currentStep.step);
       }
       // Get next pending step
-      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending' && (step.available_qty ?? 0) > 0);
       if (nextPendingStep?.step) {
         stations.add(nextPendingStep.step);
       }
@@ -1325,14 +1325,14 @@ export default function ProductionPage() {
     tickets.forEach(ticket => {
       const roadmap = Array.isArray(ticket.roadmap) ? ticket.roadmap : [];
       // Get current step technician
-      const currentStep = roadmap.find(step => step.status === 'current');
+      const currentStep = roadmap.find(step => step.status === 'current' || step.status === 'in_progress');
       if (currentStep?.technician) {
         // Handle comma-separated technicians
         const techs = currentStep.technician.split(',').map(t => t.trim()).filter(t => t);
         techs.forEach(tech => technicians.add(tech));
       }
       // Get next pending step technician
-      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending' && (step.available_qty ?? 0) > 0);
       if (nextPendingStep?.technician) {
         // Handle comma-separated technicians
         const techs = nextPendingStep.technician.split(',').map(t => t.trim()).filter(t => t);
@@ -1408,8 +1408,8 @@ export default function ProductionPage() {
     if (selectedTechnician) {
       // Filter by technician name (only current or next pending step, not all steps)
       const roadmap = Array.isArray(t.roadmap) ? t.roadmap : [];
-      const currentStep = roadmap.find(step => step.status === 'current');
-      const nextPendingStep = roadmap.find(step => step.status === 'pending');
+      const currentStep = roadmap.find(step => step.status === 'current' || step.status === 'in_progress');
+      const nextPendingStep = roadmap.find(step => step.status === 'pending' && (step.available_qty ?? 0) > 0);
       
       // Get technicians from current step only
       const currentTechnicians = currentStep?.technician 
