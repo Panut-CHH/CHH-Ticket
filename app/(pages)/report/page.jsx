@@ -233,6 +233,12 @@ export default function ReportPage() {
   const [planFile, setPlanFile] = useState(null); // null | { file_url, file_name, file_type }
   const [planLoading, setPlanLoading] = useState(false);
 
+  // Hover preview สำหรับไอคอนแบบแปลนในตาราง (Portal tooltip ใหญ่)
+  const [planPreview, setPlanPreview] = useState(null); // null | { left, top, sourceNo, file, loading }
+  const planFileCacheRef = useRef(new Map()); // sourceNo -> file | null
+  const planPreviewShowTimerRef = useRef(null);
+  const planPreviewHideTimerRef = useRef(null);
+
   const showProjectTooltip = useCallback((text, element) => {
     if (hideTooltipRef.current) {
       clearTimeout(hideTooltipRef.current);
@@ -295,6 +301,65 @@ export default function ReportPage() {
   const closePlanModal = useCallback(() => {
     setPlanModal(null);
     setPlanFile(null);
+  }, []);
+
+  // คำนวณตำแหน่ง preview: วางทางซ้ายของไอคอน, fallback ทางขวาถ้าซ้ายไม่พอ, จำกัดในจอ
+  const computePlanPreviewPosition = useCallback((rect) => {
+    const PREVIEW_W = 480;
+    const PREVIEW_H = 380;
+    const MARGIN = 12;
+    let left = rect.left - PREVIEW_W - MARGIN;
+    if (left < MARGIN) {
+      // ไม่มีที่ทางซ้าย → วางทางขวาแทน
+      left = Math.min(rect.right + MARGIN, window.innerWidth - PREVIEW_W - MARGIN);
+    }
+    let top = rect.top + rect.height / 2 - PREVIEW_H / 2;
+    top = Math.max(MARGIN, Math.min(top, window.innerHeight - PREVIEW_H - MARGIN));
+    return { left, top };
+  }, []);
+
+  const showPlanPreview = useCallback((row, element) => {
+    if (planPreviewHideTimerRef.current) {
+      clearTimeout(planPreviewHideTimerRef.current);
+      planPreviewHideTimerRef.current = null;
+    }
+    if (planPreviewShowTimerRef.current) {
+      clearTimeout(planPreviewShowTimerRef.current);
+      planPreviewShowTimerRef.current = null;
+    }
+    const rect = element.getBoundingClientRect();
+    const pos = computePlanPreviewPosition(rect);
+    const sourceNo = row.sourceNo;
+
+    planPreviewShowTimerRef.current = setTimeout(async () => {
+      if (planFileCacheRef.current.has(sourceNo)) {
+        setPlanPreview({ ...pos, sourceNo, file: planFileCacheRef.current.get(sourceNo), loading: false });
+        return;
+      }
+      setPlanPreview({ ...pos, sourceNo, file: null, loading: true });
+      try {
+        const file = await fetchPlanFile(sourceNo);
+        planFileCacheRef.current.set(sourceNo, file || null);
+        setPlanPreview((cur) => (cur && cur.sourceNo === sourceNo ? { ...cur, file: file || null, loading: false } : cur));
+      } catch {
+        setPlanPreview((cur) => (cur && cur.sourceNo === sourceNo ? { ...cur, loading: false } : cur));
+      }
+    }, 250);
+  }, [computePlanPreviewPosition, fetchPlanFile]);
+
+  const hidePlanPreview = useCallback(() => {
+    if (planPreviewShowTimerRef.current) {
+      clearTimeout(planPreviewShowTimerRef.current);
+      planPreviewShowTimerRef.current = null;
+    }
+    planPreviewHideTimerRef.current = setTimeout(() => {
+      setPlanPreview(null);
+    }, 150);
+  }, []);
+
+  useEffect(() => () => {
+    if (planPreviewShowTimerRef.current) clearTimeout(planPreviewShowTimerRef.current);
+    if (planPreviewHideTimerRef.current) clearTimeout(planPreviewHideTimerRef.current);
   }, []);
 
   const canManage = isAdminOrManager(user?.roles || user?.role);
@@ -1226,6 +1291,8 @@ ${deductionPageHtml}
                 <button
                   type="button"
                   onClick={() => openPlanModal(row)}
+                  onMouseEnter={(e) => showPlanPreview(row, e.currentTarget)}
+                  onMouseLeave={hidePlanPreview}
                   className="p-0.5 rounded hover:bg-gray-100 dark:hover:bg-slate-600 text-gray-400 hover:text-sky-500 dark:hover:text-sky-400 transition-colors"
                   title={language === "th" ? "แสดงภาพแปลน" : "View plan"}
                 >
@@ -1399,6 +1466,41 @@ ${deductionPageHtml}
             >
               <div className="whitespace-normal break-words">{projectTooltip.text}</div>
             </div>,
+            document.body
+          )}
+        {planPreview &&
+          createPortal(
+            (() => {
+              const file = planPreview.file;
+              const url = file?.file_url;
+              const isImage = url ? [".png", ".jpg", ".jpeg", ".webp", ".gif"].some((ext) => String(url).toLowerCase().endsWith(ext)) || String(url).toLowerCase().includes("data:image/") : false;
+              return (
+                <div
+                  className="fixed z-[9999] w-[480px] h-[380px] rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-2xl overflow-hidden flex flex-col pointer-events-none"
+                  style={{ left: planPreview.left, top: planPreview.top }}
+                  role="tooltip"
+                >
+                  <div className="px-3 py-2 border-b border-gray-200 dark:border-slate-600 text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
+                    {file?.file_name || (language === "th" ? "แบบแปลน" : "Plan")}
+                  </div>
+                  <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-slate-900/40 overflow-hidden">
+                    {planPreview.loading ? (
+                      <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+                    ) : !url ? (
+                      <div className="flex flex-col items-center text-gray-400 text-xs">
+                        <ImageIcon className="w-10 h-10 mb-1 opacity-50" />
+                        {language === "th" ? "ไม่มีแบบแปลน" : "No plan available"}
+                      </div>
+                    ) : isImage ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt="plan preview" className="max-w-full max-h-full object-contain" />
+                    ) : (
+                      <iframe title="plan preview" src={url} className="w-full h-full" loading="lazy" />
+                    )}
+                  </div>
+                </div>
+              );
+            })(),
             document.body
           )}
         {planModal &&
