@@ -302,7 +302,8 @@ export default function ProductionPage() {
         return;
       }
       // 2) Load projects & project_items to map itemCode -> project name (เช่น Bristal Bangkok)
-      const projectMap = new Map();
+      const projectMap = new Map();      // key: item_code → project row
+      const projectByIdMap = new Map();  // key: projects.id → project row (fallback ตอน source_no ไม่ match)
       try {
         const { data: projects, error: projectsError } = await supabase
           .from('projects')
@@ -311,6 +312,9 @@ export default function ProductionPage() {
           console.warn('[PRODUCTION] Failed to load projects for projectName mapping:', projectsError.message);
         } else if (Array.isArray(projects)) {
           projects.forEach(p => {
+            if (p.id) {
+              projectByIdMap.set(p.id, p);
+            }
             if (p.item_code) {
               projectMap.set(p.item_code, p);
             }
@@ -322,10 +326,9 @@ export default function ProductionPage() {
           const { data: projectItems, error: projectItemsError } = await supabase
             .from('project_items')
             .select('project_id, item_code');
-          if (!projectItemsError && Array.isArray(projectItems) && Array.isArray(projects)) {
-            const projectIdMap = new Map(projects.map(p => [p.id, p]));
+          if (!projectItemsError && Array.isArray(projectItems)) {
             projectItems.forEach(it => {
-              const proj = projectIdMap.get(it.project_id);
+              const proj = projectByIdMap.get(it.project_id);
               if (proj && it?.item_code && !projectMap.has(it.item_code)) {
                 projectMap.set(it.item_code, proj);
               }
@@ -385,7 +388,11 @@ export default function ProductionPage() {
         const fullQuantity = typeof t.quantity === 'number' ? t.quantity : (t.quantity || 0);
 
         // ดึงชื่อโปรเจ็คจาก projectMap ตาม itemCode/source_no
-        const projectFromMap = t.source_no ? projectMap.get(t.source_no) : null;
+        // ถ้าไม่เจอ → fallback ใช้ t.project_id ไปค้นใน projectByIdMap
+        // (มีตั๋วบางส่วนที่ source_no ไม่ตรงกับ projects.item_code/project_items.item_code แต่ project_id ตั้งไว้แล้ว)
+        const projectFromMap =
+          (t.source_no ? projectMap.get(t.source_no) : null) ||
+          (t.project_id ? projectByIdMap.get(t.project_id) : null);
         const projectNameFromMap =
           projectFromMap?.project_name ||
           projectFromMap?.description ||
